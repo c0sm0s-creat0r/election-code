@@ -49,9 +49,9 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 900, margin: "0 auto" }}>
-      <h1>IRV — Voter</h1>
+      <h1>Welcome voter to the DSA Elections!</h1>
       <section>
-        <h2>Available Elections</h2>
+        <h2>Active Elections</h2>
         <ul>
           {elections.map(election => (
             <li key={election.id}>
@@ -64,7 +64,7 @@ export default function App() {
 
       {currentElection && (
         <section style={{ marginTop: 24 }}>
-          <h2>{currentElection.name}</h2>
+          <h2>Currently Voting on Election: {currentElection.name}</h2>
 
           {!loggedIn ? (
             <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, marginBottom: 16 }}>

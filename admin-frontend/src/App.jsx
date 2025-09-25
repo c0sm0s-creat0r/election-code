@@ -67,7 +67,7 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000, margin: "0 auto" }}>
-      <h1>IRV — Admin</h1>
+      <h1>Election Manager - ADMIN VIEW</h1>
 
       <section style={{ marginBottom: 20 }}>
         <h2>Create Election</h2>
@@ -90,7 +90,7 @@ export default function App() {
 
       {currentElection && (
         <section style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <h2>Manage: {currentElection.name}</h2>
+          <h2>Manageing Election: {currentElection.name}</h2>
           <div style={{ marginBottom: 12 }}>
             <input value={candidateName} onChange={e => setCandidateName(e.target.value)} placeholder="Candidate name" />
             <button onClick={addCandidate} style={{ marginLeft: 8 }}>Add Candidate</button>
