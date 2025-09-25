@@ -24,3 +24,5 @@ yarn-error.log*
 .vscode
 .venv
 react-frontend/package-lock.json
+
+*/.env
