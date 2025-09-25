@@ -90,7 +90,7 @@ export default function App() {
 
       {currentElection && (
         <section style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-          <h2>Manageing Election: {currentElection.name}</h2>
+          <h2>Managing Election: {currentElection.name}</h2>
           <div style={{ marginBottom: 12 }}>
             <input value={candidateName} onChange={e => setCandidateName(e.target.value)} placeholder="Candidate name" />
             <button onClick={addCandidate} style={{ marginLeft: 8 }}>Add Candidate</button>

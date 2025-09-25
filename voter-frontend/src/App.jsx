@@ -50,7 +50,9 @@ export default function App() {
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 900, margin: "0 auto" }}>
       <h1>Welcome voter to the DSA Elections!</h1>
+      <h6>Created by Ben & funded by Charlise</h6>
       <section>
+        <p>If you don't see any elections below, don't worry, when it comes time to vote we'll let you know!</p>
         <h2>Active Elections</h2>
         <ul>
           {elections.map(election => (

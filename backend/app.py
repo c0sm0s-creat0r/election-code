@@ -16,16 +16,20 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "super-secret-admin-key")
 
 # Set up react flask
 app = Flask(__name__)
-CORS(app)
-
-"""
-Potentially lock down CORS
+# ended up locking down CORS... let's see how it goees
 CORS(app, resources={
-    r"/api/*": {"origins": [
-        "https://vote.dalyell.com.au",
-    ]}
+    r"/api/*": {
+        "origins": [
+            "https://vote.dalyell.com.au",
+            "https://admin.dalyell.com.au"
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
 })
-"""
+
+
+
 
 DB = { "elections": {} }
 
