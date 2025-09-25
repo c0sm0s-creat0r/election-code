@@ -18,6 +18,15 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "super-secret-admin-key")
 app = Flask(__name__)
 CORS(app)
 
+"""
+Potentially lock down CORS
+CORS(app, resources={
+    r"/api/*": {"origins": [
+        "https://vote.dalyell.com.au",
+    ]}
+})
+"""
+
 DB = { "elections": {} }
 
 def require_admin(f):

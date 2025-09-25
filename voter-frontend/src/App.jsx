@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-const API = "http://127.0.0.1:4500/api";
+// const API = "http://127.0.0.1:4500/api";
+// const API = import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api";
+const API = import.meta.env.VITE_API_BASE || "https://election-code.onrender.com/api";
 
 export default function App() {
   const [elections, setElections] = useState([]);
