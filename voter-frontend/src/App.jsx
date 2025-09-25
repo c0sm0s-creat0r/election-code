@@ -73,7 +73,7 @@ export default function App() {
               <h3>Login to Vote</h3>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" />
-                <input value={usuId} onChange={e => setUsuId(e.target.value)} placeholder="USU ID (7-8 digits)" />
+                <input value={usuId} onChange={e => setUsuId(e.target.value)} placeholder="USU ID" />
                 <button onClick={login} disabled={!name || !validUsu}>Continue</button>
               </div>
               {!validUsu && usuId && <p style={{ color: "crimson" }}>USU ID must be 7–8 digits.</p>}
