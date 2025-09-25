@@ -1,6 +1,16 @@
 from typing import List, Dict, Tuple
 from collections import Counter
 
+def validate_ballot(ballot: List[str], candidate_ids: List[str]) -> Tuple[bool, str]:
+    seen = set()
+    for cid in ballot:
+        if cid not in candidate_ids:
+            return False, f"Unknown candidate id: {cid}"
+        if cid in seen:
+            return False, f"Duplicate candidate id in ballot: {cid}"
+        seen.add(cid)
+    return True, ""
+
 def run_irv(candidates: List[Dict[str, str]], ballots: List[List[str]]):
     active = [dict(c) for c in candidates]
     active_ids = [c["id"] for c in active]
@@ -70,14 +80,3 @@ def run_irv(candidates: List[Dict[str, str]], ballots: List[List[str]]):
             break
 
     return rounds, winner
-
-
-def validate_ballot(ballot: List[str], candidate_ids: List[str]) -> Tuple[bool, str]:
-    seen = set()
-    for cid in ballot:
-        if cid not in candidate_ids:
-            return False, f"Unknown candidate id: {cid}"
-        if cid in seen:
-            return False, f"Duplicate candidate id in ballot: {cid}"
-        seen.add(cid)
-    return True, ""
