@@ -24,7 +24,7 @@ CORS(app, resources={
             "https://admin.dalyell.com.au"
         ],
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Admin-Token"]
+        "allow_headers": ["Content-Type", "Authorization", "X-Admin-Token", "x-admin-token"]
     }
 })
 
