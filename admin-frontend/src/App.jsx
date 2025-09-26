@@ -65,6 +65,10 @@ export default function App() {
       .catch(err => setError(err?.response?.data?.error || "Failed to download attendance"));
   };
 
+  const downloadAllAttendance = () => {
+    window.open(`${import.meta.env.VITE_API_BASE}/elections/attendance.csv`, "_blank");
+  };
+
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000, margin: "0 auto" }}>
       <h1>Election Manager - ADMIN VIEW</h1>
@@ -86,6 +90,7 @@ export default function App() {
             </li>
           ))}
         </ul>
+        <button onClick={downloadAllAttendance} style={{ marginLeft: 8 }}>Download Attendance of all Elections CSV</button>
       </section>
 
       {currentElection && (

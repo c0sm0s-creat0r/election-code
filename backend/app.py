@@ -184,6 +184,37 @@ def attendance_csv(eid):
         mimetype="text/csv",
         headers={ "Content-Disposition": f"attachment; filename=attendance_{eid}.csv" }
     )
+    
+@app.get("/api/elections/attendance.csv")
+@require_admin
+def download_all_attendance():
+    # Create an in-memory buffer
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow(["Election ID", "Election Name", "Name", "USU ID", "Voted"])
+
+    # Loop through all elections
+    for election_id, election in DB["elections"].items():
+        election_name = election["name"]
+        for attendee in election.get("attendees", []):
+            writer.writerow([
+                election_id,
+                election_name,
+                attendee["name"],
+                attendee["usu_id"],
+                "Yes" if attendee.get("voted") else "No"
+            ])
+    csv_data = output.getvalue()
+    output.close()
+
+    # Return response with CSV mimetype
+    return Response(
+        csv_data, 
+        mimetype="text/csv", 
+        headers={ "Content-Disposition": "attachment; filename=all_attendance.csv" }
+    )
 
 if __name__ == "__main__":
     host = os.getenv("FLASK_HOST", "127.0.0.1")
