@@ -66,8 +66,20 @@ export default function App() {
   };
 
   const downloadAllAttendance = () => {
-    window.open(`${import.meta.env.VITE_API_BASE}/elections/attendance.csv`, "_blank");
+    const url = `/elections/attendance.csv`;
+    ax.get(url, { responseType: "blob" })
+      .then(res => {
+        const blob = new Blob([res.data], { type: "text/csv" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `attendance_all.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      })
+      .catch(err => setError(err?.response?.data?.error || "Failed to download all attendance"));
   };
+
 
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000, margin: "0 auto" }}>
