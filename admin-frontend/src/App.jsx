@@ -84,6 +84,28 @@ export default function App() {
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 1000, margin: "0 auto" }}>
       <h1>Election Manager - ADMIN VIEW</h1>
+      <h4>Welcome Returning Officer! To your super secret custom admin election dashboard!!!!</h4>
+      <h5><i>"You like preferential voting, we like preferential voting"</i></h5>
+
+      <section>
+        <h3>How to Use the Admin Panel</h3>
+        <ol>
+          <li>Create a new election by entering a name and clicking the "Create Election" button.</li>
+          <li>Select an existing election from the list to manage it.</li>
+          <li>Add candidates to the election by providing their names and submitting them.</li>
+          <li>When voting closes, run the tally to calculate results. My method is Instant Runoff Voting (cause Australia yay). The system will show elimination rounds and the winner.</li>
+        </ol>
+        <ul>
+          <li>If a voter cannot cast a ballot, check that their USU ID is valid and that they have not already voted in the same election.</li>
+          <li>Monitor attendance: each voter's name and USU ID will be recorded when they log in and cast a ballot.</li>
+          <li>Download attendance: for a single election or for all elections as a CSV file for record keeping.</li>
+          <li>Enjoy!</li>
+        </ul>
+        <p>
+          Remember: voters can only interact with the voter side. DO NOT SHOW THIS SITE TO ANYONE BUT YOU.
+        </p>
+      </section>
+
 
       <section style={{ marginBottom: 20 }}>
         <h2>Create Election</h2>

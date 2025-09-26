@@ -28,4 +28,8 @@ react-frontend/package-lock.json
 
 */.env
 
+voter-frontend/node_modules
+voter-frontend/package-lock.json
 
+admin-frontend/node_modules
+admin-frontend/package-lock.json
