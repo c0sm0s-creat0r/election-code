@@ -61,9 +61,8 @@ export default function App() {
           <li>Then we repeat for all elections :)</li>
         </ol>
         <ul>
-          <li>You can vote <strong>once per election</strong> (enforced by USU ID).</li>
-          <li>Your login details are recorded for attendance; the vote itself is tallied via Instant Runoff Voting.</li>
-          <li>If you see an error about duplicates, you’ve likely already voted in this election.</li>
+          <li>You can vote <strong>once per election</strong>.</li>
+          <li>Voting uses Instant Runoff Voting preferential voting method.</li>
         </ul>
         <p>If you don't see any elections below, don't worry, when it comes time to vote we'll let you know!</p>
       </section>
