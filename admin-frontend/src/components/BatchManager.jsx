@@ -69,11 +69,10 @@ export default function BatchManager({ api, batches, onCreated }) {
 
       <h3>Create Election Overview Here:</h3>
 
-      {showCreate ? (
-        <button onClick={() => setShowCreate((s) => !s)}>
-          "Create Election"
-        </button>
-      ) : null}
+      {/* Toggle button for Create Batch */}
+      <button onClick={() => setShowCreate(s => !s)}>
+        {showCreate ? "Hide Election Overview Creator" : "Create Election Overview"}
+      </button>
 
       {showCreate && (
         <div>
