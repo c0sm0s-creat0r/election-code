@@ -74,7 +74,7 @@ export default function BatchManager({ api, batches, onCreated }) {
         onCreated && onCreated();
         setShowCreate(false);
     } catch (err) {
-        setError(err?.response?.data?.error || "Failed to create batch");
+        console.log(err?.response?.data?.error || "Failed to create batch");
     }
   };
 
@@ -158,6 +158,7 @@ export default function BatchManager({ api, batches, onCreated }) {
                     branding: { ...form.branding, title: e.target.value },
                   })
                 }
+                placeholder="e.g. Executive Elections"
               />
             </label>
             <label>

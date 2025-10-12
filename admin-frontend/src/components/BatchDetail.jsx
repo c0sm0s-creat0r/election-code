@@ -236,6 +236,7 @@ useEffect(() => {
                   onChange={(e) =>
                     setBranding({ ...branding, title: e.target.value })
                   }
+                  placeholder="e.g. Executive Elections"
                 />
               </label>
               <label>
