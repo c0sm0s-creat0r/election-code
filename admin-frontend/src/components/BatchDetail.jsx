@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import axios from "axios";
+import { logoSrc } from "../logoSrc";
 
 export default function BatchDetail({ api, batch, onRefreshBatch }) {
   const [token, setToken] = useState(
@@ -155,8 +156,8 @@ useEffect(() => {
       <header style={{ display: "flex", justifyContent: "space-between" }}>
             <h1>Election Overview — {batch.name}</h1>
             <img
-              src={batch.branding.logo_url}
-              alt="logo"
+              src={logoSrc(batch.branding.logo_url)}
+              alt={`${batch?.branding?.org_name || "Organisation"} logo`}
               width="60"
               height="60"
               loading="lazy"
@@ -256,7 +257,7 @@ useEffect(() => {
                   }
                 />
               </label>
-              <label>
+              {/* <label>
                 Logo (public url)
                 <input
                   value={branding.logo_url || ""}
@@ -264,8 +265,7 @@ useEffect(() => {
                     setBranding({ ...branding, logo_url: e.target.value })
                   }
                 />
-              </label>
-              {/* FUTURE (logo upload): replace Logo URL with a file input and POST to /api/batches/<id>/logo */}
+              </label> */}
               <div>
                 <button onClick={saveBranding}>Save Branding</button>
               </div>
@@ -378,7 +378,7 @@ useEffect(() => {
         )}
       </section>
 
-      {error && <p>{error}</p>}
+      {/* {error && <p>{error}</p>} */}
     </div>
   );
 }

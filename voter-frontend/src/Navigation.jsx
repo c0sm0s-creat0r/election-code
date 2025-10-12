@@ -1,6 +1,7 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { logoSrc } from "./logoSrc";
 
 const API = (import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api").replace(/\/$/, ""); // POV you learn REGEX to remove extra trailing slash
 
@@ -32,8 +33,8 @@ export default function BatchNavigation() {
               {batch_instance.branding?.logo_url ? (
                 <div>
                   <img
-                    src={batch_instance.branding.logo_url}
-                    alt={`${batch_instance.branding?.org_name || "Logo"}`}
+                    src={logoSrc(batch_instance.branding.logo_url)}
+                    alt={`${batch_instance?.branding?.org_name || "Organisation"} logo`}
                     width="120"
                     height="auto"
                     loading="lazy"

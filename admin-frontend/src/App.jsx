@@ -38,7 +38,7 @@ export default function Home() {
       </header>
       
       <BatchManager api={API} batches={batches} onCreated={reloadBatches} />
-      {error && <p>{error}</p>}
+      {/* {error && <p>{error}</p>} */}
     </div>
   );
 }

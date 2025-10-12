@@ -4,10 +4,15 @@ import io
 from uuid import uuid4
 from functools import wraps
 from typing import Optional
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from irv import run_irv, validate_ballot
+
+from werkzeug.utils import secure_filename
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # pull super secret info from .env
 load_dotenv()
@@ -69,6 +74,13 @@ def get_batch_by_slug(slug: str):
             return b
     return None
 
+# Filetype allowed for logo upload
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route("/uploads/<path:filename>")
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 
 # -*******- HEALTH -******- anything relating to status, just current if active (i use to check render running as it has downtime)
@@ -176,6 +188,32 @@ def update_branding_by_slug(slug):
     if "logo_url" in data: instance_branding["logo_url"] = data["logo_url"]
     return jsonify({"branding": instance_branding})
 
+
+# Upload logo
+@app.post("/api/batches/<batch_id>/logo")
+def upload_logo(batch_id):
+    batch = DB["batches"].get(batch_id)
+    if not batch:
+        return jsonify({"error": "not found"}), 404
+
+    if "file" not in request.files:
+        return jsonify({"error": "no file uploaded"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "empty filename"}), 400
+    if not allowed_file(file.filename):
+        return jsonify({"error": "invalid file type"}), 400
+
+    filename = secure_filename(file.filename)
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(save_path)
+
+    # Construct a public-ish URL (for dev/demo)
+    file_url = f"/uploads/{filename}"
+    batch["branding"]["logo_url"] = file_url
+
+    return jsonify({"logo_url": file_url})
 
 # -*********- Elections -*****- all api relating to election level
 

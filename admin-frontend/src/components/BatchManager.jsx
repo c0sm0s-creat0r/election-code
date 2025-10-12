@@ -1,9 +1,12 @@
 import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { logoSrc } from "../logoSrc";
+
 
 export default function BatchManager({ api, batches, onCreated }) {
   const [showCreate, setShowCreate] = React.useState(false);
+  const [logoFile, setLogoFile] = React.useState(null);
   const [form, setForm] = React.useState({
     name: "",
     slug: "",
@@ -17,28 +20,62 @@ export default function BatchManager({ api, batches, onCreated }) {
   });
   const [error, setError] = React.useState("");
 
-  const createBatch = () => {
+//   const createBatch = () => {
+//     setError("");
+//     axios
+//       .post(`${api}/batches`, form)
+//       .then(() => {
+//         setForm({
+//           name: "",
+//           slug: "",
+//           admin_token: "",
+//           branding: {
+//             title: "",
+//             org_name: "",
+//             accent_color: "#2563eb",
+//             logo_url: "",
+//           },
+//         });
+//         onCreated && onCreated();
+//         setShowCreate(false);
+//       })
+//       .catch((err) =>
+//         setError(err?.response?.data?.error || "Failed to create batch")
+//       );
+//   };
+
+    const createBatch = async () => {
     setError("");
-    axios
-      .post(`${api}/batches`, form)
-      .then(() => {
+    try {
+        // 1) Create batch (no logo upload yet)
+        const { data: created } = await axios.post(`${api}/batches`, form);
+
+        // 2) If a logo file was chosen, upload it now using the new batch id
+        if (logoFile) {
+            const fd = new FormData();
+            fd.append("file", logoFile);
+            await axios.post(`${api}/batches/${created.id}/logo`, fd, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+                // Use the admin token provided in the create form
+                "X-Admin-Token": form.admin_token,
+            },
+            });
+        }
+
+        // 3) Reset form and refresh list
         setForm({
-          name: "",
-          slug: "",
-          admin_token: "",
-          branding: {
-            title: "",
-            org_name: "",
-            accent_color: "#2563eb",
-            logo_url: "",
-          },
+            name: "",
+            slug: "",
+            admin_token: "",
+            branding: { title: "", org_name: "", accent_color: "#2563eb", logo_url: "" }
         });
+        setLogoFile(null);
         onCreated && onCreated();
         setShowCreate(false);
-      })
-      .catch((err) =>
-        setError(err?.response?.data?.error || "Failed to create batch")
-      );
+    } catch (err) {
+        setError(err?.response?.data?.error || "Failed to create batch");
+    }
   };
 
   return (
@@ -69,7 +106,7 @@ export default function BatchManager({ api, batches, onCreated }) {
 
       <h3>Create Election Overview Here:</h3>
 
-      {/* Toggle button for Create Batch */}
+      {/* Toggle button to create batch, must hvae in */}
       <button onClick={() => setShowCreate(s => !s)}>
         {showCreate ? "Hide Election Overview Creator" : "Create Election Overview"}
       </button>
@@ -151,19 +188,26 @@ export default function BatchManager({ api, batches, onCreated }) {
                 }
               />
             </label>
+            
+            {/* upload a logo file to attach AFTER batch is created */}
             <label>
-              Logo (public url)
+              Logo File
               <input
-                value={form.branding.logo_url}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    branding: { ...form.branding, logo_url: e.target.value },
-                  })
-                }
+                type="file"
+                accept="image/*"
+                onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
               />
             </label>
-            {/* FUTURE (logo upload): replace Logo URL with a file input and POST to /api/batches/<id>/logo */}
+            {/* <label>
+                Logo (public url)
+                <input
+                  value={branding.logo_url || ""}
+                  onChange={(e) =>
+                    setBranding({ ...branding, logo_url: e.target.value })
+                  }
+                />
+              </label> */}
+
           </fieldset>
           <div>
             <button
@@ -172,7 +216,7 @@ export default function BatchManager({ api, batches, onCreated }) {
             >
               Create
             </button>
-            {error && <p>{error}</p>}
+            {/* {error && <p>{error}</p>} */}
           </div>
         </div>
       )}
@@ -180,7 +224,7 @@ export default function BatchManager({ api, batches, onCreated }) {
       <div>
         <h3>Existing</h3>
         {!batches || batches.length === 0 ? (
-          <p>No batches yet.</p>
+          <p>No election overviews yet. (Create above)</p>
         ) : (
           <ul>
             {batches.map((b) => (
@@ -194,11 +238,10 @@ export default function BatchManager({ api, batches, onCreated }) {
                   <>
                     {" — "}
                     <img
-                      src={b.branding.logo_url}
-                      alt="logo"
-                      width="60"
-                      height="60"
-                      loading="lazy"
+                        src={logoSrc(b.branding.logo_url)}
+                        width="auto"
+                        height="30"
+                        loading="lazy"
                     />
                   </>
                 ) : null}

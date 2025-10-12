@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useParams, Link } from "react-router-dom";
+import { logoSrc } from "./logoSrc";
 
 
 // const API = "http://127.0.0.1:4500/api";
@@ -86,7 +87,7 @@ export default function App() {
               {batch?.branding?.title || "Elections"}
             </h1>
             {batch?.branding?.logo_url 
-            ? <img src={batch.branding.logo_url} height="50" width="50" alt="logo" /> 
+            ? <img src={logoSrc(batch.branding.logo_url)} height="60" width="auto"  alt={`${batch?.branding?.org_name || "Organisation"} logo`} />                    
             : null}
         </div>
         <div>Election for: {batch?.branding?.org_name || ""}</div>
