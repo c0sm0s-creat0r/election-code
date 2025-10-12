@@ -38,7 +38,7 @@ useEffect(() => {
     axios
       .get(`${api}/batches/${batch.id}/elections`)
       .then(({ data }) => setElections(data || []))
-      .catch(() => setError("Failed to load elections"));
+      .catch(() => console.log("Failed to load elections"));
   }, [api, batch]);
 
   const saveToken = () => {
@@ -54,7 +54,7 @@ useEffect(() => {
         setShowBranding(false);
       })
       .catch((err) =>
-        setError(err?.response?.data?.error || "Failed to update branding")
+        console.log(err?.response?.data?.error || "Failed to update branding")
       );
   };
 
@@ -110,7 +110,7 @@ useEffect(() => {
     if (!currentElection) return;
     ax.get(`/batches/${batch.id}/elections/${currentElection.id}/tally`)
       .then(res => setTally(res.data))
-      .catch(err => setError(err?.response?.data?.error || "Failed to tally"));
+      .catch(err => console.log(err?.response?.data?.error || "Failed to tally"));
   };
 
   const downloadElectionAttendance = () => {
@@ -166,7 +166,7 @@ useEffect(() => {
       <h3>Organisation: {batch.branding.org_name}</h3>
       <div style={{ borderStyle: "dotted", textAlign: "center"}}>
         <h3>
-          Custom voting url: vote.dalyell.com/{batch.slug}
+          Custom voting url: vote.dalyell.com.au/{batch.slug}
         </h3>
       </div>
 

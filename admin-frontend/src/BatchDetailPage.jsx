@@ -13,7 +13,7 @@ export default function BatchDetailPage() {
   React.useEffect(() => {
     axios.get(`${API}/batches/by-slug/${batchSlug}`)
       .then(({ data }) => setBatch(data))
-      .catch(() => setError("Failed to load batch"));
+      .catch(() => console.log("Failed to load batch"));
   }, [batchSlug]);
 
   return (
@@ -24,7 +24,7 @@ export default function BatchDetailPage() {
         <Link to="/">Back to main page</Link>
       </p>
 
-      {error && <p>{error}</p>}
+      {/* {error && <p>{error}</p>} */}
       {batch ? (
         <div>
           <BatchDetail api={API} batch={batch} onRefreshBatch={setBatch} />

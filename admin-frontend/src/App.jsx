@@ -15,7 +15,7 @@ export default function Home() {
     axios
       .get(`${API}/batches`)
       .then(({ data }) => setBatches(data || []))
-      .catch(() => setError("Failed to load batches"));
+      .catch(() => console.log("Failed to load batches"));
   }, []);
 
   React.useEffect(() => {
