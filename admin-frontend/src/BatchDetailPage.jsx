@@ -27,16 +27,6 @@ export default function BatchDetailPage() {
       {error && <p>{error}</p>}
       {batch ? (
         <div>
-          <header style={{ display: "flex", justifyContent: "space-between" }}>
-            <h1>Society Election Tool - by Dalyell</h1>
-            <img
-              src={batch.branding.logo_url}
-              alt="logo"
-              width="60"
-              height="60"
-              loading="lazy"
-            />
-          </header>
           <BatchDetail api={API} batch={batch} onRefreshBatch={setBatch} />
         </div>
       ) : (

@@ -152,7 +152,16 @@ useEffect(() => {
 
   return (
     <div>
-      <h1>Election Overview — {batch.name}</h1>
+      <header style={{ display: "flex", justifyContent: "space-between" }}>
+            <h1>Election Overview — {batch.name}</h1>
+            <img
+              src={batch.branding.logo_url}
+              alt="logo"
+              width="60"
+              height="60"
+              loading="lazy"
+            />
+      </header>
       <h3>Organisation: {batch.branding.org_name}</h3>
       <div style={{ borderStyle: "dotted", textAlign: "center"}}>
         <h3>
