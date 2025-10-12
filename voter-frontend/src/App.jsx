@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { useParams } from "react-router-dom";
+
 // const API = "http://127.0.0.1:4500/api";
-// const API = import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api";
-const API = import.meta.env.VITE_API_BASE || "https://election-code.onrender.com/api";
+const API = import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api";
+// const API = import.meta.env.VITE_API_BASE || "https://election-code.onrender.com/api";
+
+// For each instance, the selected branding. lowkey i only have colour atm
+function applyBranding(branding) {
+  const root = document.documentElement;
+  if (branding?.accent_color) root.style.setProperty("--accent", branding.accent_color);
+  document.title = branding?.title || "Elections";
+}
 
 export default function App() {
+  const { batchSlug } = useParams();
+  const [batch, setBatch] = useState(null);
   const [elections, setElections] = useState([]);
   const [currentElection, setCurrentElection] = useState(null);
   const [ballot, setBallot] = useState([]);
@@ -15,21 +26,37 @@ export default function App() {
   const [usuId, setUsuId] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
 
+  const validUsu = /^\d{7,8}$/.test(usuId);
+  
+  /*
   useEffect(() => {
     axios.get(`${API}/elections`)
       .then(res => setElections(res.data))
       .catch(err => console.error("Error fetching elections:", err));
   }, []);
+  */
+  // load batch by slug, then load elections for that batch
+  useEffect(() => {
+    axios.get(`${API}/batches/by-slug/${batchSlug}`)
+      .then(({data}) => {
+        setBatch(data);
+        applyBranding(data.branding);
+        return axios.get(`${API}/batches/${data.id}/elections`);
+      })
+      .then(({data}) => setElections(data))
+      .catch(err => setError("Failed to load batch or elections: " + err.toString()));
+  }, [batchSlug]);
 
   const loadElection = (id) => {
-    axios.get(`${API}/elections/${id}`)
+    if (!batch) return;
+    axios.get(`${API}/batches/${batch.id}/elections/${id}`)
       .then(res => { setCurrentElection(res.data); setBallot([]); setError(""); setLoggedIn(false); setName(""); setUsuId(""); })
-      .catch(err => console.error("Error loading election:", err));
+      .catch(() => setError("Error loading election"));
   };
 
   const login = () => {
-    if (!currentElection) return;
-    axios.post(`${API}/elections/${currentElection.id}/login`, { name, usu_id: usuId })
+    if (!batch || !currentElection) return;
+    axios.post(`${API}/batches/${batch.id}/elections/${currentElection.id}/login`, {name, usu_id: usuId})
       .then(() => { setLoggedIn(true); setError(""); })
       .catch(err => setError(err?.response?.data?.error || "Login failed"));
   };
@@ -39,17 +66,23 @@ export default function App() {
   };
 
   const submitBallot = () => {
-    if (!currentElection) return;
-    axios.post(`${API}/elections/${currentElection.id}/ballots`, { ballot, voter: { name, usu_id: usuId } })
+    if (!batch || !currentElection) return;
+    axios.post(`${API}/batches/${batch.id}/elections/${currentElection.id}/ballots`, {ballot, voter: {name, usu_id: usuId}})
       .then(() => loadElection(currentElection.id))
       .catch(err => setError(err?.response?.data?.error || "Failed to submit ballot"));
   };
 
-  const validUsu = /^\d{7,8}$/.test(usuId);
+  
 
   return (
     <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 900, margin: "0 auto" }}>
-      <h1>Welcome voter to the DSA Elections!</h1>
+      <header>
+        <h1>{batch?.branding?.title || "Elections"}</h1>
+        <div>{batch?.branding?.org_name || ""}</div>
+        {batch?.branding?.logo_url ? <img src={batch.branding.logo_url} alt="logo" /> : null}
+      </header>
+
+      <h1>Welcome voter to the {batch?.branding?.title} Elections!</h1>
       <h6>Created by Ben & funded by Charlise</h6>
       <section>
         <h2>How to Vote</h2>
@@ -57,6 +90,7 @@ export default function App() {
           <li>Select the current election from the list below.</li>
           <li>Log in using your <strong>Name</strong> and <strong>USU ID</strong></li>
           <li>Rank candidates by ticking the boxes in your preferred order (top of your list = highest preference).</li>
+          <li>PLEASE RANK <strong>ALL</strong> CANDIDATES</li>
           <li>Review your vote, then click <strong>Submit Ballot</strong>.</li>
           <li>Then we repeat for all elections :)</li>
         </ol>
@@ -66,6 +100,7 @@ export default function App() {
         </ul>
         <p>If you don't see any elections below, don't worry, when it comes time to vote we'll let you know!</p>
       </section>
+      
       <section>
         <h2>Active Elections</h2>
         <ul>
@@ -76,6 +111,7 @@ export default function App() {
             </li>
           ))}
         </ul>
+        {error && <p style={{ color: "crimson" }}>{error}</p>}
       </section>
 
       {currentElection && (
@@ -99,6 +135,7 @@ export default function App() {
                 <strong>Logged in as:</strong> {name} (USU {usuId})
               </div>
               <h3>Rank Candidates</h3>
+              <p><i>Remember to rank all candidates</i></p>
               <ul>
                 {currentElection.candidates.map(c => (
                   <li key={c.id}>

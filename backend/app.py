@@ -24,7 +24,7 @@ CORS(app)
 #             "https://vote.dalyell.com.au",
 #             "https://admin.dalyell.com.au"
 #         ],
-#         "methods": ["GET", "POST", "OPTIONS"],
+#         "methods": ["GET", "POST", "PATCH", "OPTIONS"],
 #         "allow_headers": ["Content-Type", "Authorization", "X-Admin-Token", "x-admin-token", "Access-Control-Allow-Origin"]
 #     }
 # })
