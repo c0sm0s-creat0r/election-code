@@ -39,17 +39,21 @@ def require_admin(f):
     def wrapper(*args, **kwargs):
         token = request.headers.get("X-Admin-Token")
         if token != ADMIN_TOKEN:
-            return jsonify({"error": "Unauthorized"}), 403
+            return jsonify({"error": "Unauthorized - NOT ADMIN"}), 403
         return f(*args, **kwargs)
     return wrapper
 
-def _validate_usu_id(usu_id: str) -> bool:
-    return isinstance(usu_id, str) and usu_id.isdigit() and (7 <= len(usu_id) <= 8)
 
+def _validate_usu_id(usu_id: str) -> bool:
+    return isinstance(usu_id, str) and usu_id.isdigit() and (7 <= len(usu_id) <= 8) # Lowkey assuming that usu id is 7-8 numbers in length
+
+
+# Backend use, can check that it is running okay - or check that backend is active
 @app.get("/api/health")
 def health():
     return jsonify({"status": "ok"})
 
+# All information relating to elections in API run throuhg /elections REST 
 @app.get("/api/elections")
 def list_elections():
     return jsonify(list(DB["elections"].values()))
@@ -63,7 +67,7 @@ def get_election(eid):
 
 @app.post("/api/elections/<eid>/login")
 def voter_login(eid):
-    # Pseudo-login: record attendee (name + usu_id).
+    # Pseudo-login that just records attendee (name + usu_id) - should probs fix this to be an overall page login but oh well. or not run it through the election
     election = DB["elections"].get(eid)
     if not election:
         return jsonify({"error": "not found"}), 404

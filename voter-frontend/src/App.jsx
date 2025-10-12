@@ -90,7 +90,7 @@ export default function App() {
                 <input value={usuId} onChange={e => setUsuId(e.target.value)} placeholder="USU ID" />
                 <button onClick={login} disabled={!name || !validUsu}>Continue</button>
               </div>
-              {!validUsu && usuId && <p style={{ color: "crimson" }}>USU ID must be 7–8 digits.</p>}
+              {!validUsu && usuId && <p style={{ color: "crimson" }}>USU ID must be 7-8 digits.</p>}
               {error && <p style={{ color: "crimson" }}>{error}</p>}
             </div>
           ) : (

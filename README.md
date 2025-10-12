@@ -1,3 +1,28 @@
+# Run back end
+
+source .venv/bin/activate
+
+cd backend
+
+pip install -r requirements.txt
+
+python3 app.py
+
+# Run admin front end
+
+cd admin-frontend
+
+npm install
+
+npm run dev
+
+# Run voter front end
+
+cd voter-frontend
+
+npm install
+
+npm run dev
 
 # Render back-end deployment
 https://election-code.onrender.com/
