@@ -30,53 +30,191 @@ CORS(app)
 # })
 
 
+DEFAULT_BRANDING = {
+    "title": "Dalyell Elections",
+    "org_name": "Dalyell Scholars Association",
+    "accent_color": "#fffdd0",
+    "logo_url": ""  # uploading via public url for now, will change so file upload
+}
+
+# DB is structured as batches (instances of elections for each organisations), elections, candidates
+# batches { batch_id: { id, slug, name, admin_token, branding, elections: {election_id: {...}}
+DB = { "batches": {} }
 
 
-DB = { "elections": {} }
 
-def require_admin(f):
+# -********- HELPER FUNCTIONS -******- looks after validations and any other stuff 
+
+# Wrapper to require admin for certain REST endpoints 
+# (Changed so individual for each site - might change back to single admin at some point)
+def require_batch_admin(f):
     @wraps(f)
-    def wrapper(*args, **kwargs):
+    def wrapper(batch_id, *args, **kwargs):
         token = request.headers.get("X-Admin-Token")
-        if token != ADMIN_TOKEN:
+        batch = DB["batches"].get(batch_id)
+        if not batch or token != batch["admin_token"]:
             return jsonify({"error": "Unauthorized - NOT ADMIN"}), 403
-        return f(*args, **kwargs)
+        return f(batch_id, *args, **kwargs)
     return wrapper
 
 
 def _validate_usu_id(usu_id: str) -> bool:
     return isinstance(usu_id, str) and usu_id.isdigit() and (7 <= len(usu_id) <= 8) # Lowkey assuming that usu id is 7-8 numbers in length
 
+# Grab batch associated with slug (slug is the last part of URL - used so that each organisation has it's own 'site')
+# In effect, grabs the correct instance to be shown for a given domain
+def get_batch_by_slug(slug: str):
+    for b in DB["batches"].values():
+        if b.get("slug") == slug:
+            return b
+    return None
+
+
+
+# -*******- HEALTH -******- anything relating to status, just current if active (i use to check render running as it has downtime)
 
 # Backend use, can check that it is running okay - or check that backend is active
 @app.get("/api/health")
 def health():
     return jsonify({"status": "ok"})
 
-# All information relating to elections in API run throuhg /elections REST 
-@app.get("/api/elections")
-def list_elections():
-    return jsonify(list(DB["elections"].values()))
 
-@app.get("/api/elections/<eid>")
-def get_election(eid):
-    election = DB["elections"].get(eid)
-    if not election:
+# -****- BATCH RESTS -****- RESTful API relating to batch level of DB
+
+
+@app.post("/api/batches")
+def create_batch():
+    data = request.json or {}
+    name = (data.get("name") or "New Batch").strip()
+    slug = (data.get("slug") or name.lower().replace(" ", "-")).strip()
+    admin_token = data.get("admin_token")  # probs need to store in hash form for production
+
+    if not admin_token:
+        return jsonify({"error": "admin_token required"}), 400
+
+    if get_batch_by_slug(slug):
+        return jsonify({"error": "slug already exists"}), 400
+
+    branding_in = data.get("branding") or {}
+    branding = {
+        "title": branding_in.get("title", DEFAULT_BRANDING["title"]),
+        "org_name": branding_in.get("org_name", DEFAULT_BRANDING["org_name"]),
+        "accent_color": branding_in.get("accent_color", DEFAULT_BRANDING["accent_color"]),
+        "logo_url": branding_in.get("logo_url", DEFAULT_BRANDING["logo_url"]),  # PUBLIC URL for now
+    }
+
+    batch_id = str(uuid4())
+    DB["batches"][batch_id] = {
+        "id": batch_id,
+        "slug": slug,
+        "name": name,
+        "admin_token": admin_token,
+        "branding": branding,
+        "elections": {}
+    }
+    safe = {k: v for k, v in DB["batches"][batch_id].items() if k != "admin_token"}
+    return jsonify(safe), 201
+
+# Public listing of batches (no admin_token)
+@app.get("/api/batches")
+def list_batches():
+    return jsonify([
+        {k: v for k, v in b.items() if k != "admin_token"}
+        for b in DB["batches"].values()
+    ])
+
+# Calling helper to retrieve necessary instance for current slug (url)
+@app.get("/api/batches/by-slug/<slug>")
+def get_batch_by_slug_route(slug):
+    batch = get_batch_by_slug(slug)
+    
+    if not batch:
+        return jsonify({"error": "batch not found when searching by slug"}), 404
+    
+    return jsonify({k: v for k, v in batch.items() if k != "admin_token"})
+
+# Update bradning for specific site instance (specific batch)
+@app.patch("/api/batches/<batch_id>/branding")
+@require_batch_admin
+def update_branding(batch_id):
+    
+    batch = DB["batches"].get(batch_id)
+    
+    if not batch:
+        return jsonify({"error": "batch not found when searching by id to update branding"}), 404
+    
+    data = request.json or {}
+    instance_branding = batch["branding"]
+    
+    if "title" in data: instance_branding["title"] = data["title"]
+    if "org_name" in data: instance_branding["org_name"] = data["org_name"]
+    if "accent_color" in data: instance_branding["accent_color"] = data["accent_color"]
+    if "logo_url" in data: instance_branding["logo_url"] = data["logo_url"]  # CHANGE SO NOT PUBLIC URL IMPLEMENTATION
+    
+    return jsonify({"branding": instance_branding})
+
+
+# Update bradning for specific site instance (specific batch) - by slug
+@app.patch("/api/batches/by-slug/<slug>/branding")
+def update_branding_by_slug(slug):
+    
+    batch = get_batch_by_slug(slug)
+    
+    if not batch:
+        return jsonify({"error": "batch not found when searching by slug to update branding"}), 404
+    
+    token = request.headers.get("X-Admin-Token")
+    if token != batch["admin_token"]:
+        return jsonify({"error": "Unauthorized - NO ADMIN ACCESS"}), 403
+    
+    data = request.json or {}
+    instance_branding = batch["branding"]
+    
+    if "title" in data: instance_branding["title"] = data["title"]
+    if "org_name" in data: instance_branding["org_name"] = data["org_name"]
+    if "accent_color" in data: instance_branding["accent_color"] = data["accent_color"]
+    if "logo_url" in data: instance_branding["logo_url"] = data["logo_url"]
+    return jsonify({"branding": instance_branding})
+
+
+# -*********- Elections -*****- all api relating to election level
+
+# -*- VOTER APIs -*-
+
+# All information relating to elections in API run through /elections REST 
+
+
+# list elections in batch
+@app.get("/api/batches/<batch_id>/elections")
+def list_elections_in_batch(batch_id):
+    batch = DB["batches"].get(batch_id)
+    if not batch:
+        return jsonify({"error": "batch not found when searching by id for election list"}), 404
+    return jsonify(list(batch["elections"].values()))
+
+
+# get election, for batch
+@app.get("/api/batches/<batch_id>/elections/<eid>")
+def get_election_in_batch(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
-    return jsonify(election)
+    return jsonify(batch["elections"][eid])
 
-@app.post("/api/elections/<eid>/login")
-def voter_login(eid):
-    # Pseudo-login that just records attendee (name + usu_id) - should probs fix this to be an overall page login but oh well. or not run it through the election
-    election = DB["elections"].get(eid)
-    if not election:
+# Pseudo-login that just records attendee (name + usu_id) - should probs fix this to be an overall page login but oh well. or not run it through the election
+@app.post("/api/batches/<batch_id>/elections/<eid>/login")
+def voter_login(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
     data = request.json or {}
     name = (data.get("name") or "").strip()
     usu_id = (data.get("usu_id") or "").strip()
     if not name or not _validate_usu_id(usu_id):
         return jsonify({"error": "Invalid name or USU ID (must be 7-8 digits)."}), 400
-
+    
+    election = batch["elections"][eid]
     existing = next((a for a in election["attendees"] if a["usu_id"] == usu_id), None)
     if not existing:
         attendee = {"name": name, "usu_id": usu_id, "voted": False}
@@ -87,11 +225,16 @@ def voter_login(eid):
             existing["name"] = name
         return jsonify({"ok": True, "attendee": existing})
 
-@app.post("/api/elections/<eid>/ballots")
-def add_ballot(eid):
-    election = DB["elections"].get(eid)
-    if not election:
+
+# Submit ballot by voter
+@app.post("/api/batches/<batch_id>/elections/<eid>/ballots")
+def add_ballot(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
+    
+    election = batch["elections"][eid]
+    
     data = request.json or {}
     ballot = data.get("ballot", [])
     # Handle voter information - addition
@@ -121,104 +264,130 @@ def add_ballot(eid):
     attendee["voted"] = True
     return jsonify({"ok": True, "ballots_count": len(election["ballots"])})
 
-@app.post("/api/elections")
-@require_admin
-def create_election():
+# -*- ADMIN APIs -*-
+
+# Add election to the data base
+@app.post("/api/batches/<batch_id>/elections")
+@require_batch_admin
+def create_election(batch_id):
+    batch = DB["batches"].get(batch_id)
+    
+    if not batch:
+        return jsonify({"error": "not found"}), 404
+    
     data = request.json or {}
-    name = data.get("name", "Untitled Election")
+    name = data.get("name", "Untitled Election").strip()
     eid = str(uuid4())
-    DB["elections"][eid] = {
+    batch["elections"][eid] = {
         "id": eid,
         "name": name,
         "candidates": [],
         "ballots": [],
         "attendees": [],
     }
-    return jsonify(DB["elections"][eid]), 201
+    return jsonify(batch["elections"][eid]), 201
 
-@app.post("/api/elections/<eid>/candidates")
-@require_admin
-def add_candidate(eid):
-    election = DB["elections"].get(eid)
-    if not election:
+# Add candidate to the election
+@app.post("/api/batches/<batch_id>/elections/<eid>/candidates")
+@require_batch_admin
+def add_candidate(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
     data = request.json or {}
     name = data.get("name")
     if not name:
         return jsonify({"error": "name required"}), 400
+    
     cid = str(uuid4())
-    election["candidates"].append({"id": cid, "name": name})
-    return jsonify(election)
+    batch["elections"][eid]["candidates"].append({"id": cid, "name": name})
+    
+    return jsonify(batch["elections"][eid])
 
-@app.get("/api/elections/<eid>/tally")
-@require_admin
-def tally(eid):
-    election = DB["elections"].get(eid)
-    if not election:
+
+
+# Tally the election results
+@app.get("/api/batches/<batch_id>/elections/<eid>/tally")
+@require_batch_admin
+def tally(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
+    
+    election = batch["elections"][eid]
     if not election["candidates"]:
         return jsonify({"error": "no candidates"}), 400
     rounds, winner = run_irv(election["candidates"], election["ballots"])
     return jsonify({"rounds": rounds, "winner": winner})
 
-@app.get("/api/elections/<eid>/attendance")
-@require_admin
+
+# Grab attendance for single election in json format
+# lowkey don't think i use this anymore need to check
+@app.get("/api/batches/<batch_id>/elections/<eid>/attendance")
+@require_batch_admin
 def attendance(eid):
     election = DB["elections"].get(eid)
     if not election:
         return jsonify({"error": "not found"}), 404
     return jsonify({"attendees": election["attendees"]})
 
-@app.get("/api/elections/<eid>/attendance.csv")
-@require_admin
-def attendance_csv(eid):
-    election = DB["elections"].get(eid)
-    if not election:
+
+# Download attendance for single elections in a csv
+@app.get("/api/batches/<batch_id>/elections/<eid>/attendance.csv")
+@require_batch_admin
+def attendance_csv(batch_id, eid):
+    batch = DB["batches"].get(batch_id)
+    
+    if not batch or eid not in batch["elections"]:
         return jsonify({"error": "not found"}), 404
 
+    election = batch["elections"][eid]
+    
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["name", "usu_id", "voted"])
     for a in election["attendees"]:
-        writer.writerow([a.get("name",""), a.get("usu_id",""), "yes" if a.get("voted") else "no"])
+        writer.writerow([a.get("name",""), a.get("usu_id",""), "yes" if a.get("voted") else "no"])  # Maybe change this to differnet info idk
     csv_data = output.getvalue()
     output.close()
 
     return Response(
         csv_data,
         mimetype="text/csv",
-        headers={ "Content-Disposition": f"attachment; filename=attendance_{eid}.csv" }
+        headers={"Content-Disposition": f"attachment; filename=attendance_{eid}.csv"}
     )
+
     
-@app.get("/api/elections/attendance.csv")
-@require_admin
-def download_all_attendance():
-    # Create an in-memory buffer
+
+# Download attendance for all elections (in a batch)
+@app.get("/api/batches/<batch_id>/attendance.csv")
+@require_batch_admin
+def download_all_attendance(batch_id):
+    
+    batch = DB["batches"].get(batch_id)
+    if not batch:
+        return jsonify({"error": "not found"}), 404
     output = io.StringIO()
     writer = csv.writer(output)
-
-    # Write header
+    
     writer.writerow(["Election ID", "Election Name", "Name", "USU ID", "Voted"])
-
-    # Loop through all elections
-    for election_id, election in DB["elections"].items():
-        election_name = election["name"]
+    
+    for election_id, election in batch["elections"].items():
         for attendee in election.get("attendees", []):
             writer.writerow([
                 election_id,
-                election_name,
-                attendee["name"],
-                attendee["usu_id"],
-                "Yes" if attendee.get("voted") else "No"
+                election.get("name",""),
+                attendee.get("name",""),
+                attendee.get("usu_id",""),
+                "yes" if attendee.get("voted") else "no"
             ])
     csv_data = output.getvalue()
     output.close()
-
-    # Return response with CSV mimetype
+    
     return Response(
-        csv_data, 
-        mimetype="text/csv", 
-        headers={ "Content-Disposition": "attachment; filename=all_attendance.csv" }
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=all_attendance_batch_{batch_id}.csv"}
     )
 
 if __name__ == "__main__":
