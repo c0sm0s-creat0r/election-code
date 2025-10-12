@@ -4,18 +4,18 @@ import { Link } from "react-router-dom";
 
 const API = (import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api").replace(/\/$/, ""); // POV you learn REGEX to remove extra trailing slash
 
-export default function BatchIndex() {
+export default function BatchNavigation() {
   const [batches, setBatches] = React.useState([]);
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
     axios.get(`${API}/batches`)
       .then(({ data }) => setBatches(data || []))
-      .catch(() => setError("Failed to load batches"));
+      .catch(err => console.log("Failed to load batches: " + err));
   }, []);
 
   return (
-    <div>
+    <div style={{ fontFamily: "sans-serif", padding: "2rem", margin: "0 auto" }}>
       <h1>Available Elections</h1>
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}

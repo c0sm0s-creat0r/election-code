@@ -14,12 +14,13 @@ createRoot(document.getElementById('root')).render(
         {/* path-based batch slug for example /dsa-elections */}
         <Route path="/:batchSlug" element={<App />} />
         {/* default to page not found */}
-        <Route path="*" element={<div>
+        {/* <Route path="*" element={<div>
             <h2>ERROR 404 - Page Not Found</h2>
             <p>
                 Click here to head to the <Link to="/">main page</Link>.
             </p>
-        </div>} />
+        </div>} /> */}
+        <Route path="*" element={<BatchNavigation />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

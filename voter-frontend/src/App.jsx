@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
+
 
 // const API = "http://127.0.0.1:4500/api";
 const API = import.meta.env.VITE_API_BASE || "https://api.dalyell.com.au/api";
@@ -44,14 +45,14 @@ export default function App() {
         return axios.get(`${API}/batches/${data.id}/elections`);
       })
       .then(({data}) => setElections(data))
-      .catch(err => setError("Failed to load batch or elections: " + err.toString()));
+      .catch(err => console.log("Failed to load batch or elections: " + err));
   }, [batchSlug]);
 
   const loadElection = (id) => {
     if (!batch) return;
     axios.get(`${API}/batches/${batch.id}/elections/${id}`)
       .then(res => { setCurrentElection(res.data); setBallot([]); setError(""); setLoggedIn(false); setName(""); setUsuId(""); })
-      .catch(() => setError("Error loading election"));
+      .catch(err => console.log("Error loading election" + err));
   };
 
   const login = () => {
@@ -75,14 +76,24 @@ export default function App() {
   
 
   return (
-    <div style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 900, margin: "0 auto" }}>
+    <div style={{ fontFamily: "sans-serif", paddingTop: "1rem", padding: "3rem", margin: "0 auto" }}>
+      <p>
+              <Link to="/">Back to main page</Link>
+            </p>
       <header>
-        <h1>{batch?.branding?.title || "Elections"}</h1>
-        <div>{batch?.branding?.org_name || ""}</div>
-        {batch?.branding?.logo_url ? <img src={batch.branding.logo_url} alt="logo" /> : null}
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <h1>
+              {batch?.branding?.title || "Elections"}
+            </h1>
+            {batch?.branding?.logo_url 
+            ? <img src={batch.branding.logo_url} height="50" width="50" alt="logo" /> 
+            : null}
+        </div>
+        <div>Election for: {batch?.branding?.org_name || ""}</div>
+        
       </header>
 
-      <h1>Welcome voter to the {batch?.branding?.title} Elections!</h1>
+      <h1>Welcome voter to the {batch?.branding?.title} elections!</h1>
       <h6>Created by Ben & funded by Charlise</h6>
       <section>
         <h2>How to Vote</h2>

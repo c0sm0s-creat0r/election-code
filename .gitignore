@@ -33,3 +33,4 @@ voter-frontend/package-lock.json
 
 admin-frontend/node_modules
 admin-frontend/package-lock.json
+admin-frontend/src/old_App.jsx
