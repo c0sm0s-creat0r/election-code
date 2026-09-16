@@ -35,3 +35,8 @@ admin-frontend/node_modules
 admin-frontend/package-lock.json
 admin-frontend/src/old_App.jsx
 backend/uploads
+
+# Member exports (PII — never commit)
+user_download_members_*.csv
+*.csv
+!docs/**/*.csv
