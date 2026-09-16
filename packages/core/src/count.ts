@@ -139,13 +139,40 @@ export async function count(input: CountInput): Promise<CountResult> {
 
       status.set(chosenId, 'elected')
       winners.push(chosenId)
+
       const surplus = totalOf(chosenId) - quota
-      // surplus transfer arrives in Task 7; for now the pile is retained
+      const pile = piles.get(chosenId) ?? []
+
+      /**
+       * Inclusive Gregory Method, as the Australian Senate uses:
+       * transfer value = surplus / NUMBER of papers, and every paper moves
+       * at that value regardless of the value it arrived with.
+       *
+       * One transfer value per distribution is what keeps a printed round
+       * table checkable by hand. The known cost is that a paper which
+       * arrived at a low value can transfer onward at a higher one.
+       */
+      let transferValue: Fixed = ZERO
+      if (surplus > ZERO && pile.length > 0) {
+        transferValue = surplus / BigInt(pile.length)
+
+        // The elected candidate retains exactly the quota. Without this the
+        // conservation check fails, because totalOf() reads the pile.
+        piles.set(chosenId, [{ id: `${chosenId}-quota`, preferences: [], weight: quota }])
+        for (const paper of pile) place({ ...paper, weight: transferValue })
+
+        // Truncating the transfer value loses a fraction of a vote per paper.
+        // Real counts call this loss by fraction; it is booked as
+        // non-transferable so the conservation invariant stays exact.
+        nonTransferable += surplus - transferValue * BigInt(pile.length)
+      }
+      // surplus of zero: the papers stay put, and the total is already quota
+
       recordRound(n, [{
         candidateId: chosenId,
         name: nameOf.get(chosenId)!,
         surplus: format(surplus),
-        transferValue: '0.00000',
+        transferValue: format(transferValue),
       }], [])
       continue
     }
