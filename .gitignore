@@ -19,10 +19,11 @@ __pycache__/
 !.env.example
 .dev.vars
 
-# Member exports — PII, never commit
-user_download_members_*.csv
+# CSVs are ignored by default; test fixtures at any depth are allowed.
 *.csv
-!tests/fixtures/*.csv
+!**/tests/fixtures/*.csv
+# Member exports are PII. Listed LAST so this rule wins even inside a fixtures dir.
+user_download_members_*.csv
 
 # Local
 .DS_Store
