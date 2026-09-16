@@ -28,6 +28,17 @@ describe('countback', () => {
     const history = [r({ a: 5, b: 5 }), r({ a: 9, b: 9 })]
     expect(countback(['a', 'b'], history, 'exclusion')).toBeNull()
   })
+
+  it('keeps walking back when the differing round leaves the tied pair level', () => {
+    const history = [r({ a: 1, b: 2, c: 9 }), r({ a: 5, b: 5, c: 8 })]
+    // round 2 differs overall but does NOT separate a from b; round 1 does
+    expect(countback(['a', 'b'], history, 'exclusion')).toEqual({ winner: 'a', atRound: 1 })
+  })
+
+  it('returns null when no round ever gives a unique extreme', () => {
+    const history = [r({ a: 5, b: 5, c: 8 }), r({ a: 7, b: 7, c: 9 })]
+    expect(countback(['a', 'b'], history, 'exclusion')).toBeNull()
+  })
 })
 
 describe('seededDraw', () => {

@@ -26,8 +26,19 @@ export function countback(
     const sorted = [...totals].sort((a, b) =>
       a.votes === b.votes ? a.id.localeCompare(b.id) : a.votes < b.votes ? -1 : 1,
     )
-    const winner = kind === 'exclusion' ? sorted[0]!.id : sorted[sorted.length - 1]!.id
-    return { winner, atRound: i + 1 }
+
+    // Check that the extreme is unique before returning
+    if (kind === 'exclusion') {
+      const minVotes = sorted[0]!.votes
+      const countAtMin = sorted.filter((t) => t.votes === minVotes).length
+      if (countAtMin > 1) continue // Still tied at the minimum
+      return { winner: sorted[0]!.id, atRound: i + 1 }
+    } else {
+      const maxVotes = sorted[sorted.length - 1]!.votes
+      const countAtMax = sorted.filter((t) => t.votes === maxVotes).length
+      if (countAtMax > 1) continue // Still tied at the maximum
+      return { winner: sorted[sorted.length - 1]!.id, atRound: i + 1 }
+    }
   }
   return null
 }
