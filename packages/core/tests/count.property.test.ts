@@ -61,6 +61,7 @@ describe('count - properties', () => {
       const a = await count(input)
       const b = await count(reversed)
       expect(a.winners.map((w) => w.id)).toEqual(b.winners.map((w) => w.id))
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b))
     }
   })
 })
@@ -86,6 +87,7 @@ describe('count - edge cases', () => {
       seats: 1,
     })
     expect(r.winners).toHaveLength(1)
+    expect(r.rounds.some((round) => round.excluded.length > 0)).toBe(true)
   })
 
   it('handles seats >= candidates by electing everyone', async () => {
@@ -110,5 +112,7 @@ describe('count - edge cases', () => {
       seats: 1,
     })
     expect(r.winners).toHaveLength(1)
+    expect(r.tieBreaks.length).toBeGreaterThan(0)
+    expect(['countback', 'seeded_draw']).toContain(r.tieBreaks[0]!.method)
   })
 })
