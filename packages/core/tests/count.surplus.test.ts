@@ -37,9 +37,10 @@ describe('surplus transfers (IGM)', () => {
     const r = await count(
       input({ ballots: ballots([[['a', 'b'], 9], [['c', 'b'], 3]]) }),
     )
-    // b receives 9 papers at 0.44444 = 3.99996
-    const round2 = r.rounds[1]!
-    expect(round2.counts.find((c) => c.candidateId === 'b')!.votes).toBe('3.99996')
+    // b receives 9 papers at 0.44444 in the round a's surplus is
+    // distributed = 3.99996
+    const round1 = r.rounds[0]!
+    expect(round1.counts.find((c) => c.candidateId === 'b')!.votes).toBe('3.99996')
   })
 
   it('sends exhausted papers to non-transferable', async () => {

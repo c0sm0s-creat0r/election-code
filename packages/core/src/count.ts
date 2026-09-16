@@ -1,4 +1,5 @@
 import { type Fixed, SCALE, ZERO, format } from './fixed.js'
+import { bulkExclusionSet } from './exclusion.js'
 import { droopQuota } from './quota.js'
 import { countback, deriveSeed, seededDraw, type History } from './tiebreak.js'
 import type {
@@ -187,9 +188,31 @@ export async function count(input: CountInput): Promise<CountResult> {
       break
     }
 
-    // exclusion arrives in Task 8
-    recordRound(n, [], [])
-    break
+    // nobody at quota: exclude the lowest, in bulk where provably safe
+    const remainingSeats = seats - winners.length
+    const maxExcludable = Math.max(1, cont.length - remainingSeats)
+    const totals = cont.map((c) => ({ id: c.id, votes: totalOf(c.id) }))
+
+    let toExclude = bulkExclusionSet(totals, maxExcludable)
+
+    // a single exclusion among tied-lowest candidates needs a tie-break
+    if (toExclude.length === 1) {
+      const lowest = totals.reduce((a, b) => (b.votes < a.votes ? b : a)).votes
+      const tiedLowest = totals.filter((t) => t.votes === lowest).map((t) => t.id)
+      if (tiedLowest.length > 1) {
+        toExclude = [await resolveTie(tiedLowest, 'exclusion', n)]
+      }
+    }
+
+    const excludedRecord = toExclude.map((id) => ({ candidateId: id, name: nameOf.get(id)! }))
+    for (const id of toExclude) status.set(id, 'excluded')
+    for (const id of toExclude) {
+      const pile = piles.get(id) ?? []
+      piles.set(id, [])
+      for (const paper of pile) place(paper) // at current weight
+    }
+
+    recordRound(n, [], excludedRecord)
   }
 
   return {
