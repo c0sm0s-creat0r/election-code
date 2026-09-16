@@ -4,9 +4,11 @@
 
 **Goal:** Build the dependency-free TypeScript library that counts Australian STV elections, validates ballots, and imports the USU member export — so a disputed count can be re-run offline on a laptop.
 
-**Architecture:** A pnpm workspace package with no runtime dependencies. Fixed-point integer arithmetic underpins everything; the count is a pure function from candidates plus ballots to a round-by-round result. Single-winner IRV is `seats = 1`, not a separate path.
+**Architecture:** An npm workspace package with no runtime dependencies. Fixed-point integer arithmetic underpins everything; the count is a pure function from candidates plus ballots to a round-by-round result. Single-winner IRV is `seats = 1`, not a separate path.
 
-**Tech Stack:** TypeScript 5.x (strict), Vitest, `globalThis.crypto.subtle` for SHA-256. No other runtime dependencies.
+**Tech Stack:** npm workspaces, TypeScript 5.x (strict), Vitest, `globalThis.crypto.subtle` for SHA-256. No other runtime dependencies.
+
+**Toolchain ruling (2026-09-16):** the plan originally specified pnpm. pnpm is not installed on this machine and Node 25 no longer bundles corepack, so using it would require a global install outside the repo. npm 11.6.2 is present, npm workspaces cover everything this plan needs, and npm matches the house style in the sibling notforsale.sydney project. Cost if wrong: pnpm's stricter dependency isolation is lost, and commands read `npm run -w @election/core test` rather than `pnpm -F`.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-election-code-rewrite-design.md`
 
@@ -29,14 +31,14 @@
 ### Task 1: Workspace and package scaffold
 
 **Files:**
-- Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`
+- Create: `package.json`, `tsconfig.base.json`
 - Create: `packages/core/package.json`, `packages/core/tsconfig.json`, `packages/core/vitest.config.ts`
 - Create: `packages/core/src/index.ts`
 - Test: `packages/core/tests/smoke.test.ts`
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: a working `pnpm -F @election/core test` command that later tasks rely on
+- Produces: a working `npm run -w @election/core test` command that later tasks rely on
 
 - [ ] **Step 1: Write the failing test**
 
@@ -59,29 +61,22 @@ describe('package scaffold', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test`
+Run: `npm run -w @election/core test`
 Expected: FAIL — cannot resolve `../src/index.js`
 
 - [ ] **Step 3: Write minimal implementation**
 
-`pnpm-workspace.yaml`:
-
-```yaml
-packages:
-  - 'packages/*'
-  - 'apps/*'
-```
-
-Root `package.json`:
+Root `package.json` (npm workspaces — no separate workspace file):
 
 ```json
 {
   "name": "election-code",
   "private": true,
   "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
@@ -151,14 +146,14 @@ export const VERSION = '1.0.0'
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm install && pnpm -F @election/core test`
+Run: `npm install && npm run -w @election/core test`
 Expected: PASS, 2 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add package.json pnpm-workspace.yaml tsconfig.base.json packages/core pnpm-lock.yaml
-git commit -m "chore: scaffold pnpm workspace and packages/core"
+git add package.json tsconfig.base.json packages/core package-lock.json
+git commit -m "chore: scaffold npm workspace and packages/core"
 ```
 
 ---
@@ -222,7 +217,7 @@ describe('fixed-point', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test fixed`
+Run: `npm run -w @election/core test -- fixed`
 Expected: FAIL — cannot resolve `../src/fixed.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -265,7 +260,7 @@ export function format(f: Fixed): string {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test fixed`
+Run: `npm run -w @election/core test -- fixed`
 Expected: PASS, 5 tests
 
 - [ ] **Step 5: Commit**
@@ -328,7 +323,7 @@ describe('droop quota', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test quota`
+Run: `npm run -w @election/core test -- quota`
 Expected: FAIL — cannot resolve `../src/quota.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -430,7 +425,7 @@ export function droopQuota(validBallots: number, seats: number): Fixed {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test quota`
+Run: `npm run -w @election/core test -- quota`
 Expected: PASS, 4 tests
 
 - [ ] **Step 5: Commit**
@@ -515,7 +510,7 @@ describe('validateBallot', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test ballot`
+Run: `npm run -w @election/core test -- ballot`
 Expected: FAIL — cannot resolve `../src/ballot.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -562,7 +557,7 @@ export function validateBallot(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test ballot`
+Run: `npm run -w @election/core test -- ballot`
 Expected: PASS, 9 tests
 
 - [ ] **Step 5: Commit**
@@ -670,7 +665,7 @@ describe('deriveSeed', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test tiebreak`
+Run: `npm run -w @election/core test -- tiebreak`
 Expected: FAIL — cannot resolve `../src/tiebreak.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -753,7 +748,7 @@ export async function seededDraw(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test tiebreak`
+Run: `npm run -w @election/core test -- tiebreak`
 Expected: PASS, 10 tests
 
 - [ ] **Step 5: Commit**
@@ -847,7 +842,7 @@ describe('count - first preferences', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test count`
+Run: `npm run -w @election/core test -- count`
 Expected: FAIL — cannot resolve `../src/count.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1033,7 +1028,7 @@ export async function count(input: CountInput): Promise<CountResult> {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test count`
+Run: `npm run -w @election/core test -- count`
 Expected: PASS, 4 tests
 
 - [ ] **Step 5: Commit**
@@ -1128,7 +1123,7 @@ describe('surplus transfers (IGM)', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test count.surplus`
+Run: `npm run -w @election/core test -- count.surplus`
 Expected: FAIL — `transferValue` is `'0.00000'`, expected `'0.44444'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1180,7 +1175,7 @@ Note: `totalOf` reads the pile, so an elected candidate must retain a paper wort
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test count`
+Run: `npm run -w @election/core test -- count`
 Expected: PASS, all count tests including the four new ones
 
 - [ ] **Step 5: Commit**
@@ -1309,7 +1304,7 @@ describe('count - exclusions', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test exclusion`
+Run: `npm run -w @election/core test -- exclusion`
 Expected: FAIL — cannot resolve `../src/exclusion.js`; count tests fail with no winner
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1394,7 +1389,7 @@ and replace the `// exclusion arrives in Task 8` block plus its `recordRound(n, 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test`
+Run: `npm run -w @election/core test`
 Expected: PASS, all tests
 
 - [ ] **Step 5: Commit**
@@ -1538,7 +1533,7 @@ describe('count - edge cases', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test property`
+Run: `npm run -w @election/core test -- property`
 Expected: Some failures are likely. Each one is a real bug in Tasks 6–8 — fix the implementation, not the test. Do not relax an assertion to make it pass.
 
 - [ ] **Step 3: Fix whatever the properties expose**
@@ -1550,7 +1545,7 @@ Common causes, in order of likelihood:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test`
+Run: `npm run -w @election/core test`
 Expected: PASS, all tests
 
 - [ ] **Step 5: Commit**
@@ -1671,12 +1666,12 @@ describe('differential vs legacy irv.py at seats = 1', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test differential`
+Run: `npm run -w @election/core test -- differential`
 Expected: FAIL initially — investigate each mismatch. Expect some from the bulk-exclusion safety condition; confirm the new behaviour is correct before moving on, and record any accepted divergence in the test's comment.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test`
+Run: `npm run -w @election/core test`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -1779,7 +1774,7 @@ describe('parseUsuExport', () => {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test usu`
+Run: `npm run -w @election/core test -- usu`
 Expected: FAIL — cannot resolve `../src/usu-import.js`
 
 - [ ] **Step 4: Write minimal implementation**
@@ -1880,7 +1875,7 @@ export function parseUsuExport(csv: string): ImportResult {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test usu`
+Run: `npm run -w @election/core test -- usu`
 Expected: PASS, 7 tests
 
 - [ ] **Step 6: Verify against the real export**
@@ -1979,7 +1974,7 @@ describe('recount', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm -F @election/core test recount`
+Run: `npm run -w @election/core test -- recount`
 Expected: FAIL — cannot resolve `../src/recount.js`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -2041,7 +2036,7 @@ export type {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm -F @election/core test && pnpm -F @election/core typecheck`
+Run: `npm run -w @election/core test && npm run -w @election/core typecheck`
 Expected: PASS, all tests, no type errors
 
 - [ ] **Step 5: Commit**
@@ -2055,8 +2050,8 @@ git commit -m "feat(core): public exports and offline recount"
 
 ## Success criteria for the whole plan
 
-- `pnpm -F @election/core test` passes with no skipped tests.
-- `pnpm -F @election/core typecheck` is clean.
+- `npm run -w @election/core test` passes with no skipped tests.
+- `npm run -w @election/core typecheck` is clean.
 - `packages/core/package.json` has **zero** entries under `dependencies`.
 - The real export parses to `{ total: 1302, eligible: 1298, excluded: 4, shifted: true }`.
 - The differential test agrees with `irv.py` on every case where `irv.py` produced a winner, and produces a winner for every case where it did not.
