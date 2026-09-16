@@ -46,6 +46,12 @@ describe('validateBallot', () => {
     if (!r.ok) expect(r.reason).toMatch(/duplicate/i)
   })
 
+  it('reports unknown before duplicate when a ballot has both', () => {
+    const r = validateBallot(['a', 'a', 'zzz'], CANDIDATES, 1)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toMatch(/unknown/i)
+  })
+
   it('rejects more preferences than candidates', () => {
     expect(validateBallot(['a', 'b', 'c', 'd', 'a'], CANDIDATES, 2).ok).toBe(false)
   })

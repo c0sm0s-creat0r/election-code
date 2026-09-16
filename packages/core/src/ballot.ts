@@ -24,9 +24,12 @@ export function validateBallot(
   }
 
   const known = new Set(candidateIds)
-  const seen = new Set<string>()
   for (const id of preferences) {
     if (!known.has(id)) return { ok: false, reason: `Unknown candidate: ${id}` }
+  }
+
+  const seen = new Set<string>()
+  for (const id of preferences) {
     if (seen.has(id)) return { ok: false, reason: `Duplicate preference: ${id}` }
     seen.add(id)
   }
