@@ -11,27 +11,78 @@ export type ImportResult = {
   excluded: number
   /** true when the export had the 29-column defect */
   shifted: boolean
+  /**
+   * Rows present in the file but not imported: a blank Net Id, or a field
+   * count that is neither 28 nor 29 (malformed - realignment cannot be
+   * safely guessed, so the row is dropped rather than misread).
+   */
+  skipped: number
 }
 
 const HEADER_COLUMNS = 28
 const SHIFT_AT = 10 // an extra source-type-text field appears here
 
-function parseCsvLine(line: string): string[] {
-  const out: string[] = []
+/**
+ * Parse an entire CSV document into rows of fields.
+ *
+ * Quote state is tracked across the WHOLE character stream, not line by
+ * line - a quoted field containing a literal newline (plausible in the
+ * free-text "Officer  Notes" column) does not fracture one logical row
+ * into fragments. A row ends only on a newline (\r\n or bare \n)
+ * encountered OUTSIDE quotes. `""` inside a quoted field is an escaped
+ * literal quote. A trailing newline at end of file does not produce an
+ * extra empty row.
+ */
+function parseCsvRows(csv: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
   let cur = ''
   let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!
+  let started = false // true once the current (unterminated) row has any content
+
+  const n = csv.length
+  let i = 0
+  while (i < n) {
+    const ch = csv[i]!
     if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++ }
-      else if (ch === '"') inQuotes = false
-      else cur += ch
-    } else if (ch === '"') inQuotes = true
-    else if (ch === ',') { out.push(cur); cur = '' }
-    else cur += ch
+      if (ch === '"' && csv[i + 1] === '"') { cur += '"'; i += 2; continue }
+      if (ch === '"') { inQuotes = false; i++; continue }
+      cur += ch
+      i++
+      continue
+    }
+    if (ch === '"') { inQuotes = true; started = true; i++; continue }
+    if (ch === ',') { row.push(cur); cur = ''; started = true; i++; continue }
+    if (ch === '\r' && csv[i + 1] === '\n') {
+      row.push(cur)
+      rows.push(row)
+      row = []
+      cur = ''
+      started = false
+      i += 2
+      continue
+    }
+    if (ch === '\n') {
+      row.push(cur)
+      rows.push(row)
+      row = []
+      cur = ''
+      started = false
+      i++
+      continue
+    }
+    cur += ch
+    started = true
+    i++
   }
-  out.push(cur)
-  return out
+
+  // flush a final row that wasn't terminated by a trailing newline
+  if (started || cur.length > 0 || row.length > 0) {
+    row.push(cur)
+    rows.push(row)
+  }
+
+  return rows
 }
 
 /**
@@ -43,16 +94,21 @@ function parseCsvLine(line: string): string[] {
  * way. "Left Group" sits after it - read from the header position it is 0
  * for every row, which silently grants departed members voting rights.
  *
+ * The shift offset is derived from each row's own field count
+ * (`cells.length - HEADER_COLUMNS`), not assumed to always be exactly one.
+ * A row whose field count is neither 28 nor 29 is malformed - its
+ * alignment cannot be safely guessed, so it is skipped and counted rather
+ * than silently misread.
+ *
  * Only four columns are imported. Email, membership dates and the other two
  * identifiers are deliberately discarded: the roll holds an id and a name
  * and nothing else.
  */
 export function parseUsuExport(csv: string): ImportResult {
-  const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  const headerLine = lines[0]
-  if (!headerLine) throw new Error('parseUsuExport: file has no header row')
+  const rows = parseCsvRows(csv).filter((r) => !(r.length === 1 && (r[0] ?? '').trim() === ''))
+  const header = rows[0]
+  if (!header) throw new Error('parseUsuExport: file has no header row')
 
-  const header = parseCsvLine(headerLine)
   const idx = (name: string) => header.indexOf(name)
 
   const netIdAt = idx('Net Id')
@@ -65,16 +121,25 @@ export function parseUsuExport(csv: string): ImportResult {
 
   const members: RollMember[] = []
   let shifted = false
+  let skipped = 0
 
-  for (const line of lines.slice(1)) {
-    const cells = parseCsvLine(line)
-    const rowShifted = cells.length > HEADER_COLUMNS
-    if (rowShifted) shifted = true
+  for (const cells of rows.slice(1)) {
+    const offset = cells.length - HEADER_COLUMNS
 
-    const at = (i: number) => cells[i >= SHIFT_AT && rowShifted ? i + 1 : i]?.trim() ?? ''
+    if (offset !== 0 && offset !== 1) {
+      // neither 28 nor 29 fields: alignment cannot be safely guessed
+      skipped++
+      continue
+    }
+    if (offset === 1) shifted = true
+
+    const at = (i: number) => cells[i >= SHIFT_AT ? i + offset : i]?.trim() ?? ''
 
     const usuId = at(netIdAt)
-    if (!usuId) continue
+    if (!usuId) {
+      skipped++
+      continue
+    }
 
     members.push({
       usuId,
@@ -85,5 +150,5 @@ export function parseUsuExport(csv: string): ImportResult {
   }
 
   const eligible = members.filter((m) => m.eligible).length
-  return { members, eligible, excluded: members.length - eligible, shifted }
+  return { members, eligible, excluded: members.length - eligible, shifted, skipped }
 }
