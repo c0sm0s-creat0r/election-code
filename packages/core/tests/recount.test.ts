@@ -76,4 +76,87 @@ describe('recount', () => {
     expect(viaCsv.quota).toBe(direct.quota)
     expect(viaCsv).toEqual(direct)
   })
+
+  const stdBallots = [
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 1}`, preferences: ['a', 'b'] })),
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 5}`, preferences: ['b', 'a'] })),
+    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i + 9}`, preferences: ['c', 'a'] })),
+  ]
+
+  it('round-trips a candidate name containing a newline, byte for byte', async () => {
+    const candidates = [
+      { id: 'a', name: 'Smith\nJones' },
+      { id: 'b', name: 'Bo' },
+      { id: 'c', name: 'Cass' },
+    ]
+
+    const producedCandidatesCsv = toCandidatesCsv(candidates)
+    const producedBallotsCsv = toBallotsCsv(stdBallots)
+
+    const viaCsv = await recount(producedBallotsCsv, producedCandidatesCsv, 1, 'e1', 'ee'.repeat(8))
+    const direct = await core.count({
+      candidates,
+      ballots: stdBallots,
+      seats: 1,
+      electionId: 'e1',
+      ballotsSha256: 'ee'.repeat(8),
+    })
+
+    expect(viaCsv.winners).toEqual([{ id: 'a', name: 'Smith\nJones' }])
+    expect(viaCsv.winners[0]?.name).toBe('Smith\nJones')
+    expect(viaCsv).toEqual(direct)
+  })
+
+  it('round-trips a name with a newline, a comma, and an escaped quote together', async () => {
+    const trickyName = 'Smith\n, "Jones"'
+    const candidates = [
+      { id: 'a', name: trickyName },
+      { id: 'b', name: 'Bo' },
+      { id: 'c', name: 'Cass' },
+    ]
+
+    const producedCandidatesCsv = toCandidatesCsv(candidates)
+    const producedBallotsCsv = toBallotsCsv(stdBallots)
+
+    const viaCsv = await recount(producedBallotsCsv, producedCandidatesCsv, 1, 'e1', 'ee'.repeat(8))
+    const direct = await core.count({
+      candidates,
+      ballots: stdBallots,
+      seats: 1,
+      electionId: 'e1',
+      ballotsSha256: 'ee'.repeat(8),
+    })
+
+    expect(viaCsv.winners[0]?.name).toBe(trickyName)
+    expect(viaCsv).toEqual(direct)
+  })
+
+  it('keeps rows aligned when a later candidate (not the first) has a newline in its name', async () => {
+    const candidates = [
+      { id: 'a', name: 'Alex' },
+      { id: 'b', name: 'Bo\nJr' },
+      { id: 'c', name: 'Cass' },
+    ]
+
+    const producedCandidatesCsv = toCandidatesCsv(candidates)
+    const producedBallotsCsv = toBallotsCsv(stdBallots)
+
+    const viaCsv = await recount(producedBallotsCsv, producedCandidatesCsv, 1, 'e1', 'ee'.repeat(8))
+    const direct = await core.count({
+      candidates,
+      ballots: stdBallots,
+      seats: 1,
+      electionId: 'e1',
+      ballotsSha256: 'ee'.repeat(8),
+    })
+
+    // 'c' (unaffected by the embedded newline in 'b') must still parse with
+    // its own id and name, proving the row after the multi-line field did
+    // not drift.
+    const cRound = viaCsv.rounds[0]?.counts.find((r) => r.candidateId === 'c')
+    expect(cRound?.name).toBe('Cass')
+    const bRound = viaCsv.rounds[0]?.counts.find((r) => r.candidateId === 'b')
+    expect(bRound?.name).toBe('Bo\nJr')
+    expect(viaCsv).toEqual(direct)
+  })
 })
