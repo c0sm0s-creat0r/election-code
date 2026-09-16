@@ -133,4 +133,67 @@ describe('parseUsuExport', () => {
     expect(r.members[0]!.usuId).toBe('2500006')
     expect(r.skipped).toBe(1)
   })
+
+  // --- round 2: the whole-file tokenizer that fixed the newline fracture
+  // widened the blast radius of a single stray, un-escaped quote. It no
+  // longer runs away to the end of one line - it swallows every following
+  // newline until another '"' closes it, or until EOF. ---
+
+  it('throws when a quoted field is never closed before end of file', () => {
+    // Exactly one stray quote, and nothing after it to close it: the file
+    // ends still inQuotes. This is unrecoverable - the whole document is
+    // untrustworthy, so refuse it outright rather than flushing a dangling
+    // field into a plausible-looking partial roll.
+    const unterminated = [header, shiftedRow('2500007', 'Never', 'Closed', '-', '0')]
+      .join('\n')
+      .replace('"Never"', '"Never') // drop this field's closing quote
+
+    expect(() => parseUsuExport(unterminated)).toThrow(/unterminated|corrupt/i)
+  })
+
+  it('an even number of stray quotes lets the file terminate, but silently merges the rows in between - and skipped undercounts the real loss', () => {
+    // One stray quote opens a runaway field partway through row 2600002's
+    // "Officer  Notes"; it is never closed on that line. Two more physical
+    // lines follow that contain NO quote characters of their own (as if
+    // they were plain, un-quoted text), so they get swallowed whole as
+    // literal content of the still-open field. A single stray quote three
+    // lines later finally closes it. Net result: the file has an EVEN
+    // number of stray quotes overall, so parseCsvRows does NOT throw - but
+    // three logical member rows (2600002, 2600003, 2600004) have collapsed
+    // into one oversized field.
+    const good1 = shiftedRow('2600001', 'First', 'Good', '-', '0')
+    const corruptLine = [
+      '"900002"', '"2600002"', '"13000002"', '"Stray"', '"Quote"',
+      '"person@example.com"', '"-"', '""', '"Member"', '"0"', '"Web"',
+      '"Joined a group"', '"12/31/2026"', '"1/1/2026 9:00:00 AM"', '"0"', '"0"',
+      '"-"', '"-"', '"Note with a stray',
+    ].join(',')
+    // stand-ins for two more members' rows, swallowed whole because they
+    // carry no quote characters to toggle state back
+    const swallowedA = 'PLAIN,2600003,ThirdPerson,SwallowedWhole'
+    const swallowedB = 'PLAIN,2600004,FourthPerson,AlsoSwallowed'
+    // exactly one quote character: closes the runaway field
+    const closingFragment = 'end of runaway note" ,filler'
+    const good2 = shiftedRow('2600005', 'Last', 'Good', '-', '0')
+
+    const csv = [header, good1, corruptLine, swallowedA, swallowedB, closingFragment, good2].join('\n')
+
+    const r = parseUsuExport(csv)
+
+    // The parse terminates (does not throw) ...
+    expect(r.members).toHaveLength(2) // only 2600001 and 2600005 survive intact
+    expect(r.members.map((m) => m.usuId)).toEqual(['2600001', '2600005'])
+    // ... and the merged row is counted as exactly ONE skipped row ...
+    expect(r.skipped).toBe(1)
+    // ... even though THREE real members (2600002, 2600003, 2600004) are
+    // actually missing from the roll. This is the documented limitation:
+    // `skipped` counts rows, not lost members, once rows have merged. An
+    // officer must not read "1 skipped" as "1 member affected" when the
+    // file is corrupt in this way - which is exactly why an unclosed quote
+    // at EOF (the test above) throws instead of returning a result at all.
+    const intendedMembers = 5 // 2600001..2600005
+    const actuallyAccountedFor = r.members.length + r.skipped
+    expect(actuallyAccountedFor).toBeLessThan(intendedMembers)
+    expect(intendedMembers - actuallyAccountedFor).toBe(2) // 2 of the 3 lost members are invisible to `skipped`
+  })
 })

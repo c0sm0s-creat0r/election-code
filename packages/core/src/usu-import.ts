@@ -32,6 +32,12 @@ const SHIFT_AT = 10 // an extra source-type-text field appears here
  * encountered OUTSIDE quotes. `""` inside a quoted field is an escaped
  * literal quote. A trailing newline at end of file does not produce an
  * extra empty row.
+ *
+ * Throws if the file ends while still inside a quoted field: an unclosed
+ * quote can silently merge multiple logical rows into one oversized field,
+ * which would otherwise be reported as a single malformed/skipped row
+ * while the true number of lost members goes uncounted. A corrupt file is
+ * refused outright rather than partially imported.
  */
 function parseCsvRows(csv: string): string[][] {
   const rows: string[][] = []
@@ -74,6 +80,21 @@ function parseCsvRows(csv: string): string[][] {
     cur += ch
     started = true
     i++
+  }
+
+  // Tracking quotes across the whole file (rather than line by line) is
+  // what lets a genuine embedded newline survive intact - but it also means
+  // a single stray unescaped `"` no longer runs away to the end of one
+  // line; it swallows every following newline and row until another `"`
+  // closes it, or until EOF. If we reach EOF still inQuotes, rows have
+  // already been silently merged and any field count / skipped count
+  // computed from them would understate how many members were actually
+  // lost. Refuse to guess: the whole file is untrustworthy.
+  if (inQuotes) {
+    throw new Error(
+      'parseUsuExport: unterminated quoted field — the export is corrupt. ' +
+        'No roll was imported.',
+    )
   }
 
   // flush a final row that wasn't terminated by a trailing newline
