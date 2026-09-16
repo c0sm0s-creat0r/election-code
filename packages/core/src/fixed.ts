@@ -4,7 +4,8 @@
  * Matches the Scottish STV rules. Chosen over arbitrary-precision rationals
  * deliberately: a published, fixed rule can be checked by hand on paper,
  * which is the point of the whole audit story. BigInt division truncates
- * toward zero natively, and every value here is non-negative.
+ * toward zero natively. All values here must be non-negative; format() and
+ * div() throw if given negative input.
  */
 export type Fixed = bigint
 
@@ -25,6 +26,7 @@ export function div(a: Fixed, b: Fixed): Fixed {
 }
 
 export function format(f: Fixed): string {
+  if (f < ZERO) throw new Error(`fixed: cannot format a negative value: ${f}`)
   const whole = f / SCALE
   const frac = (f % SCALE).toString().padStart(5, '0')
   return `${whole}.${frac}`
