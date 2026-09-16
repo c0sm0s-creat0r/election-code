@@ -44,9 +44,21 @@ ballot file, in front of whoever is disputing it.
 Admin and voter stay separately deployed so the admin bundle is never served
 to a voter's browser. Three deploys, the same number as today.
 
-**Libraries:** Hono (routing), Drizzle ORM with `drizzle-kit` (typed queries,
-versioned D1 migrations), Zod (validation at every boundary), Vitest with
-`@cloudflare/vitest-pool-workers` (integration tests against real D1).
+**Libraries**, each justified rather than assumed:
+
+- **Hono** — routing on Workers. The alternative is hand-rolled URL matching,
+  which is worse at this size.
+- **Zod** — validation at every boundary. Hand-rolling ballot and CSV
+  validation is exactly where quiet correctness bugs live.
+- **Vitest** with `@cloudflare/vitest-pool-workers` — integration tests
+  against real D1 rather than a mock.
+
+**No ORM.** Drizzle was considered and rejected. `wrangler d1 migrations`
+already versions schema natively, the schema is nine tables with simple
+queries, and Drizzle's SQLite builder cannot emit `WITHOUT ROWID` — the one
+clause the entire secret-ballot guarantee rests on. Migrations are hand-written
+SQL against D1's prepared-statement API, with hand-written row types. Ids use
+`crypto.randomUUID()`, which Workers provides; no uuid package.
 
 **Sessions replace the password header.** Today `X-Admin-Token` carries the
 actual password on every request and lives in `localStorage`, readable by any
@@ -598,10 +610,10 @@ for the differential test.
 
 ## 11. Known risks
 
-- **`WITHOUT ROWID` and Drizzle.** Drizzle's SQLite builder does not emit
-  `WITHOUT ROWID` directly. The migration SQL is hand-adjusted after
-  generation, and a test asserts the table is created with it, because losing
-  that clause silently reintroduces the correlation leak.
+- **`WITHOUT ROWID` must not be lost.** Migrations are hand-written SQL
+  precisely so this clause is visible and owned. A test asserts `ballot` is
+  created with it, because losing it silently reintroduces the correlation
+  leak and nothing else would fail.
 - **IGM's known defect.** Accepted with eyes open, documented in the result
   export so a challenged count can be discussed honestly.
 - **Shared per-batch passwords** mean admin actions are attributable to a role

@@ -1,42 +1,31 @@
-react-frontend/node_modules
+# Dependencies
+node_modules/
+.pnpm-store/
 
-# dependencies
-react-frontend/.pnp
-react-frontend/.pnp.js
+# Build output
+dist/
+build/
+.wrangler/
+*.tsbuildinfo
 
-# testing
-react-frontend/coverage
+# Python (legacy backend, removed at cutover)
+.venv/
+__pycache__/
+*.py[cod]
 
-# production
-react-frontend/build
-backend/__pycache__
+# Secrets
+.env
+.env.*
+!.env.example
+.dev.vars
 
-# misc
-react-frontend/.DS_Store
-react-frontend/.env.local
-*/.env.development.local
-.env.test.local
-.env.production.local
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-.vscode
-.venv
-react-frontend/package-lock.json
-
-*/.env
-
-voter-frontend/node_modules
-voter-frontend/package-lock.json
-
-admin-frontend/node_modules
-admin-frontend/package-lock.json
-admin-frontend/src/old_App.jsx
-backend/uploads
-
-# Member exports (PII — never commit)
+# Member exports — PII, never commit
 user_download_members_*.csv
 *.csv
-!docs/**/*.csv
+!tests/fixtures/*.csv
+
+# Local
+.DS_Store
+.vscode/
+.idea/
+*.log
