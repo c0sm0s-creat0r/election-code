@@ -401,19 +401,36 @@ describe('recount: fails closed on a corrupt row', () => {
     )
   })
 
-  it('still accepts a ballot whose preferences field is empty', async () => {
-    // An empty list is a well-formed value - a ballot that ranks nobody -
-    // not a malformation, so it is counted and exhausts immediately.
-    // 'a' reaches the quota of 2 in round 1, so nothing is excluded and the
-    // round's non-transferable total is exactly the one empty ballot.
+  it('refuses to write a candidate id containing the preference separator', () => {
+    // Preferences are pipe-joined into one CSV field, so an id with a '|' in
+    // it splits into two on the way back and the file no longer describes the
+    // election it came from. Enforced at the writer rather than left as a
+    // naming rule somebody downstream has to know.
+    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a|b', 'c'] }])).toThrow(
+      /contains '\|'/,
+    )
+    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a', 'b'] }])).not.toThrow()
+  })
+
+  it('throws on a ballot whose preferences field is empty', async () => {
+    // This test previously asserted the OPPOSITE, on the reasoning that "a
+    // ballot ranking nobody is a well-formed empty list, not a malformation".
+    // That reasoning was wrong, and wrong by recount's own standard. recount
+    // reads nothing but this library's own export, written from records that
+    // validateBallot already accepted - and validateBallot rejects an empty
+    // list outright (spec section 3: a ballot must rank at least `seats`
+    // candidates). So an empty preferences field is exactly as impossible as
+    // 'a||b', which the neighbouring tests already require it to refuse.
+    //
+    // It is not inert, either: `count` divides by `ballots.length` for the
+    // Droop quota, so each such row lifts the quota while putting no vote on
+    // anybody. Five candidates, 2 seats, 23 ballots elects {a,b} at a quota of
+    // 8; append four rows ranking nobody and the quota becomes 10 and the
+    // winners become {b,d}. A hand-added blank field would change the result.
     const csv = 'ballot_id,preferences\n"x1","a"\n"x2","a"\n"x3",""\n'
 
-    const r = await recount(csv, twoCandidates, ...args)
-
-    // The quota still sees three ballots: the empty one was counted, not
-    // dropped.
-    expect(r.quota).toBe('2.00000')
-    expect(r.rounds[0]?.nonTransferable).toBe('1.00000')
-    expect(r.winners.map((w) => w.id)).toEqual(['a'])
+    await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
+      'recount: row 4 has an empty preference list — the CSV is corrupt. No count was performed.',
+    )
   })
 })

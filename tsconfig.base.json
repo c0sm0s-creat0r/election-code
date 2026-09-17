@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
     "declaration": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true

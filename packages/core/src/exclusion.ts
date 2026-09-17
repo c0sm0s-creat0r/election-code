@@ -1,4 +1,4 @@
-import { type Fixed, ZERO } from './fixed.js'
+import type { Fixed } from './fixed.js'
 
 /**
  * Bulk exclusion, as the Australian Senate count uses - WITH the safety

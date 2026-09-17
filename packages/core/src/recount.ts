@@ -140,6 +140,20 @@ export function toCandidatesCsv(candidates: Candidate[]): string {
 export function toBallotsCsv(ballots: CountBallot[]): string {
   const lines = [BALLOT_HEADER.join(',')]
   for (const b of ballots) {
+    for (const pref of b.preferences) {
+      // Preferences are pipe-joined into one field, so an id containing '|'
+      // splits into two on the way back and the file no longer describes the
+      // election it came from. Refuse to write it rather than leave "do not
+      // put a pipe in a candidate id" as a rule somebody downstream has to
+      // know.
+      if (pref.includes('|')) {
+        throw new Error(
+          `toBallotsCsv: candidate id ${JSON.stringify(pref)} contains '|', ` +
+            `which is the preference separator, so it cannot round-trip ` +
+            `through recount().`,
+        )
+      }
+    }
     lines.push(`${csvField(b.id)},${csvField(b.preferences.join('|'))}`)
   }
   return lines.join('\n') + '\n'
@@ -235,11 +249,18 @@ export async function recount(
     }
     seenBallotIds.add(id)
 
-    // An empty preferences field is a well-formed empty list - a ballot that
-    // ranks nobody - and `count` exhausts it immediately. An empty token
-    // *inside* a list ('a||b', '|a', 'a|') is not: it is a malformed value
-    // that the previous `filter(Boolean)` quietly repaired.
-    const preferences = prefsField === '' ? [] : prefsField.split('|')
+    // An empty preferences field is exactly as impossible as 'a||b', and is
+    // refused for the same reason. Spec section 3 requires a ballot to rank at
+    // least `seats` candidates, and `validateBallot` rejects an empty list, so
+    // no export this library wrote can contain one: the row was added or
+    // emptied by hand. It is not harmless either - `count` uses
+    // `ballots.length` as the Droop denominator, so a row that ranks nobody
+    // raises the quota while contributing nothing to any candidate, and enough
+    // of them change who wins.
+    if (prefsField === '') {
+      throw corrupt(`row ${row.n} has an empty preference list`)
+    }
+    const preferences = prefsField.split('|')
     const seenPrefs = new Set<string>()
     for (const pref of preferences) {
       if (pref === '') {
