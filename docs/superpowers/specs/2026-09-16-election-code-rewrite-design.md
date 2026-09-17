@@ -190,6 +190,14 @@ CREATE TABLE audit_log (
 A superseded result is never deleted. "The officer changed the tie-break and
 the winner changed" must remain a visible fact with both counts attached.
 
+**`election_seal` and `election_result` deliberately carry no `ON DELETE CASCADE`**,
+unlike every other foreign key here. D1 enforces foreign keys, so once an election is
+sealed it cannot be deleted — and neither can its batch, because the batch-to-election
+cascade runs into the seal's restriction. Verified against the migration. The audit
+record is therefore undeletable by construction rather than by policy. The asymmetry is
+the point: `voter_roll` and `check_in` are purged after the AGM, while the sealed count
+is permanent.
+
 ### Ballot seal definition
 
 `ballots_sha256` is SHA-256 over the canonical serialisation of every ballot
