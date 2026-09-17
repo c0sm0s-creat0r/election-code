@@ -50,6 +50,18 @@ describe('schema', () => {
     expect(names.sort()).toEqual(['election_id', 'id', 'preferences', 'receipt_hash', 'voided'])
   })
 
+  it('gives voter_roll exactly the spec columns, nothing else', async () => {
+    // The roll holds 1,302 real people's names during an AGM and is purged
+    // afterwards; its shape is a data-minimisation control. This guards
+    // against a later migration silently adding a column (e.g. email) with
+    // nothing else to catch it.
+    const cols = await env.DB.prepare(`PRAGMA table_info(voter_roll)`).all<{ name: string }>()
+    const names = cols.results.map((r) => r.name)
+    expect(names.sort()).toEqual(
+      ['batch_id', 'usu_id', 'first_name', 'last_name', 'eligible'].sort(),
+    )
+  })
+
   it('makes (election_id, usu_id) the double-vote guard on vote_receipt', async () => {
     await env.DB.prepare(
       `INSERT INTO batch (id,slug,name,officer_hash,door_hash,branding,created_at)
