@@ -1,6 +1,6 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-17
+**Last updated:** 2026-09-17 (Plan 2a execution begun)
 **Branch:** `rewrite/core-counting` (NOT merged, NOT mergeable — see Open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 
@@ -12,7 +12,8 @@
 | --- | --- |
 | Spec | `docs/superpowers/specs/2026-09-16-election-code-rewrite-design.md` — approved, amended twice |
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
-| Plan 2 — `apps/api` | **Not started.** Plan not yet written |
+| Plan 2a — `apps/api` foundation | **Plan written**, execution started. `docs/superpowers/plans/2026-09-17-api-foundation.md` — 6 tasks |
+| Plan 2b — `apps/api` endpoints | Not written. Scope listed at the end of the 2a plan |
 | Plan 3 — frontends | Not started |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
 | Execution ledger | `.superpowers/sdd/2026-09-16-core-counting-library/progress.md` (gitignored, on disk only) |
@@ -136,3 +137,20 @@ Deliberately NOT exported: `bulkExclusionSet`, `countback`, `History`, `SCALE`, 
 - Secret ballot: `ballot` has no voter reference and no timestamp; `vote_receipt` is the roll mark-off.
 - Receipts confirm inclusion only, never preferences.
 - Roll import + door check-in both required for eligibility.
+
+---
+
+## 9. Plan 2a known weakness
+
+Tasks 2 and 5 specify their implementation in prose plus exhaustive tests rather than
+verbatim code. The schema is quoted exactly in spec §2 (10 `CREATE TABLE` statements,
+`WITHOUT ROWID` included) so Task 2's pointer is precise; Task 5's router description is
+weaker. In both cases the tests are complete and carry the contract. If an implementer
+reports ambiguity there, believe them and tighten the brief rather than pushing on.
+
+## 10. SDD workspaces
+
+- Plan 1: `.superpowers/sdd/2026-09-16-core-counting-library/progress.md` (27 rulings)
+- Plan 2a: `.superpowers/sdd/2026-09-17-api-foundation/progress.md`
+
+Both are gitignored. This file is the committed summary; the ledgers hold the detail.
