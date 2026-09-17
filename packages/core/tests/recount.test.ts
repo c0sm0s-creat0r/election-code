@@ -159,4 +159,41 @@ describe('recount', () => {
     expect(bRound?.name).toBe('Bo\nJr')
     expect(viaCsv).toEqual(direct)
   })
+
+  it('throws on an unterminated quoted field in candidatesCsv rather than mangling rows', async () => {
+    const badCandidatesCsv = 'candidate_id,name\n"a","Alex\n"b","Bo"\n"c","Cass"\n'
+
+    await expect(
+      recount(ballotsCsv, badCandidatesCsv, 1, 'e1', 'ee'.repeat(8)),
+    ).rejects.toThrow(/unterminated|corrupt/i)
+  })
+
+  it('throws on an unterminated quoted field in ballotsCsv rather than mangling rows', async () => {
+    const badBallotsCsv = 'ballot_id,preferences\n"b1","a\n"b2","b"\n'
+
+    await expect(
+      recount(badBallotsCsv, candidatesCsv, 1, 'e1', 'ee'.repeat(8)),
+    ).rejects.toThrow(/unterminated|corrupt/i)
+  })
+
+  it('drops a whitespace-only line between two valid candidate rows instead of admitting a phantom candidate', async () => {
+    const candidatesCsvWithBlankLine = 'candidate_id,name\n"a","Alex"\n   \n"b","Bo"\n'
+    const minimalBallotsCsv = 'ballot_id,preferences\n"b1","a"\n"b2","b"\n'
+
+    const r = await recount(minimalBallotsCsv, candidatesCsvWithBlankLine, 1, 'e1', 'ee'.repeat(8))
+
+    expect(r.rounds[0]?.counts).toHaveLength(2)
+    for (const c of r.rounds[0]?.counts ?? []) {
+      expect(c.candidateId.trim()).not.toBe('')
+    }
+  })
+
+  it('still drops a genuinely empty line between two valid candidate rows', async () => {
+    const candidatesCsvWithEmptyLine = 'candidate_id,name\n"a","Alex"\n\n"b","Bo"\n'
+    const minimalBallotsCsv = 'ballot_id,preferences\n"b1","a"\n"b2","b"\n'
+
+    const r = await recount(minimalBallotsCsv, candidatesCsvWithEmptyLine, 1, 'e1', 'ee'.repeat(8))
+
+    expect(r.rounds[0]?.counts).toHaveLength(2)
+  })
 })

@@ -69,13 +69,24 @@ function parseCsvRows(text: string): string[][] {
       i++
     }
   }
+  if (inQuotes) {
+    // `recount` only ever reads this library's own export. An unterminated
+    // quote there means the file was truncated or tampered with - exactly
+    // the corruption a recount tool exists to catch. Fail closed rather
+    // than silently absorbing the rest of the file into one field.
+    throw new Error(
+      'recount: unterminated quoted field — the CSV is truncated or corrupt. No count was performed.',
+    )
+  }
   if (field !== '' || row.length > 0) {
     endRow()
   }
 
-  // Drop lines that were entirely blank (a lone empty field), matching the
-  // old behaviour of filtering out whitespace-only lines before parsing.
-  return rows.filter((r) => !(r.length === 1 && r[0] === ''))
+  // Drop lines that were entirely blank (a lone empty or whitespace-only
+  // field), matching the old behaviour of filtering out whitespace-only
+  // lines before parsing. Trimming here only decides whether a row is
+  // blank - the field values themselves are never trimmed.
+  return rows.filter((r) => !(r.length === 1 && r[0] !== undefined && r[0].trim() === ''))
 }
 
 /** Quote a CSV field, escaping any `"` inside it as `""`. */
