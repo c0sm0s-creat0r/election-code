@@ -2,6 +2,18 @@ import { count } from './count.js'
 import type { Candidate, CountBallot, CountResult } from './types.js'
 
 /**
+ * A parsed CSV row, carrying the 1-based ordinal of the row as it appears
+ * in the file (the header is row 1, and blank rows are counted before they
+ * are dropped) so that an error can point an auditor at the offending line.
+ */
+type CsvRow = { n: number; fields: string[] }
+
+/** Every refusal reads the same way and ends the same way. */
+function corrupt(detail: string): Error {
+  return new Error(`recount: ${detail} — the CSV is corrupt. No count was performed.`)
+}
+
+/**
  * Parse a whole CSV document into rows of fields, honouring double-quoted
  * fields that may contain commas, `\r\n` or `\n`, and `""`-escaped quote
  * characters - a row only ends on a newline seen outside quotes.
@@ -17,12 +29,13 @@ import type { Candidate, CountBallot, CountResult } from './types.js'
  * third-party export - a different input with different failure modes.
  * Written separately here on purpose; do not import or share it.
  */
-function parseCsvRows(text: string): string[][] {
-  const rows: string[][] = []
+function parseCsvRows(text: string): CsvRow[] {
+  const rows: CsvRow[] = []
   let row: string[] = []
   let field = ''
   let inQuotes = false
   let i = 0
+  let ordinal = 0
   const n = text.length
 
   const endField = () => {
@@ -31,7 +44,7 @@ function parseCsvRows(text: string): string[][] {
   }
   const endRow = () => {
     endField()
-    rows.push(row)
+    rows.push({ n: ++ordinal, fields: row })
     row = []
   }
 
@@ -82,12 +95,25 @@ function parseCsvRows(text: string): string[][] {
     endRow()
   }
 
-  // Drop lines that were entirely blank (a lone empty or whitespace-only
-  // field), matching the old behaviour of filtering out whitespace-only
-  // lines before parsing. Trimming here only decides whether a row is
-  // blank - the field values themselves are never trimmed.
-  return rows.filter((r) => !(r.length === 1 && r[0] !== undefined && r[0].trim() === ''))
+  // Drop rows that carry no content at all - every field blank. This has to
+  // look at *every* field, not just a single-field row: a bare `,` parses to
+  // `['', '']`, and a row of empty quoted fields to `['', '', '']`. Letting
+  // either through adds a phantom record, and for ballots that inflates
+  // `ballots.length`, which feeds the Droop quota directly - a blank line in
+  // the audit file would change who wins.
+  //
+  // Trimming here only decides whether a row is blank. Field values are
+  // never trimmed or otherwise rewritten, so a candidate named '  Alex  '
+  // survives with its spaces intact.
+  return rows.filter((r) => !r.fields.every((f) => f.trim() === ''))
 }
+
+/**
+ * The header row of each table, named once so the writer below and the
+ * reader in `recount` cannot drift apart.
+ */
+const CANDIDATE_HEADER = ['candidate_id', 'name'] as const
+const BALLOT_HEADER = ['ballot_id', 'preferences'] as const
 
 /** Quote a CSV field, escaping any `"` inside it as `""`. */
 function csvField(value: string): string {
@@ -99,7 +125,7 @@ function csvField(value: string): string {
  * The inverse of the candidates half of `recount`'s input.
  */
 export function toCandidatesCsv(candidates: Candidate[]): string {
-  const lines = ['candidate_id,name']
+  const lines = [CANDIDATE_HEADER.join(',')]
   for (const c of candidates) {
     lines.push(`${csvField(c.id)},${csvField(c.name)}`)
   }
@@ -112,7 +138,7 @@ export function toCandidatesCsv(candidates: Candidate[]): string {
  * of the ballots half of `recount`'s input.
  */
 export function toBallotsCsv(ballots: CountBallot[]): string {
-  const lines = ['ballot_id,preferences']
+  const lines = [BALLOT_HEADER.join(',')]
   for (const b of ballots) {
     lines.push(`${csvField(b.id)},${csvField(b.preferences.join('|'))}`)
   }
@@ -120,10 +146,51 @@ export function toBallotsCsv(ballots: CountBallot[]): string {
 }
 
 /**
+ * Take the data rows of one of our two tables, refusing anything whose shape
+ * the writers above could not have produced.
+ *
+ * `recount` reads only this library's own output, so the header is fixed and
+ * every data row has exactly two fields. A missing header would make
+ * `slice(1)` eat a real record - for ballots, one fewer ballot changes the
+ * quota - and a row with the wrong field count means the line was
+ * hand-edited. Neither is something to guess past.
+ */
+function dataRows(csv: string, header: readonly [string, string]): CsvRow[] {
+  const rows = parseCsvRows(csv)
+  const first = rows[0]
+  const headerOk =
+    first !== undefined &&
+    first.fields.length === header.length &&
+    header.every((h, i) => first.fields[i]?.trim() === h)
+  if (!headerOk) {
+    throw corrupt(`expected a "${header.join(',')}" header row`)
+  }
+
+  const body = rows.slice(1)
+  for (const row of body) {
+    if (row.fields.length !== header.length) {
+      throw corrupt(
+        `row ${row.n} has ${row.fields.length} field(s), expected ${header.length}`,
+      )
+    }
+  }
+  return body
+}
+
+/**
  * Re-run a count from the exported CSVs alone - no database, no network.
  *
  * This is what makes the audit story concrete: a challenged result can be
  * recomputed in front of whoever is challenging it, from files they hold.
+ *
+ * Every refusal below shares one rationale. The only input `recount` ever
+ * reads is this library's own export, written by `toCandidatesCsv` /
+ * `toBallotsCsv` from records that `validateBallot` already accepted. So a
+ * malformation here cannot have come from us: the file was truncated,
+ * hand-edited or tampered with, which is precisely the situation a recount
+ * exists to detect. Silently dropping such a row is the same error as
+ * silently keeping it - both hand back a confident result computed from a
+ * file that is not what it claims to be.
  */
 export async function recount(
   ballotsCsv: string,
@@ -132,16 +199,68 @@ export async function recount(
   electionId: string,
   ballotsSha256: string,
 ): Promise<CountResult> {
-  const rows = (csv: string) => parseCsvRows(csv).slice(1)
+  const candidates: Candidate[] = []
+  const seenCandidateIds = new Set<string>()
+  for (const row of dataRows(candidatesCsv, CANDIDATE_HEADER)) {
+    const id = row.fields[0] ?? ''
+    const name = row.fields[1] ?? ''
+    if (id.trim() === '') {
+      throw corrupt(`row ${row.n} has an empty candidate id`)
+    }
+    // `count` keys status, piles and names by candidate id. A repeat would
+    // collapse in those maps but still appear twice in every round table and
+    // in the continuing-candidate count, changing when the field is declared
+    // full and how many may be excluded in bulk.
+    if (seenCandidateIds.has(id)) {
+      throw corrupt(`row ${row.n} repeats candidate id ${JSON.stringify(id)}`)
+    }
+    seenCandidateIds.add(id)
+    candidates.push({ id, name })
+  }
 
-  const candidates = rows(candidatesCsv).map(([id, name]) => ({
-    id: id ?? '',
-    name: name ?? '',
-  }))
-  const ballots = rows(ballotsCsv).map(([id, prefs]) => ({
-    id: id ?? '',
-    preferences: (prefs ?? '').split('|').filter(Boolean),
-  }))
+  const ballots: CountBallot[] = []
+  const seenBallotIds = new Set<string>()
+  for (const row of dataRows(ballotsCsv, BALLOT_HEADER)) {
+    const id = row.fields[0] ?? ''
+    const prefsField = row.fields[1] ?? ''
+    if (id.trim() === '') {
+      throw corrupt(`row ${row.n} has an empty ballot id`)
+    }
+    // Ballot ids are unique in the export they came from. A repeat means the
+    // file was concatenated or a line duplicated by hand - and a duplicated
+    // ballot is counted twice, inflating `ballots.length` and moving the
+    // quota, the same harm as a phantom row.
+    if (seenBallotIds.has(id)) {
+      throw corrupt(`row ${row.n} repeats ballot id ${JSON.stringify(id)}`)
+    }
+    seenBallotIds.add(id)
+
+    // An empty preferences field is a well-formed empty list - a ballot that
+    // ranks nobody - and `count` exhausts it immediately. An empty token
+    // *inside* a list ('a||b', '|a', 'a|') is not: it is a malformed value
+    // that the previous `filter(Boolean)` quietly repaired.
+    const preferences = prefsField === '' ? [] : prefsField.split('|')
+    const seenPrefs = new Set<string>()
+    for (const pref of preferences) {
+      if (pref === '') {
+        throw corrupt(`row ${row.n} has an empty preference`)
+      }
+      // A preference naming someone absent from candidatesCsv is not a lost
+      // vote to be shrugged off: `count` would skip it as non-continuing and
+      // exhaust the paper, so deleting one candidate line would silently
+      // redistribute all of their votes. The two files no longer describe
+      // the same election, so there is nothing honest to recompute.
+      if (!seenCandidateIds.has(pref)) {
+        throw corrupt(`row ${row.n} lists preference ${JSON.stringify(pref)}, which is not a candidate`)
+      }
+      if (seenPrefs.has(pref)) {
+        throw corrupt(`row ${row.n} repeats preference ${JSON.stringify(pref)}`)
+      }
+      seenPrefs.add(pref)
+    }
+
+    ballots.push({ id, preferences })
+  }
 
   return count({ candidates, ballots, seats, electionId, ballotsSha256 })
 }
