@@ -194,8 +194,17 @@ the winner changed" must remain a visible fact with both counts attached.
 
 `ballots_sha256` is SHA-256 over the canonical serialisation of every ballot
 row for the election, sorted by `id` ascending, each row rendered as
-`id|preferences_json|voided` and joined with newlines. Deterministic, and
-reproducible from the exported ballot CSV.
+`id|preferences_json|voided` and joined with newlines. Deterministic.
+
+**It is not currently reproducible from the exported ballot CSV.**
+`toBallotsCsv` emits `ballot_id,preferences` only — no `voided` column — so a
+recount can recompute the count but cannot verify that the ballots it was
+handed are the sealed ones. `recount` takes `ballotsSha256` as a parameter and
+uses it solely to seed tie-break draws; it never recomputes or compares it.
+
+Closing this requires the export to carry `voided` and `recount` to recompute
+the digest and refuse a mismatch. Until then the offline recount proves the
+arithmetic, not the provenance — state it that way to anyone relying on it.
 
 ### Atomicity
 
@@ -295,7 +304,18 @@ Resolution ladder, matching Australian practice:
 1. **Countback** — compare totals at the most recent earlier round where they
    differed; the lower one loses.
 2. **Seeded draw** — if level at every round including the first, draw
-   deterministically from `seed = sha256(election_id || ballots_sha256)`.
+   deterministically from a seed over the election id, the sealed ballot
+   hash and the tie-break id. The exact byte string hashed is, verbatim:
+
+   ```
+   sha256("<election_id>|<ballots_sha256>|<tie_break_id>")
+   ```
+
+   The `|` separators are part of the input and must be published with it.
+   A candidate re-deriving the seed from a bare concatenation would get a
+   different digest and wrongly conclude the draw had been steered.
+   The tie-break id is included so two ties in one count do not resolve
+   to the same index.
    Because the seed derives from the sealed ballots, anyone can re-derive it
    and verify the draw, and it cannot be manipulated without breaking the
    seal. The count never stalls.
