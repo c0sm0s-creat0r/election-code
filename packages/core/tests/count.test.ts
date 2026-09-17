@@ -48,14 +48,78 @@ describe('count - first preferences', () => {
     expect(r.winners).toEqual([])
   })
 
-  it('conserves votes in every round', async () => {
+  // NOTE: there is deliberately no "conserves votes in every round" test here.
+  // recordRound() throws on any leak, exactly, in bigint - so such a test could
+  // only ever run after count() had already succeeded, and the float version of
+  // it (toBeCloseTo) was strictly weaker than the check it restated.
+})
+
+describe('count - every candidate at quota is elected in the same round (C1)', () => {
+  // 5 candidates, 3 seats, 11 ballots, quota = floor(11/4)+1 = 3. Zero
+  // tie-breaks, so the whole result is forced by the arithmetic.
+  //
+  // In round 1 both c (4 first preferences) and d (3) are at or above quota.
+  // Electing only c and leaving d 'continuing' sends c's surplus ONTO d, who
+  // has already been paid a quota - lifting d to 3.50000 and manufacturing a
+  // 0.50000 surplus that is then redistributed by d's preferences. That gave
+  // the third seat to e instead of b. See Commonwealth Electoral Act s273(8)
+  // (elected at that count) and s273(1) (an elected candidate is no longer
+  // continuing, so a surplus must skip them).
+  const fixture = 'edacb cdbea becad beadc cdbae edbca cbead daebc caebd daecb dceab'.split(' ')
+  const run = () =>
+    count({
+      candidates: ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id.toUpperCase() })),
+      ballots: fixture.map((prefs, i) => ({ id: `b${i}`, preferences: prefs.split('') })),
+      seats: 3,
+      electionId: 'c1',
+      ballotsSha256: 'ee'.repeat(8),
+    })
+
+  it('elects both quota-holders in round 1', async () => {
+    const r = await run()
+    expect(r.quota).toBe('3.00000')
+    const round1 = r.rounds[0]!
+    expect(round1.elected.map((e) => e.candidateId)).toEqual(['c', 'd'])
+    // c leads on 4.00000 so is elected first and distributes first; d is at
+    // quota exactly and has nothing to distribute.
+    expect(round1.elected[0]).toMatchObject({ surplus: '1.00000', transferValue: '0.25000' })
+    expect(round1.elected[1]).toMatchObject({ surplus: '0.00000', transferValue: '0.00000' })
+    // d is never inflated past the quota by c's surplus
+    expect(round1.counts.find((x) => x.candidateId === 'd')!.votes).toBe('3.00000')
+  })
+
+  it('gives the third seat to b, with no tie-break anywhere', async () => {
+    const r = await run()
+    expect(r.winners.map((w) => w.id)).toEqual(['c', 'd', 'b'])
+    expect(r.tieBreaks).toEqual([])
+  })
+})
+
+describe('count - the zero-vote guard', () => {
+  it('holds no count when every ballot ranks nobody', async () => {
+    // Three ballots, three candidates, one seat, and not a single vote on
+    // anybody. Guarding only on ballots.length === 0 let this run two seeded
+    // draws and "elect" a winner on 0.00000 votes.
     const r = await count(
-      base({ ballots: ballots([[['a', 'b'], 6], [['b', 'a'], 4]]) }),
+      base({
+        ballots: [
+          { id: 'x1', preferences: [] },
+          { id: 'x2', preferences: [] },
+          { id: 'x3', preferences: [] },
+        ],
+      }),
     )
-    for (const round of r.rounds) {
-      const total =
-        round.counts.reduce((s, c) => s + Number(c.votes), 0) + Number(round.nonTransferable)
-      expect(total).toBeCloseTo(10, 4)
-    }
+    expect(r.quota).toBe('2.00000') // still reported: floor(3/2)+1
+    expect(r.rounds).toEqual([])
+    expect(r.winners).toEqual([])
+    expect(r.tieBreaks).toEqual([])
+  })
+
+  it('holds no count when every preference names a non-candidate', async () => {
+    const r = await count(
+      base({ ballots: [{ id: 'x1', preferences: ['ghost'] }] }),
+    )
+    expect(r.winners).toEqual([])
+    expect(r.rounds).toEqual([])
   })
 })

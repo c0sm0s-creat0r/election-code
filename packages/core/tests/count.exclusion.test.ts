@@ -57,8 +57,53 @@ describe('count - exclusions', () => {
     // (Overriding with the complement-of-winner, i.e. the candidate who was
     // already excluded naturally, is a no-op with only two candidates.)
     const naturalWinner = natural.winners[0]!.id
-    const overridden = await count({ ...args, overrides: { 'tb-1': naturalWinner } })
+    const overridden = await count({
+      ...args,
+      overrides: {
+        'tb-1': { candidateId: naturalWinner, reason: 'Lots drawn in the room, as the constitution requires' },
+      },
+    })
     expect(overridden.tieBreaks[0]!.method).toBe('officer_override')
     expect(overridden.winners[0]!.id).not.toBe(natural.winners[0]!.id)
+    // I3: the officer's own words reach the result document, rather than the
+    // hardcoded string 'Officer override' that used to overwrite them.
+    expect(overridden.tieBreaks[0]!.reason).toBe(
+      'Lots drawn in the room, as the constitution requires',
+    )
+  })
+
+  it('refuses an override whose tie-break id matches nothing in this count', async () => {
+    // The realistic path: an officer overrides tb-2, a ballot is then voided
+    // and the count re-run, and there is no longer a tb-2. Silently ignoring
+    // it would report a result the officer never sanctioned while the audit
+    // log claims an override was applied.
+    await expect(
+      count({
+        candidates: [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }],
+        ballots: ballots([[['a'], 5], [['b'], 5]]),
+        seats: 1,
+        electionId: 'e1',
+        ballotsSha256: 'deadbeef00000000',
+        overrides: { 'tb-7': { candidateId: 'a', reason: 'stale' } },
+      }),
+    ).rejects.toThrow('override for tie-break tb-7 was not applied')
+  })
+
+  it('refuses an override naming a candidate outside that tie', async () => {
+    await expect(
+      count({
+        candidates: [
+          { id: 'a', name: 'Alex' },
+          { id: 'b', name: 'Bo' },
+          { id: 'c', name: 'Cass' },
+        ],
+        // a wins outright; b and c tie for the exclusion that never happens
+        ballots: ballots([[['a'], 6], [['b'], 2], [['c'], 2]]),
+        seats: 1,
+        electionId: 'e1',
+        ballotsSha256: 'deadbeef00000000',
+        overrides: { 'tb-1': { candidateId: 'a', reason: 'stale' } },
+      }),
+    ).rejects.toThrow(/tb-1/)
   })
 })

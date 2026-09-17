@@ -8,6 +8,31 @@ function lcg(seed: number) {
   return () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648)
 }
 
+/**
+ * Fisher-Yates, driven by the same lcg so failures stay reproducible.
+ *
+ * This replaces `[...candidates].sort(() => rnd() - 0.5)`, which is not a
+ * shuffle at all: an inconsistent comparator leaves V8's sort near the
+ * identity permutation, so "200 random elections" were 200 near-identical
+ * ballot papers and the space these properties claim to explore was mostly
+ * unvisited.
+ */
+function shuffle<T>(items: readonly T[], rnd: () => number): T[] {
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    const a = out[i]!
+    out[i] = out[j]!
+    out[j] = a
+  }
+  return out
+}
+
+/** '12.34567' -> 1234567n, so round tables compare exactly, never as floats. */
+function fx(formatted: string): bigint {
+  return BigInt(formatted.replace('.', ''))
+}
+
 function randomElection(seed: number): CountInput {
   const rnd = lcg(seed)
   const candidateCount = 2 + Math.floor(rnd() * 6)
@@ -18,7 +43,7 @@ function randomElection(seed: number): CountInput {
   const seats = 1 + Math.floor(rnd() * Math.min(3, candidateCount))
   const ballotCount = Math.floor(rnd() * 60)
   const ballots = Array.from({ length: ballotCount }, (_, i) => {
-    const shuffled = [...candidates].sort(() => rnd() - 0.5).map((c) => c.id)
+    const shuffled = shuffle(candidates, rnd).map((c) => c.id)
     const depth = seats + Math.floor(rnd() * (candidateCount - seats + 1))
     return { id: `b${i}`, preferences: shuffled.slice(0, Math.max(seats, depth)) }
   })
@@ -42,6 +67,54 @@ describe('count - properties', () => {
       if (input.candidates.length < input.seats) continue
       const r = await count(input)
       expect(r.winners.length).toBe(input.seats)
+    }
+  })
+
+  it('never lets the non-transferable total go down', async () => {
+    // Votes only ever leave the count: a paper exhausts, or a fraction is lost
+    // to truncation. Nothing ever comes back out of non-transferable, so a
+    // decrease would mean the count had found votes from somewhere.
+    for (let seed = 1; seed <= 200; seed++) {
+      const r = await count(randomElection(seed))
+      let previous = 0n
+      for (const round of r.rounds) {
+        const current = fx(round.nonTransferable)
+        expect(current >= previous).toBe(true)
+        previous = current
+      }
+    }
+  })
+
+  it('elects every winner either on quota or by the fill rule', async () => {
+    // The only two ways the spec allows a seat to be filled (section 3): the
+    // candidate reached the quota, or the continuing field had shrunk to the
+    // number of seats left and everyone still standing was elected.
+    for (let seed = 1; seed <= 200; seed++) {
+      const r = await count(randomElection(seed))
+      const quota = fx(r.quota)
+      const declared: string[] = []
+
+      for (const [index, round] of r.rounds.entries()) {
+        for (const e of round.elected) {
+          declared.push(e.candidateId)
+          const held = round.counts.find((c) => c.candidateId === e.candidateId)!
+          // An elected candidate's pile is cut back to exactly the quota once
+          // their surplus is distributed, so the total they actually held when
+          // elected is the recorded votes plus the recorded surplus.
+          const atElection = fx(held.votes) + fx(e.surplus)
+          if (atElection >= quota) continue
+
+          // Below quota: only the fill rule can do that, and it fills every
+          // remaining seat at once in the final round.
+          expect(e.surplus).toBe('0.00000')
+          expect(e.transferValue).toBe('0.00000')
+          expect(index).toBe(r.rounds.length - 1)
+          expect(round.counts.some((c) => c.status === 'continuing')).toBe(false)
+        }
+      }
+
+      // and every winner was declared exactly once, in some round
+      expect(declared.sort()).toEqual(r.winners.map((w) => w.id).sort())
     }
   })
 
