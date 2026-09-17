@@ -1,7 +1,7 @@
 {
   "name": "election-api",
   "main": "src/index.ts",
-  "compatibility_date": "2026-09-01",
+  "compatibility_date": "2026-03-10",
   "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
     { "binding": "DB", "database_name": "election", "database_id": "PLACEHOLDER_SET_BY_WRANGLER" }
