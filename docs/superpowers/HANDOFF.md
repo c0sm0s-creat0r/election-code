@@ -106,6 +106,11 @@ execution, not only code-vs-plan during it.
 7. **`WITHOUT ROWID` on `ballot`** is the whole basis of the secret-ballot guarantee. Migrations are
    hand-written SQL precisely so this clause is visible. A test must assert the table has it.
 8. **No ORM.** `wrangler d1 migrations` + D1's prepared-statement API + hand-written row types.
+9. **All three deployments must share one apex domain.** `SameSite` is judged by
+   registrable domain, not subdomain. On `*.workers.dev` / `*.pages.dev` / `*.vercel.app`
+   the session cookie is never sent and every authenticated request fails silently.
+   Auth cannot be tested on preview URLs. CORS must send an explicit origin with
+   `Access-Control-Allow-Credentials: true`, never `*`.
 
 ---
 

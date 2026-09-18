@@ -65,6 +65,23 @@ actual password on every request and lives in `localStorage`, readable by any
 XSS. Instead: sign in once, receive a signed `HttpOnly` `Secure`
 `SameSite=Strict` cookie scoped to one batch and one role, with a short TTL.
 
+> **Hard deployment precondition — the auth design fails silently without it.**
+> `SameSite` is judged by registrable domain (eTLD+1), not by subdomain. All three
+> deployments must therefore sit on custom subdomains of **one shared apex**:
+> `api.dalyell.com.au`, `vote.dalyell.com.au`, `admin.dalyell.com.au`. If any of
+> them is left on a platform default — `*.workers.dev`, `*.pages.dev`, `*.vercel.app`,
+> `*.onrender.com` — the API and the frontend are different registrable domains, the
+> browser never sends the cookie, and **every authenticated request fails with no
+> error that points at the cause**.
+>
+> This also means authentication does not work on preview or `*.workers.dev` URLs.
+> Test auth against the real hostnames, or against `localhost` where all three share
+> an origin.
+>
+> The API must additionally send `Access-Control-Allow-Credentials: true` with an
+> explicit allow-listed origin — never `*`, which browsers reject in combination with
+> credentials — and the frontends must fetch with `credentials: 'include'`.
+
 **Live counts use polling, not WebSockets.** The double-vote race is settled
 by a database constraint, so a Durable Object buys nothing here. A room of a
 few hundred people polling every three seconds is negligible.
