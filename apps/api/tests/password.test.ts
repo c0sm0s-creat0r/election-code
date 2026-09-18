@@ -31,5 +31,6 @@ describe('password hashing', () => {
   it('returns false rather than throwing on a malformed stored value', async () => {
     expect(await verifyPassword('x', 'garbage')).toBe(false)
     expect(await verifyPassword('x', '')).toBe(false)
+    expect(await verifyPassword('x', 'pbkdf2-sha256$210000$!!!$###')).toBe(false)
   })
 })
