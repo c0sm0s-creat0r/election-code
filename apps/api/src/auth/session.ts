@@ -6,6 +6,8 @@
  * one batch and one role, so a door volunteer's cookie cannot authorise an
  * officer route even on the same browser.
  */
+import { timingSafeEqual } from './timing-safe-equal.js'
+
 export type Role = 'officer' | 'door' | 'voter'
 
 export type Session = {
@@ -30,13 +32,6 @@ const unb64url = (s: string): Uint8Array<ArrayBuffer> => {
 async function hmac(data: string, secret: string): Promise<Uint8Array<ArrayBuffer>> {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   return new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(data)))
-}
-
-function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!
-  return diff === 0
 }
 
 export async function signSession(session: Session, secret: string): Promise<string> {

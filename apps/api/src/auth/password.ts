@@ -7,6 +7,8 @@
  *
  * Encoded form: pbkdf2-sha256$<iterations>$<salt-b64>$<hash-b64>
  */
+import { timingSafeEqual } from './timing-safe-equal.js'
+
 const SCHEME = 'pbkdf2-sha256'
 const ITERATIONS = 210_000
 const SALT_BYTES = 16
@@ -25,14 +27,6 @@ export async function hashPassword(plain: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES))
   const bits = await derive(plain, salt, ITERATIONS)
   return `${SCHEME}$${ITERATIONS}$${b64(salt.buffer)}$${b64(bits)}`
-}
-
-/** Constant-time comparison. Never short-circuit on the first differing byte. */
-function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!
-  return diff === 0
 }
 
 export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
