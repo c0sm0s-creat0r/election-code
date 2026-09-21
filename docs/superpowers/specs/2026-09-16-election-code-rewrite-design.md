@@ -463,7 +463,9 @@ watch turnout → close → review the result with full round-by-round transfers
 exhaustion and tie-breaks → export.
 
 Exports: attendance CSV, **anonymous ballot CSV** so a disputed count can be
-re-run offline against `packages/core`, and the sealed result as JSON.
+re-run offline against `packages/core`, the candidate CSV that ballot file needs
+(`recount` refuses a preference naming an absent candidate, so the ballots alone
+cannot be replayed), and the sealed result as JSON.
 
 ### The ballot UI is rebuilt, not ported
 
@@ -520,6 +522,8 @@ GET    /api/batches/:id/elections/:eid/result
 POST   /api/batches/:id/elections/:eid/result/override  {tie_break_id, resolved_id, reason}
 GET    /api/batches/:id/elections/:eid/attendance.csv
 GET    /api/batches/:id/elections/:eid/ballots.csv
+GET    /api/batches/:id/elections/:eid/candidates.csv
+GET    /api/batches/:id/elections/:eid/result.json
 GET    /api/batches/:id/attendance.csv
 ```
 

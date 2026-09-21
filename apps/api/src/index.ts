@@ -11,6 +11,7 @@ import { receipts } from './routes/receipts.js'
 import { close } from './routes/close.js'
 import { result } from './routes/result.js'
 import { override } from './routes/override.js'
+import { exports_ } from './routes/exports.js'
 
 export type Env = {
   DB: D1Database
@@ -89,6 +90,7 @@ app.route('/', receipts)
 app.route('/', close)
 app.route('/', result)
 app.route('/', override)
+app.route('/', exports_)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
