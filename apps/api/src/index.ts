@@ -5,6 +5,11 @@ import { auth } from './routes/auth.js'
 
 export type Env = {
   DB: D1Database
+  /**
+   * Fixed-window rate-limit counters. Configuration, not a dependency — see
+   * src/middleware/rateLimit.ts for why the numbers are as loose as they are.
+   */
+  RATE_LIMIT: KVNamespace
   SUPER_ADMIN_KEY: string
   SESSION_SECRET: string
   /**

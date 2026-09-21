@@ -19,6 +19,7 @@ export default defineWorkersConfig(async () => {
           wrangler: { configPath: './wrangler.jsonc' },
           miniflare: {
             d1Databases: ['DB'],
+            kvNamespaces: ['RATE_LIMIT'],
             bindings: {
               TEST_MIGRATIONS: migrations,
               SUPER_ADMIN_KEY: 'super-secret-test-key',

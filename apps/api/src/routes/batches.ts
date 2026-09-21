@@ -5,6 +5,7 @@ import { hashPassword } from '../auth/password.js'
 import { timingSafeEqual } from '../auth/timing-safe-equal.js'
 import { auditLogStatement, recordAudit } from '../db/audit.js'
 import type { BatchRow } from '../db/types.js'
+import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 
 // The voter-facing URL is vote.<domain>/<slug>: reject anything that would
 // not survive being one URL path segment (e.g. containing `/` or `..`)
@@ -80,7 +81,12 @@ const isUniqueSlugViolation = (err: unknown): boolean =>
 
 export const batches = new Hono<{ Bindings: Env }>()
 
-batches.post('/api/batches', async (c) => {
+// Limited before anything else runs. Plan 2a made a *denied* attempt write an
+// audit row -- deliberately, since this is the descendant of the legacy
+// unauthenticated tenant-creation hole -- which turned a zero-work 401 into an
+// unauthenticated D1 write. The row is entirely attacker-uncontrolled, but it
+// was unbounded.
+batches.post('/api/batches', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
   // The super-admin key is checked before the body is read at all: an
   // unauthorised caller should not be able to probe validation behaviour.
   const provided = c.req.header('x-super-admin-key')
