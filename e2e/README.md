@@ -31,5 +31,9 @@ production.
 
 ## It is not part of `npm test`
 
-It needs a downloaded browser binary. The default suite must never depend on one, so the root script
-is `npm run e2e`, separately.
+It needs a downloaded browser binary. The default suite must never depend on one.
+
+**This workspace's script is deliberately called `e2e`, not `test`.** The root `npm test` runs
+`--workspaces --if-present`, so naming it `test` silently pulls Playwright into every run of the
+default suite — which happened once and was caught by noticing Playwright output where it did not
+belong.

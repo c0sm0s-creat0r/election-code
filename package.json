@@ -10,7 +10,7 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "e2e": "npm run test --workspace @election/e2e"
+    "e2e": "npm run e2e --workspace @election/e2e"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.21",
