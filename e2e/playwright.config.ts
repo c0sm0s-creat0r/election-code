@@ -12,7 +12,7 @@ export default defineConfig({
   // One test, and it must not be flaky-retried into looking healthy.
   retries: 0,
   reporter: [['list']],
-  globalSetup: './globalSetup.ts',
+  globalSetup: './seed.ts',
   use: { baseURL: 'http://localhost:5173' },
   webServer: [
     {

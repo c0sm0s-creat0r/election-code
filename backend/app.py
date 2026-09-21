@@ -430,6 +430,6 @@ def download_all_attendance(batch_id):
 
 if __name__ == "__main__":
     host = os.getenv("FLASK_HOST", "127.0.0.1")
-    port = int(os.getenv("FLASK_PORT", "4500"))
+    port = int(os.getenv("FLASK_PORT", "4000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     app.run(host=host, port=port, debug=debug)

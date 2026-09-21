@@ -103,6 +103,25 @@ describe('DoorDesk', () => {
     expect(writes).not.toHaveBeenCalled()
   })
 
+  it('does NOT refetch the whole roll to check someone in', async () => {
+    // ~50 KB per tap over venue wifi, 1,300 times, is the cost this avoids.
+    stubApi(); await show()
+    const rollFetches = () =>
+      fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith('/roll')).length
+    const before = rollFetches()
+    fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /undo check-in for Ada Lovelace/i })).toBeTruthy())
+    expect(rollFetches()).toBe(before)
+  })
+
+  it('updates the row locally so the check-in is visible immediately', async () => {
+    stubApi(); await show()
+    fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /undo check-in for Ada Lovelace/i })).toBeTruthy())
+  })
+
   it('shows an already-checked-in member as checked, with an undo', async () => {
     stubApi(); await show()
     expect(screen.getByRole('button', { name: /undo check-in for Alan Turing/i })).toBeTruthy()

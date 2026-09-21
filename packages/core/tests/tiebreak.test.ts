@@ -44,22 +44,22 @@ describe('countback', () => {
 describe('seededDraw', () => {
   it('is deterministic for the same seed and tie id', async () => {
     const seed = await deriveSeed('election-1', 'abc123', 'tb-1')
-    const a = await seededDraw(['x', 'y', 'z'], seed, 'tb-1')
-    const b = await seededDraw(['x', 'y', 'z'], seed, 'tb-1')
+    const a = await seededDraw(['x', 'y', 'z'], seed)
+    const b = await seededDraw(['x', 'y', 'z'], seed)
     expect(a).toBe(b)
   })
 
   it('is independent of the order the tied candidates are passed in', async () => {
     const seed = await deriveSeed('election-1', 'abc123', 'tb-1')
-    const a = await seededDraw(['x', 'y', 'z'], seed, 'tb-1')
-    const b = await seededDraw(['z', 'y', 'x'], seed, 'tb-1')
+    const a = await seededDraw(['x', 'y', 'z'], seed)
+    const b = await seededDraw(['z', 'y', 'x'], seed)
     expect(a).toBe(b) // sorted internally, so caller order cannot steer it
   })
 
   it('always returns one of the tied candidates', async () => {
     for (const id of ['tb-1', 'tb-2', 'tb-3', 'tb-4', 'tb-5']) {
       const seed = await deriveSeed('e', 'deadbeef', id)
-      expect(['x', 'y', 'z']).toContain(await seededDraw(['x', 'y', 'z'], seed, id))
+      expect(['x', 'y', 'z']).toContain(await seededDraw(['x', 'y', 'z'], seed))
     }
   })
 })

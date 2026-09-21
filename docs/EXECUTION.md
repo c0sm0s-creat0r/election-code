@@ -269,11 +269,23 @@ you: the check belongs to the auditor.
 | Symptom | Cause | What to do |
 | --- | --- | --- |
 | Sign-in works, everything after fails | The three hosts are not on one apex, so the cookie is never sent | Fix the hostnames. **Do not** set `origin: '*'` |
-| A door tablet shows a permission error mid-queue | The door session lapsed (1 hour, no renewal) | Sign in again. The 401/403 split exists so this reads as "sign in", not "not allowed" |
+| A door tablet shows a permission error mid-queue | The door session lapsed (see lifetimes below) | Sign in again. The 401/403 split exists so this reads as "sign in", not "not allowed" |
 | "Too many attempts" | Rate limit. 30/10min on staff sign-in, 300/10min on voting | Wait. The window is ten minutes, not an hour |
 | Close succeeded but there is no result | Worker died between the status flip and the seal | Click close again. It detects closed-but-unsealed and finishes sealing |
 | A voter says their vote did not go through | Usually it did — a lost response cannot return the receipt | Check the attendance export for their ID. They cannot get the receipt back; `LIMITATIONS.md` §1 |
 | A member is not on the roll | Stale export | Re-import a corrected export, or use **Add member** at the door |
+
+### Session lifetimes
+
+| Role | Lifetime | Why |
+| --- | --- | --- |
+| Officer | 8 hours | An AGM runs long, and re-authenticating mid-count is worse than a longer session on a laptop the officer controls |
+| Voter | 4 hours | Long enough for a late-running agenda, short enough that a phone left on a table is not live tomorrow |
+| Door | 1 hour | It lives on a volunteer's phone, which may be handed round or left somewhere |
+
+None of them renew. A door volunteer working a long queue **will** be asked to sign in again, which is
+expected rather than a fault — and eligibility is re-checked inside the ballot transaction regardless
+of how fresh any cookie is, so the TTLs are a convenience bound rather than the security control.
 
 ---
 

@@ -20,7 +20,7 @@
  * can. One catch-all button would mean a volunteer's finger decides whether a
  * stranger gets a ballot.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   addDoorVoter, addGuest, checkIn, getQuorum, getRoll, listGuests, removeGuest, undoCheckIn,
   type Guest, type Quorum, type RollEntry,
@@ -29,50 +29,60 @@ import { staffMessage } from '../errorMessage.js'
 
 export type DoorDeskProps = { batchId: string }
 
-const matches = (entry: RollEntry, term: string): boolean => {
-  const needle = term.trim().toLowerCase()
-  if (needle === '') return true
-  const full = `${entry.first_name} ${entry.last_name}`.toLowerCase()
-  return (
-    entry.last_name.toLowerCase().includes(needle) ||
-    entry.first_name.toLowerCase().includes(needle) ||
-    full.includes(needle) ||
-    entry.usu_id.includes(needle)
-  )
-}
+/** A roll row with its search text precomputed, so a keystroke allocates nothing. */
+type Searchable = RollEntry & { haystack: string }
+
+const searchable = (entry: RollEntry): Searchable => ({
+  ...entry,
+  // Matching the full name covers both parts, so there is nothing to check
+  // separately. The id is here because a member hands over a card, not a spelling.
+  haystack: `${entry.first_name} ${entry.last_name} ${entry.usu_id}`.toLowerCase(),
+})
 
 export function DoorDesk({ batchId }: DoorDeskProps) {
-  const [roll, setRoll] = useState<RollEntry[]>([])
+  const [roll, setRoll] = useState<Searchable[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
   const [quorum, setQuorum] = useState<Quorum | undefined>(undefined)
   const [term, setTerm] = useState('')
   const [error, setError] = useState('')
   const [adding, setAdding] = useState<'none' | 'guest' | 'member'>('none')
 
-  const refresh = async () => {
+  /** The full load: the roll, the guests and the counts. Once, on arrival. */
+  const loadAll = useCallback(async () => {
     try {
       const [rollRows, guestRows, counts] = await Promise.all([
         getRoll(batchId), listGuests(batchId), getQuorum(batchId),
       ])
-      setRoll(rollRows)
+      setRoll(rollRows.map(searchable))
       setGuests(guestRows)
       setQuorum(counts)
     } catch (caught) {
       setError(staffMessage(caught))
     }
-  }
+  }, [batchId])
 
-  useEffect(() => { void refresh() }, [batchId])
+  useEffect(() => { void loadAll() }, [loadAll])
 
-  // Filtering happens here, over data already in memory — no request per
-  // keystroke, and it still works with the network gone.
-  const found = useMemo(() => roll.filter((entry) => matches(entry, term)), [roll, term])
+  const found = useMemo(() => {
+    const needle = term.trim().toLowerCase()
+    return needle === '' ? roll : roll.filter((entry) => entry.haystack.includes(needle))
+  }, [roll, term])
+
+  /**
+   * A check-in patches the one row it changed and refetches four integers.
+   *
+   * Reloading the whole roll instead would be ~50 KB per tap, so a night of
+   * 1,300 check-ins would pull ~65 MB over venue wifi and re-render the list
+   * every time — which also defeats the point of holding it in memory.
+   */
+  const checkedInAt = (usuId: string, at: number | null) =>
+    setRoll((rows) => rows.map((r) => (r.usu_id === usuId ? { ...r, checked_in_at: at } : r)))
 
   const act = async (action: () => Promise<unknown>) => {
     setError('')
     try {
       await action()
-      await refresh()
+      setQuorum(await getQuorum(batchId))
     } catch (caught) {
       setError(staffMessage(caught))
     }
@@ -108,7 +118,10 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
               <button
                 type="button"
                 aria-label={`Undo check-in for ${entry.first_name} ${entry.last_name}`}
-                onClick={() => void act(() => undoCheckIn(batchId, entry.usu_id))}
+                onClick={() => void act(async () => {
+                  await undoCheckIn(batchId, entry.usu_id)
+                  checkedInAt(entry.usu_id, null)
+                })}
               >
                 Checked in — undo
               </button>
@@ -117,7 +130,10 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
                 type="button"
                 className="primary"
                 aria-label={`Check in ${entry.first_name} ${entry.last_name}`}
-                onClick={() => void act(() => checkIn(batchId, entry.usu_id))}
+                onClick={() => void act(async () => {
+                  await checkIn(batchId, entry.usu_id)
+                  checkedInAt(entry.usu_id, Date.now())
+                })}
               >
                 Check in
               </button>
@@ -139,7 +155,10 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
                 <button
                   type="button"
                   aria-label={`Remove guest ${guest.name}`}
-                  onClick={() => void act(() => removeGuest(batchId, guest.id))}
+                  onClick={() => void act(async () => {
+                    await removeGuest(batchId, guest.id)
+                    setGuests((gs) => gs.filter((g) => g.id !== guest.id))
+                  })}
                 >
                   Remove
                 </button>
@@ -160,6 +179,7 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
           onAdd={(name, note) => act(async () => {
             await addGuest(batchId, name, note)
             setAdding('none')
+            await loadAll()
           })}
         />
       )}
@@ -170,6 +190,7 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
           onAdd={(usuId, first, last) => act(async () => {
             await addDoorVoter(batchId, usuId, first, last)
             setAdding('none')
+            await loadAll()
           })}
         />
       )}

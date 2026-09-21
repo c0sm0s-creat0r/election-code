@@ -126,7 +126,7 @@ export async function count(input: CountInput): Promise<CountResult> {
       return back.winner
     }
     const seed = await deriveSeed(electionId, ballotsSha256, id)
-    const drawn = await seededDraw(tied, seed, id)
+    const drawn = await seededDraw(tied, seed)
     tieBreaks.push({
       id, kind, round: roundNo, candidates: tied, resolved: drawn,
       method: 'seeded_draw', resolvedAtRound: null, seed, reason: null,

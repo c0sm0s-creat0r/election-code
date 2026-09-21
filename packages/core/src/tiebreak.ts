@@ -70,11 +70,7 @@ export function deriveSeed(
  * lexicographically first so the caller's ordering cannot influence the
  * outcome. index = first 8 bytes of the seed, big-endian, mod n.
  */
-export async function seededDraw(
-  tied: string[],
-  seedHex: string,
-  _tieBreakId: string,
-): Promise<string> {
+export async function seededDraw(tied: string[], seedHex: string): Promise<string> {
   const sorted = [...tied].sort((a, b) => a.localeCompare(b))
   const seedInt = BigInt(`0x${seedHex.slice(0, 16)}`)
   const index = Number(seedInt % BigInt(sorted.length))

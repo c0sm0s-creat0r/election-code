@@ -27,80 +27,49 @@ const rollCsv = [
   `"600001","${USU_ID}","11000001","Ada","${SURNAME}","ada@example.com","-","","Member","0","Web","Joined a group","12/31/2026","1/1/2026 9:00:00 AM","0","0","-","-","-","-","","","0","0","","","","",""`,
 ].join('\n')
 
-async function expectOk(res: Response, what: string): Promise<Response> {
+async function post(path: string, what: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(`${API}${path}`, { method: 'POST', ...init })
   if (!res.ok) throw new Error(`seed: ${what} failed with ${res.status}: ${await res.text()}`)
   return res
 }
 
 export default async function seed(): Promise<void> {
-  const created = await expectOk(
-    await fetch(`${API}/api/batches`, {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': SUPER_KEY },
-      body: JSON.stringify({
-        name: 'E2E Society',
-        slug: SLUG,
-        officer_password: OFFICER_PASSWORD,
-        door_password: DOOR_PASSWORD,
-        branding: { title: 'E2E AGM', org_name: 'E2E Society', accent_color: '#2563eb', logo_url: '' },
-      }),
+  const created = await post('/api/batches', 'create batch', {
+    headers: { ...json, 'x-super-admin-key': SUPER_KEY },
+    body: JSON.stringify({
+      name: 'E2E Society',
+      slug: SLUG,
+      officer_password: OFFICER_PASSWORD,
+      door_password: DOOR_PASSWORD,
+      branding: { title: 'E2E AGM', org_name: 'E2E Society', accent_color: '#2563eb', logo_url: '' },
     }),
-    'create batch',
-  )
+  })
   const { id: batchId } = (await created.json()) as { id: string }
 
-  const officerCookie = cookieOf(await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/officer/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ password: OFFICER_PASSWORD }),
-    }),
-    'officer sign-in',
-  ))
-  const doorCookie = cookieOf(await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/door/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ password: DOOR_PASSWORD }),
-    }),
-    'door sign-in',
-  ))
+  const officerCookie = cookieOf(await post(
+    `/api/batches/${batchId}/officer/session`, 'officer sign-in',
+    { headers: json, body: JSON.stringify({ password: OFFICER_PASSWORD }) }))
+  const doorCookie = cookieOf(await post(
+    `/api/batches/${batchId}/door/session`, 'door sign-in',
+    { headers: json, body: JSON.stringify({ password: DOOR_PASSWORD }) }))
 
   const upload = new FormData()
   upload.append('file', new File([rollCsv], 'members.csv', { type: 'text/csv' }))
-  await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/roll`, {
-      method: 'POST', headers: { cookie: officerCookie }, body: upload,
-    }),
-    'roll import',
-  )
+  await post(`/api/batches/${batchId}/roll`, 'roll import',
+    { headers: { cookie: officerCookie }, body: upload })
 
-  const election = await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/elections`, {
-      method: 'POST', headers: { ...json, cookie: officerCookie },
-      body: JSON.stringify({ name: 'President', seats: 1 }),
-    }),
-    'create election',
-  )
+  const election = await post(`/api/batches/${batchId}/elections`, 'create election',
+    { headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name: 'President', seats: 1 }) })
   const { id: electionId } = (await election.json()) as { id: string }
 
   for (const name of [CANDIDATE, 'Bo']) {
-    await expectOk(
-      await fetch(`${API}/api/batches/${batchId}/elections/${electionId}/candidates`, {
-        method: 'POST', headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name }),
-      }),
-      `add candidate ${name}`,
-    )
+    await post(`/api/batches/${batchId}/elections/${electionId}/candidates`, `add candidate ${name}`,
+      { headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name }) })
   }
 
-  await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/elections/${electionId}/open`, {
-      method: 'POST', headers: { cookie: officerCookie },
-    }),
-    'open election',
-  )
+  await post(`/api/batches/${batchId}/elections/${electionId}/open`, 'open election',
+    { headers: { cookie: officerCookie } })
 
-  await expectOk(
-    await fetch(`${API}/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { ...json, cookie: doorCookie },
-      body: JSON.stringify({ usu_id: USU_ID }),
-    }),
-    'check in',
-  )
+  await post(`/api/batches/${batchId}/check-in`, 'check in',
+    { headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: USU_ID }) })
 }

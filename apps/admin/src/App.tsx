@@ -20,34 +20,13 @@ import { getBatchBySlug, type Batch } from './api.js'
 
 // Keep every one of these a dynamic import. A static import anywhere in this file
 // pulls that screen back into the entry chunk and silently undoes the split.
-const DoorRoute = lazy(async () => {
-  const module = await import('./door/index.js')
-  return { default: module.DoorRoute }
-})
-const OfficerSignIn = lazy(async () => {
-  const module = await import('./screens/OfficerSignIn.js')
-  return { default: module.OfficerSignIn }
-})
-const RollImport = lazy(async () => {
-  const module = await import('./screens/RollImport.js')
-  return { default: module.RollImport }
-})
-const Exports = lazy(async () => {
-  const module = await import('./screens/Exports.js')
-  return { default: module.Exports }
-})
-const Settings = lazy(async () => {
-  const module = await import('./screens/Settings.js')
-  return { default: module.Settings }
-})
-const Result = lazy(async () => {
-  const module = await import('./screens/Result.js')
-  return { default: module.Result }
-})
-const Elections = lazy(async () => {
-  const module = await import('./screens/Elections.js')
-  return { default: module.Elections }
-})
+const DoorRoute = lazy(() => import('./door/index.js').then((m) => ({ default: m.DoorRoute })))
+const OfficerSignIn = lazy(() => import('./screens/OfficerSignIn.js').then((m) => ({ default: m.OfficerSignIn })))
+const RollImport = lazy(() => import('./screens/RollImport.js').then((m) => ({ default: m.RollImport })))
+const Exports = lazy(() => import('./screens/Exports.js').then((m) => ({ default: m.Exports })))
+const Settings = lazy(() => import('./screens/Settings.js').then((m) => ({ default: m.Settings })))
+const Result = lazy(() => import('./screens/Result.js').then((m) => ({ default: m.Result })))
+const Elections = lazy(() => import('./screens/Elections.js').then((m) => ({ default: m.Elections })))
 
 function BatchShell({ children }: { children: (batch: Batch) => React.ReactNode }) {
   const { slug } = useParams()

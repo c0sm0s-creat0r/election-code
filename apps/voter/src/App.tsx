@@ -17,7 +17,9 @@ import { Receipt } from './screens/Receipt.js'
 const slugFromPath = (): string => (window.location.pathname.split('/')[1] ?? '').trim()
 
 type Screen =
-  | { kind: 'signIn' }
+  // `resume` carries a ballot that was in progress when the session lapsed, so
+  // signing in again returns to it with the ranking intact.
+  | { kind: 'signIn'; resume?: { index: number; draft: string[] } }
   | { kind: 'ballot'; index: number; draft?: string[] }
   | { kind: 'receipt'; token: string; index: number }
   | { kind: 'done' }
@@ -28,12 +30,6 @@ export function App() {
   const [firstName, setFirstName] = useState('')
   const [screen, setScreen] = useState<Screen>({ kind: 'signIn' })
   const [loadError, setLoadError] = useState('')
-  /**
-   * A ballot in progress when the session lapsed. Held here rather than inside the
-   * sign-in screen, because it has to survive that screen being unmounted and
-   * remounted, and it is what the next successful sign-in returns to.
-   */
-  const [pending, setPending] = useState<{ index: number; draft: string[] } | undefined>(undefined)
 
   useEffect(() => {
     const slug = slugFromPath()
@@ -97,11 +93,8 @@ export function App() {
             setFirstName(name)
             // Back to the ballot they were on, with the ranking they had.
             setScreen(
-              pending
-                ? { kind: 'ballot', index: pending.index, draft: pending.draft }
-                : { kind: 'ballot', index: 0 },
+              screen.resume ? { kind: 'ballot', ...screen.resume } : { kind: 'ballot', index: 0 },
             )
-            setPending(undefined)
           }}
         />
       )}
@@ -117,8 +110,7 @@ export function App() {
           // the voter nothing.
           onSessionLost={(draft) => {
             setFirstName('')
-            setPending({ index: screen.index, draft })
-            setScreen({ kind: 'signIn' })
+            setScreen({ kind: 'signIn', resume: { index: screen.index, draft } })
           }}
           {...(screen.draft ? { initialRanking: screen.draft } : {})}
         />
