@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import csv from './fixtures/usu-sample.csv?raw'
+import { signIn, sha256Hex } from './helpers.js'
 
 const KEY = 'super-secret-test-key'
 const json = { 'content-type': 'application/json' }
@@ -122,6 +123,24 @@ async function runWholeElection() {
   await SELF.fetch(`https://example.com/api/receipts/${first}/void`, { method: 'POST' })
   await submit(voters[0]!, [candidates[1]!, candidates[0]!])
 
+  // ...and on through the result path: close, seal, count, edit the branding,
+  // then purge. Every audited action Plan 2c added runs here, which is what
+  // makes the inventory below a check rather than a snapshot of one half.
+  const officer = { cookie: officerCookie }
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/close`, {
+    method: 'POST', headers: officer,
+  })
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/result`, {
+    headers: officer,
+  })
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/branding`, {
+    method: 'PATCH', headers: { ...json, ...officer },
+    body: JSON.stringify({ title: 'AGM', org_name: 'Soc', accent_color: '#123456', logo_url: '' }),
+  })
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
+    method: 'DELETE', headers: officer,
+  })
+
   return { batchId, electionId }
 }
 
@@ -145,13 +164,17 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
       'ballot.void',
       'batch.create',
       'batch.create.denied',
+      'branding.update',
       'candidate.add',
       'candidate.update',
       'check_in.add',
       'check_in.remove',
+      'election.close',
+      'election.count',
       'election.create',
       'election.open',
       'roll.import',
+      'roll.purge',
       'session.door.ok',
       'session.officer.fail',
       'session.officer.ok',
@@ -206,5 +229,43 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
     const live = await env.DB.prepare('SELECT count(*) c FROM ballot WHERE voided = 0').first<{ c: number }>()
     const voters = await env.DB.prepare('SELECT count(*) c FROM vote_receipt').first<{ c: number }>()
     expect(live!.c).toBe(voters!.c)
+  })
+
+  it('holds no ballot-to-voter link once the election is closed', async () => {
+    // Plan 2b's live_receipt_hash is cleared at close and the purge cannot
+    // reintroduce it. This is the bound on the exposure that column accepts.
+    await runWholeElection()
+    const row = await env.DB
+      .prepare('SELECT count(*) c FROM vote_receipt WHERE live_receipt_hash IS NOT NULL')
+      .first<{ c: number }>()
+    expect(row!.c).toBe(0)
+  })
+
+  it('keeps the audit record while holding no member names', async () => {
+    // What the retention rule is for: a checkable count, and none of the names.
+    await runWholeElection()
+    for (const table of ['voter_roll', 'check_in']) {
+      const row = await env.DB.prepare(`SELECT count(*) c FROM ${table}`).first<{ c: number }>()
+      expect(row!.c, table).toBe(0)
+    }
+    for (const table of ['ballot', 'election_seal', 'election_result', 'vote_receipt']) {
+      const row = await env.DB.prepare(`SELECT count(*) c FROM ${table}`).first<{ c: number }>()
+      expect(row!.c, table).toBeGreaterThan(0)
+    }
+  })
+
+  it('still verifies the exported ballots against the seal after everything', async () => {
+    const { batchId, electionId } = await runWholeElection()
+    const officerCookie = await signIn(batchId, 'officer', 'officer-password-1')
+    const text = await (await SELF.fetch(
+      `https://example.com/api/batches/${batchId}/elections/${electionId}/ballots.csv`,
+      { headers: { cookie: officerCookie } },
+    )).text()
+    const canonical = text.trim().split('\n').slice(1).map((line) => {
+      const [id, prefs, voided] = line.split('","').map((field) => field.replace(/^"|"$/g, ''))
+      return `${id}|${JSON.stringify(prefs!.split('|').filter(Boolean))}|${Number(voided!)}`
+    }).join('\n')
+    const seal = await env.DB.prepare('SELECT ballots_sha256 FROM election_seal').first<{ ballots_sha256: string }>()
+    expect(await sha256Hex(canonical)).toBe(seal!.ballots_sha256)
   })
 })
