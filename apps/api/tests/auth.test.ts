@@ -119,15 +119,14 @@ describe('requireRole middleware (via the officer test-seam route)', () => {
     // batch's route with a cookie whose batchId doesn't match the route.
     const otherId = crypto.randomUUID()
     const token = await signSession({ batchId: otherId, role: 'officer', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)
-    const cookie = `es_officer_${otherId}=${token}`
-    // Hit the *real* batch's route while carrying a cookie scoped (by name)
-    // to otherId — the browser would never do this, but the middleware's
-    // explicit batchId comparison must not rely solely on the cookie name.
+    // Hit the *real* batch's route while carrying a cookie sent under that
+    // batch's own cookie name, but whose signed payload names otherId — the
+    // browser would never construct this, but the middleware's explicit
+    // batchId comparison must not rely solely on the cookie name matching.
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {
       headers: { cookie: `es_officer_${batchId}=${token}` },
     })
     expect(res.status).toBe(403)
-    expect(cookie).toBeTruthy()
   })
 
   it('rejects a tampered/garbage cookie value', async () => {

@@ -1,6 +1,6 @@
 export type AuditEntry = {
   batchId: string
-  role: 'super' | 'officer' | 'door'
+  role: 'super' | 'officer' | 'door' | 'voter'
   action: string
   detail?: unknown
 }

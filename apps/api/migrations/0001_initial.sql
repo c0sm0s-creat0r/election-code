@@ -88,7 +88,7 @@ CREATE TABLE election_result (       -- one row per count run
 CREATE TABLE audit_log (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   batch_id TEXT NOT NULL,
-  role     TEXT NOT NULL,            -- super | officer | door
+  role     TEXT NOT NULL,            -- super | officer | door | voter
   action   TEXT NOT NULL,
   detail   TEXT,
   at       INTEGER NOT NULL

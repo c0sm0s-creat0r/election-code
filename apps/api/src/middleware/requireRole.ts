@@ -13,7 +13,24 @@ import { getCookie } from 'hono/cookie'
 import type { Env } from '../index.js'
 import { verifySession, cookieName, type Role, type Session } from '../auth/session.js'
 
-export type AuthedEnv = { Bindings: Env; Variables: { session: Session } }
+// `session` is only ever populated by `requireRole` actually running on this
+// request. Typing it as always-present `Session` would let a Plan 2b route
+// that forgets to compose the middleware read a confident `Session` over a
+// runtime `undefined` — invisible in types, absent from tests, surfacing at
+// an AGM. `Session | undefined` forces every reader to narrow.
+export type AuthedEnv = { Bindings: Env; Variables: { session: Session | undefined } }
+
+/**
+ * Narrows `c.get('session')` for a handler that is only ever reached behind
+ * `requireRole`. Throws (Hono turns this into a 500) if somehow called
+ * without the middleware having run, rather than silently trusting an
+ * `undefined` as a `Session`.
+ */
+export function requireSession(c: Context<AuthedEnv>): Session {
+  const session = c.get('session')
+  if (!session) throw new Error('requireSession called without requireRole having run')
+  return session
+}
 
 export function requireRole(role: Role) {
   return async (c: Context<AuthedEnv>, next: Next) => {

@@ -76,4 +76,5 @@ auth.post('/api/batches/:id/door/session', (c) => handleSignIn(c, 'door'))
 // Test seam only: proves requireRole('officer') end-to-end without reaching
 // forward into Plan 2b's real officer endpoints. Delete once Plan 2b lands
 // a genuine officer-gated route for the tests to exercise instead.
+// TODO(plan-2b): delete this route as the first act of Plan 2b.
 auth.get('/api/batches/:id/officer/ping', requireRole('officer'), (c) => c.json({ ok: true }))
