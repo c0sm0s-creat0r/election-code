@@ -131,17 +131,22 @@ checkIn.get('/api/batches/:id/quorum', requireRole('door'), async (c) => {
          (SELECT count(*) FROM check_in ci
             JOIN voter_roll vr ON vr.batch_id = ci.batch_id AND vr.usu_id = ci.usu_id
            WHERE ci.batch_id = ?1 AND vr.eligible = 1) AS checked_in,
-         (SELECT count(*) FROM guest WHERE batch_id = ?1) AS guests`,
+         (SELECT count(*) FROM guest WHERE batch_id = ?1) AS guests,
+         (SELECT count(*) FROM voter_roll WHERE batch_id = ?1 AND added_at_door = 1) AS added_at_door`,
     )
     .bind(batchId)
-    .first<{ eligible: number; checked_in: number; guests: number }>()
+    .first<{ eligible: number; checked_in: number; guests: number; added_at_door: number }>()
 
   // `guests` is reported beside the ratio and never summed into it: spec §4
   // defines quorum as checked_in / eligible against the roll, and a guest is
   // not an eligible member.
+  // `added_at_door` travels with the totals, never separately: a door-added
+  // voter counts in `eligible` and `checked_in` like any other member, and the
+  // number must never be presented without its provenance. See migration 0004.
   return c.json({
     checked_in: row?.checked_in ?? 0,
     eligible: row?.eligible ?? 0,
     guests: row?.guests ?? 0,
+    added_at_door: row?.added_at_door ?? 0,
   })
 })

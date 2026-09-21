@@ -17,6 +17,7 @@ import { purge } from './routes/purge.js'
 import { turnout } from './routes/turnout.js'
 import { branding } from './routes/branding.js'
 import { guests } from './routes/guests.js'
+import { doorVoters } from './routes/doorVoters.js'
 
 export type Env = {
   DB: D1Database
@@ -103,6 +104,7 @@ app.route('/', purge)
 app.route('/', turnout)
 app.route('/', branding)
 app.route('/', guests)
+app.route('/', doorVoters)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 

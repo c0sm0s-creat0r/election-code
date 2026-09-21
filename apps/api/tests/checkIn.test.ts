@@ -117,7 +117,7 @@ describe('door check-in', () => {
     await checkIn('2400001')
     await checkIn('2400002')
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/quorum`, { headers: { cookie: doorCookie } })
-    expect(await res.json()).toEqual({ checked_in: 2, eligible: 4, guests: 0 })
+    expect(await res.json()).toEqual({ checked_in: 2, eligible: 4, guests: 0, added_at_door: 0 })
   })
 
   it('never lets the door role reach an officer route', async () => {
