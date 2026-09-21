@@ -22,7 +22,10 @@ export default defineWorkersConfig(async () => {
             bindings: {
               TEST_MIGRATIONS: migrations,
               SUPER_ADMIN_KEY: 'super-secret-test-key',
-              SESSION_SECRET: 'test-secret-value',
+              // At least MIN_SECRET_LENGTH (32) characters: signSession
+              // refuses a shorter one, so a short fixture would fail every
+              // sign-in test rather than the one that means to check it.
+              SESSION_SECRET: 'test-session-secret-0123456789abcdef',
               ALLOWED_ORIGINS: 'https://admin.dalyell.com.au,https://vote.dalyell.com.au',
             },
           },

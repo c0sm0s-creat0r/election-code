@@ -1,10 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { signSession, verifySession, cookieName, cookieOptions, type Session } from '../src/auth/session.js'
+import {
+  signSession,
+  verifySession,
+  verifySessionResult,
+  cookieName,
+  cookieOptions,
+  MIN_SECRET_LENGTH,
+  type StaffSession,
+  type Session,
+} from '../src/auth/session.js'
 
-const SECRET = 'test-secret-value'
-const base = (over: Partial<Session> = {}): Session => ({
+const SECRET = 'test-session-secret-0123456789abcdef'
+// Typed to StaffSession rather than Session: `Partial<Session>` distributes
+// over the discriminated union, so spreading it produces a type the union
+// will not accept. Voter sessions are built explicitly below, which is the
+// point of the union — a voter session cannot be made by overriding a field.
+const base = (over: Partial<StaffSession> = {}): Session => ({
   batchId: 'b1', role: 'officer', exp: 9_999_999_999, ...over,
 })
+
+/**
+ * Mints a token with an arbitrary payload, bypassing the `Session` type, to
+ * test what `verifySession` does with a shape our own code cannot produce.
+ * This is not a forgery test — the signature is genuine — it is a test that
+ * validation does not trust the payload just because the HMAC checked out.
+ */
+const enc = new TextEncoder()
+const b64url = (bytes: Uint8Array): string =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+async function signRaw(payloadObj: unknown, secret: string): Promise<string> {
+  const payload = b64url(enc.encode(JSON.stringify(payloadObj)))
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(payload)))
+  return `${payload}.${b64url(sig)}`
+}
+
+const future = 9_999_999_999
 
 describe('session tokens', () => {
   it('round-trips a session', async () => {
@@ -14,7 +45,7 @@ describe('session tokens', () => {
 
   it('rejects a token signed with a different secret', async () => {
     const t = await signSession(base(), SECRET)
-    expect(await verifySession(t, 'other-secret')).toBeNull()
+    expect(await verifySession(t, 'other-secret-0123456789abcdef-pad')).toBeNull()
   })
 
   it('rejects a tampered payload', async () => {
@@ -42,6 +73,21 @@ describe('session tokens', () => {
     expect(cookieName('b1', 'officer')).not.toBe(cookieName('b2', 'officer'))
   })
 
+  it('reports why a token failed, so 401 can be told from 403', async () => {
+    const expired = await signSession(base({ exp: 1_000 }), SECRET)
+    expect(await verifySessionResult(expired, SECRET, 2_000)).toEqual({ ok: false, reason: 'expired' })
+    expect(await verifySessionResult('garbage', SECRET)).toEqual({ ok: false, reason: 'invalid' })
+    const ok = await verifySessionResult(await signSession(base(), SECRET), SECRET)
+    expect(ok.ok).toBe(true)
+  })
+
+  it('never reports "expired" for a token whose signature does not verify', async () => {
+    // Otherwise the reason code leaks that a stale token was once genuine.
+    const expired = await signSession(base({ exp: 1_000 }), SECRET)
+    expect(await verifySessionResult(expired, 'a-different-secret-0123456789abc', 2_000))
+      .toEqual({ ok: false, reason: 'invalid' })
+  })
+
   it('sets HttpOnly, Secure, SameSite=Strict and a max age', () => {
     const o = cookieOptions(3600)
     expect(o.httpOnly).toBe(true)
@@ -49,5 +95,81 @@ describe('session tokens', () => {
     expect(o.sameSite).toBe('Strict')
     expect(o.maxAge).toBe(3600)
     expect(o.path).toBe('/')
+  })
+})
+
+describe('voter session subject', () => {
+  // Plan 2b's ballot handler reads `session.subject` as the voter's usu_id
+  // and binds it into a D1 statement. The type must make a missing subject
+  // impossible to construct, and verification must make one impossible to
+  // accept — a 500 on ballot submission is the one failure the system cannot
+  // absorb, because it happens mid-AGM on the endpoint that must not fail.
+  const voter = { batchId: 'b1', role: 'voter', subject: '1234567', exp: future } as const
+
+  it('round-trips a voter session with its subject intact', async () => {
+    const t = await signSession(voter, SECRET)
+    const s = await verifySession(t, SECRET)
+    expect(s).toEqual(voter)
+    // The narrowing the whole union exists for:
+    expect(s?.role === 'voter' ? s.subject : null).toBe('1234567')
+  })
+
+  it('rejects a voter token with no subject', async () => {
+    const t = await signRaw({ batchId: 'b1', role: 'voter', exp: future }, SECRET)
+    expect(await verifySession(t, SECRET)).toBeNull()
+  })
+
+  it('rejects a voter token with an empty subject', async () => {
+    const t = await signRaw({ batchId: 'b1', role: 'voter', subject: '', exp: future }, SECRET)
+    expect(await verifySession(t, SECRET)).toBeNull()
+  })
+
+  it('rejects a voter token whose subject is not a string', async () => {
+    for (const subject of [1234567, null, {}, ['1234567']]) {
+      const t = await signRaw({ batchId: 'b1', role: 'voter', subject, exp: future }, SECRET)
+      expect(await verifySession(t, SECRET)).toBeNull()
+    }
+  })
+
+  it('rejects an officer or door token that carries a subject at all', async () => {
+    for (const role of ['officer', 'door']) {
+      const t = await signRaw({ batchId: 'b1', role, subject: '1234567', exp: future }, SECRET)
+      expect(await verifySession(t, SECRET)).toBeNull()
+    }
+  })
+
+  it('does not let extra payload fields survive verification', async () => {
+    const t = await signRaw({ batchId: 'b1', role: 'officer', exp: future, isSuper: true }, SECRET)
+    expect(await verifySession(t, SECRET)).toEqual({ batchId: 'b1', role: 'officer', exp: future })
+  })
+})
+
+describe('SESSION_SECRET strength', () => {
+  // The token payload is plaintext base64url beside its signature, held on a
+  // volunteer's own phone. A short secret is brute-forceable offline with no
+  // rate limit and no detection, and recovering it mints an officer session
+  // for any batch. A *missing* secret already fails closed inside WebCrypto;
+  // this is the present-but-weak case, which otherwise works perfectly until
+  // it does not.
+  it('refuses to mint a token with a secret shorter than the minimum', async () => {
+    for (const weak of ['', 'x', 'hunter2', 'test-secret-value', 'a'.repeat(MIN_SECRET_LENGTH - 1)]) {
+      await expect(signSession(base(), weak)).rejects.toThrow(/SESSION_SECRET/)
+    }
+  })
+
+  it('mints with a secret of exactly the minimum length', async () => {
+    const secret = 'a'.repeat(MIN_SECRET_LENGTH)
+    expect(typeof (await signSession(base(), secret))).toBe('string')
+  })
+
+  it('never puts the secret in the error it throws', async () => {
+    const weak = 'weak-secret-do-not-leak'
+    const err = await signSession(base(), weak).catch((e: unknown) => e)
+    expect(String(err)).not.toContain(weak)
+    expect(String(err)).not.toContain(String(weak.length))
+  })
+
+  it('requires at least 32 characters, matching `openssl rand -base64 32`', () => {
+    expect(MIN_SECRET_LENGTH).toBe(32)
   })
 })

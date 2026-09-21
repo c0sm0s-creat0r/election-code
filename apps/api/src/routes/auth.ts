@@ -10,10 +10,17 @@
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { setCookie } from 'hono/cookie'
+import { setCookie, deleteCookie, getCookie } from 'hono/cookie'
 import type { Context } from 'hono'
 import { verifyPassword } from '../auth/password.js'
-import { signSession, cookieName, cookieOptions } from '../auth/session.js'
+import {
+  signSession,
+  verifySession,
+  cookieName,
+  cookieOptions,
+  isUsableSecret,
+  MIN_SECRET_LENGTH,
+} from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
 import type { BatchRow } from '../db/types.js'
 import { requireRole, type AuthedEnv } from '../middleware/requireRole.js'
@@ -35,6 +42,15 @@ type SignInRole = keyof typeof TTL_SECONDS
 const DUMMY_HASH = 'pbkdf2-sha256$210000$BwcHBwcHBwcHBwcHBwcHBw==$wyu1lWWAh+nnX8b+mM2RXS+x6AYfbSoM8AAskjgywzs='
 
 async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
+  // Checked before any password work, and before the batch lookup, so a
+  // misconfigured deployment fails on the very first sign-in attempt rather
+  // than issuing tokens signed with a secret a laptop can crack overnight.
+  // The response says nothing about the secret beyond "this server is not
+  // configured" — the operator finds the detail in the Worker's logs.
+  if (!isUsableSecret(c.env.SESSION_SECRET)) {
+    throw new Error(`SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`)
+  }
+
   const batchId = c.req.param('id')
   const parsed = signInSchema.safeParse(await c.req.json().catch(() => undefined))
   if (!parsed.success) {
@@ -68,10 +84,44 @@ async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
   return c.json({ ok: true, role })
 }
 
+/**
+ * Sign-out. A volunteer handing a phone back at the end of their shift
+ * otherwise leaves a live door session on it for up to an hour, on a device
+ * nobody owns.
+ *
+ * Deliberately *not* behind `requireRole`: the commonest reason to sign out
+ * is that something is wrong, and a session that has expired or been
+ * tampered with must still be clearable. It is therefore idempotent and
+ * always succeeds — clearing a cookie that is not there is not an error.
+ */
+async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
+  const batchId = c.req.param('id')
+
+  if (batchId) {
+    const token = getCookie(c, cookieName(batchId, role))
+    // Audit only a session we can actually verify, and attribute it to the
+    // batch id inside our own signature rather than the raw path parameter —
+    // audit_log has no foreign key to catch a typo'd id.
+    if (token && isUsableSecret(c.env.SESSION_SECRET)) {
+      const session = await verifySession(token, c.env.SESSION_SECRET)
+      if (session && session.role === role && session.batchId === batchId) {
+        await recordAudit(c.env.DB, { batchId: session.batchId, role, action: `session.${role}.signout` })
+      }
+    }
+    // Same attributes as the cookie was set with, or the browser keeps it.
+    deleteCookie(c, cookieName(batchId, role), { path: '/', secure: true, sameSite: 'Strict' })
+  }
+
+  return c.body(null, 204)
+}
+
 export const auth = new Hono<AuthedEnv>()
 
 auth.post('/api/batches/:id/officer/session', (c) => handleSignIn(c, 'officer'))
 auth.post('/api/batches/:id/door/session', (c) => handleSignIn(c, 'door'))
+
+auth.delete('/api/batches/:id/officer/session', (c) => handleSignOut(c, 'officer'))
+auth.delete('/api/batches/:id/door/session', (c) => handleSignOut(c, 'door'))
 
 // Test seam only: proves requireRole('officer') end-to-end without reaching
 // forward into Plan 2b's real officer endpoints. Delete once Plan 2b lands
