@@ -175,3 +175,71 @@ export const overrideTieBreak = (batchId: string, electionId: string, body: Over
     `/api/batches/${batchId}/elections/${electionId}/result/override`,
     postJson(body),
   )
+
+// --- branding and logo ------------------------------------------------------
+
+export const updateBranding = (batchId: string, branding: Branding) =>
+  request<Branding>(`/api/batches/${batchId}/branding`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(branding),
+  })
+
+export const uploadLogo = (batchId: string, file: File) => {
+  const body = new FormData()
+  body.append('file', file)
+  return request<{ logo_url: string }>(`/api/batches/${batchId}/logo`, { method: 'POST', body })
+}
+
+// --- door -------------------------------------------------------------------
+
+export type RollEntry = {
+  usu_id: string
+  first_name: string
+  last_name: string
+  eligible: number
+  checked_in_at: number | null
+}
+
+export type Quorum = {
+  checked_in: number
+  eligible: number
+  guests: number
+  added_at_door: number
+}
+
+export type Guest = { id: string; name: string; note: string | null; checked_in_at: number }
+
+export const getRoll = (batchId: string) => request<RollEntry[]>(`/api/batches/${batchId}/roll`)
+export const getQuorum = (batchId: string) => request<Quorum>(`/api/batches/${batchId}/quorum`)
+
+export const checkIn = (batchId: string, usuId: string) =>
+  request<{ checked_in: boolean; already: boolean }>(
+    `/api/batches/${batchId}/check-in`,
+    postJson({ usu_id: usuId }),
+  )
+
+export const undoCheckIn = (batchId: string, usuId: string) =>
+  request<void>(`/api/batches/${batchId}/check-in/${encodeURIComponent(usuId)}`, { method: 'DELETE' })
+
+export const listGuests = (batchId: string) => request<Guest[]>(`/api/batches/${batchId}/guests`)
+
+export const addGuest = (batchId: string, name: string, note?: string) =>
+  request<{ id: string; name: string }>(
+    `/api/batches/${batchId}/guests`,
+    postJson(note === undefined || note === '' ? { name } : { name, note }),
+  )
+
+export const removeGuest = (batchId: string, guestId: string) =>
+  request<void>(`/api/batches/${batchId}/guests/${guestId}`, { method: 'DELETE' })
+
+/**
+ * A member the export missed. Separate from `addGuest` on purpose — this one can
+ * vote and that one cannot, and one endpoint doing both would let a UI grant a
+ * vote by accident (spec §0.2).
+ */
+export const addDoorVoter = (batchId: string, usuId: string, firstName: string, lastName: string) =>
+  request<{ usu_id: string; first_name: string; last_name: string }>(
+    `/api/batches/${batchId}/voters`,
+    postJson({ usu_id: usuId, first_name: firstName, last_name: lastName }),
+  )
