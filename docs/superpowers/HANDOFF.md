@@ -3,6 +3,8 @@
 **Last updated:** 2026-09-21 (Plan 2b COMPLETE; multi-seat Critical fixed; Plan 2c written, not executed)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
+**Next action:** execute Plan 2c (`docs/superpowers/plans/2026-09-21-api-result-path.md`). Do the
+plan-vs-spec check in §6 first — it caught a blocking defect in 2b — and read §2 before Task 1.
 
 ---
 
@@ -13,7 +15,7 @@
 | Spec | `docs/superpowers/specs/2026-09-16-election-code-rewrite-design.md` — approved, amended twice |
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
 | Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
-| Plan 2b — voting path | **COMPLETE.** 7 tasks, amended once before execution (see §2b below). api 245/245, typecheck clean |
+| Plan 2b — voting path | **COMPLETE.** 7 tasks, amended once before execution (see §2 below). api 245/245, typecheck clean |
 | Plan 2c — result path | **Plan written**, not executed. `docs/superpowers/plans/2026-09-21-api-result-path.md` — 7 tasks |
 | Plan 3 — frontends | Not started |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
@@ -33,106 +35,7 @@ count as a state check — it moves with every docs commit.
 
 ---
 
-## 2. RESOLVED (was Critical) — multi-seat surplus defect, fixed 2026-09-21 in 1227df5
-
-**A surplus flows onto a candidate already lifted to quota by an earlier surplus in the same round.**
-`packages/core/src/count.ts` — statuses are frozen for the whole `electionOrder` loop, so no candidate
-can be elected *between* two surplus distributions.
-
-Reproduction — 6 candidates, 4 seats, 40 ballots (`18×[a,c,d] 12×[b,c,e] 4×[d] 3×[e] 3×[f]`), quota 9:
-
-```
-r1: a=9.00000* b=9.00000* c=12.00000 ...
-    a's surplus takes c to exactly 9.00000 (= quota)
-    b's surplus is poured onto c anyway -> 12.00000
-r2: c's manufactured 3.00000 surplus redistributed by C's preferences
-WINNERS a,b,c,d          Senate rule (CEA s273(8)/(9)): a,b,c,e
-```
-
-**Corroboration that this is a real divergence:** the `election_order` tie-break is currently **inert**.
-Overriding the same tie in opposite directions yields byte-identical round tables, because `place()`
-only pushes onto continuing candidates and no status changes inside the loop. Spec §3 says
-"election order determines transfer order". Here it determines nothing.
-
-**Fix direction:** give the count sub-round ("count") granularity — after each individual surplus,
-elect any continuing candidate now at/above quota, then distribute the largest pending surplus next.
-Concretely, calling `assertNoContinuingAtQuota(n)` *inside* the `electionOrder` loop makes the fixture
-above throw. Related, same root cause, lower severity: bulk exclusion transfers all excluded
-candidates' papers in one step.
-
-**FIXED** in `1227df5` by giving the count sub-round granularity: elect everyone at quota,
-distribute the largest pending surplus, then immediately elect anyone that transfer lifted to
-quota and add their surplus to the pending set. CEA s273(8) elects at that count; s273(1) then
-stops them being a continuing candidate, so later surpluses skip them.
-
-Verified: the 40-ballot fixture now returns `a,b,c,e` with a, b **and** c elected in round 1;
-the 11-ballot fixture returns `c,d,b`. `seats = 1` is unchanged — the `irv.py` differential
-still diverges on exactly cases 71, 120, 179 with the same 14 null-winner cases.
-
-`election_order` was **inert** before this fix (two opposite resolutions of the same tie produced
-byte-identical round tables, because no status changed inside the distribution loop). It is now
-load-bearing, with a test showing the same tie resolved each way moving the last seat.
-
----
-
-## 3. Defect found in the CURRENT PRODUCTION system
-
-`backend/irv.py` bulk-eliminates every tied-lowest candidate with no safety condition. Verified case:
-a 4-candidate race with three tied for last declared a winner on **28% of first preferences** in one
-round, 72% of ballots never transferred. Any past election with a tie for last may have returned the
-wrong winner. Ballots were in-memory; that data is gone.
-
----
-
-## 4. Known gap: no known-answer corpus
-
-Verification rests on 200 randomised property elections plus a differential against `irv.py` at
-`seats = 1` only — so **no surplus-transfer code is compared against anything**. The property tests
-assert invariants only; a wrong count satisfying all of them passes. This is not hypothetical: the
-Critical above and its predecessor both passed all 200.
-
-**Action before any `seats >= 2` election:** enter two published multi-seat counts (Scottish council
-ward results publish full round-by-round transfer tables; the AEC publishes worked Senate examples)
-as fixtures. Estimated an afternoon. Would have caught both defects on the first run.
-
----
-
-## 5. Process lesson worth carrying into Plans 2 and 3
-
-The first Critical was in the **plan**, transcribed faithfully. Every per-task review compared code to
-plan, and the code matched. **Nothing compared plan to spec.** Add a plan-vs-spec check before
-execution, not only code-vs-plan during it.
-
----
-
-## 6. Forward constraints Plan 2 must honour
-
-1. **Block opening an election with zero candidates.** `minimumPreferences` is now `Math.max(1, ...)`
-   so the library is safe standalone, but the API must still refuse it.
-2. **Candidate ids must never contain `|`.** `toBallotsCsv` throws on this; ids are `crypto.randomUUID()`.
-3. **`candidatesCsv` must be the complete candidate list** for the ballots it accompanies — `recount`
-   refuses a preference naming an absent candidate.
-4. **Spec §5 names the override field `winner_id`, but for `kind: 'exclusion'` the id is the candidate
-   to EXCLUDE.** A UI labelled "pick the winner" collects the opposite of the officer's intent. Rename
-   in the API (`resolved_id`), or translate by `kind`.
-5. **`CountInput.overrides` is `Record<string, { candidateId, reason }>`** — the officer's reason is
-   required and reaches `TieBreakRecord.reason`.
-6. **The ballot export carries no `voided` column**, so a recount proves the arithmetic, not the
-   provenance (spec §2 documents this). **Plan 2c Task 4 closes it** — note that adding the column
-   also requires fixing `recount`, which refuses a row with an unexpected field count and has no
-   notion of a voided ballot, so today it would both reject the file and count voided ballots.
-7. **`WITHOUT ROWID` on `ballot`** is the whole basis of the secret-ballot guarantee. Migrations are
-   hand-written SQL precisely so this clause is visible. A test must assert the table has it.
-8. **No ORM.** `wrangler d1 migrations` + D1's prepared-statement API + hand-written row types.
-9. **All three deployments must share one apex domain.** `SameSite` is judged by
-   registrable domain, not subdomain. On `*.workers.dev` / `*.pages.dev` / `*.vercel.app`
-   the session cookie is never sent and every authenticated request fails silently.
-   Auth cannot be tested on preview URLs. CORS must send an explicit origin with
-   `Access-Control-Allow-Credentials: true`, never `*`.
-
----
-
-## 2b. What Plan 2b changed about the data model — READ BEFORE PLAN 2c
+## 2. What Plan 2b changed about the data model — READ BEFORE PLAN 2c
 
 **Migration `0002_live_receipt_hash.sql` adds `vote_receipt.live_receipt_hash`.**
 
@@ -188,7 +91,106 @@ spec §5's public void endpoint already accepts — but cannot mint a second liv
 
 ---
 
-## 6b. Constraints Plan 2b must honour (from the Plan 2a whole-branch review) — ALL NOW ADDRESSED
+## 3. RESOLVED (was Critical) — multi-seat surplus defect, fixed 2026-09-21 in 1227df5
+
+**A surplus flows onto a candidate already lifted to quota by an earlier surplus in the same round.**
+`packages/core/src/count.ts` — statuses are frozen for the whole `electionOrder` loop, so no candidate
+can be elected *between* two surplus distributions.
+
+Reproduction — 6 candidates, 4 seats, 40 ballots (`18×[a,c,d] 12×[b,c,e] 4×[d] 3×[e] 3×[f]`), quota 9:
+
+```
+r1: a=9.00000* b=9.00000* c=12.00000 ...
+    a's surplus takes c to exactly 9.00000 (= quota)
+    b's surplus is poured onto c anyway -> 12.00000
+r2: c's manufactured 3.00000 surplus redistributed by C's preferences
+WINNERS a,b,c,d          Senate rule (CEA s273(8)/(9)): a,b,c,e
+```
+
+**Corroboration that this is a real divergence:** the `election_order` tie-break is currently **inert**.
+Overriding the same tie in opposite directions yields byte-identical round tables, because `place()`
+only pushes onto continuing candidates and no status changes inside the loop. Spec §3 says
+"election order determines transfer order". Here it determines nothing.
+
+**Fix direction:** give the count sub-round ("count") granularity — after each individual surplus,
+elect any continuing candidate now at/above quota, then distribute the largest pending surplus next.
+Concretely, calling `assertNoContinuingAtQuota(n)` *inside* the `electionOrder` loop makes the fixture
+above throw. Related, same root cause, lower severity: bulk exclusion transfers all excluded
+candidates' papers in one step.
+
+**FIXED** in `1227df5` by giving the count sub-round granularity: elect everyone at quota,
+distribute the largest pending surplus, then immediately elect anyone that transfer lifted to
+quota and add their surplus to the pending set. CEA s273(8) elects at that count; s273(1) then
+stops them being a continuing candidate, so later surpluses skip them.
+
+Verified: the 40-ballot fixture now returns `a,b,c,e` with a, b **and** c elected in round 1;
+the 11-ballot fixture returns `c,d,b`. `seats = 1` is unchanged — the `irv.py` differential
+still diverges on exactly cases 71, 120, 179 with the same 14 null-winner cases.
+
+`election_order` was **inert** before this fix (two opposite resolutions of the same tie produced
+byte-identical round tables, because no status changed inside the distribution loop). It is now
+load-bearing, with a test showing the same tie resolved each way moving the last seat.
+
+---
+
+## 4. Defect found in the CURRENT PRODUCTION system
+
+`backend/irv.py` bulk-eliminates every tied-lowest candidate with no safety condition. Verified case:
+a 4-candidate race with three tied for last declared a winner on **28% of first preferences** in one
+round, 72% of ballots never transferred. Any past election with a tie for last may have returned the
+wrong winner. Ballots were in-memory; that data is gone.
+
+---
+
+## 5. Known gap: no known-answer corpus
+
+Verification rests on 200 randomised property elections plus a differential against `irv.py` at
+`seats = 1` only — so **no surplus-transfer code is compared against anything**. The property tests
+assert invariants only; a wrong count satisfying all of them passes. This is not hypothetical: the
+Critical above and its predecessor both passed all 200.
+
+**Action before any `seats >= 2` election:** enter two published multi-seat counts (Scottish council
+ward results publish full round-by-round transfer tables; the AEC publishes worked Senate examples)
+as fixtures. Estimated an afternoon. Would have caught both defects on the first run.
+
+---
+
+## 6. Process lesson worth carrying into Plan 2c and Plan 3
+
+The first Critical was in the **plan**, transcribed faithfully. Every per-task review compared code to
+plan, and the code matched. **Nothing compared plan to spec.** Add a plan-vs-spec check before
+execution, not only code-vs-plan during it.
+
+---
+
+## 7. Forward constraints Plan 2 must honour
+
+1. **Block opening an election with zero candidates.** `minimumPreferences` is now `Math.max(1, ...)`
+   so the library is safe standalone, but the API must still refuse it.
+2. **Candidate ids must never contain `|`.** `toBallotsCsv` throws on this; ids are `crypto.randomUUID()`.
+3. **`candidatesCsv` must be the complete candidate list** for the ballots it accompanies — `recount`
+   refuses a preference naming an absent candidate.
+4. **Spec §5 names the override field `winner_id`, but for `kind: 'exclusion'` the id is the candidate
+   to EXCLUDE.** A UI labelled "pick the winner" collects the opposite of the officer's intent. Rename
+   in the API (`resolved_id`), or translate by `kind`.
+5. **`CountInput.overrides` is `Record<string, { candidateId, reason }>`** — the officer's reason is
+   required and reaches `TieBreakRecord.reason`.
+6. **The ballot export carries no `voided` column**, so a recount proves the arithmetic, not the
+   provenance (spec §2 documents this). **Plan 2c Task 4 closes it** — note that adding the column
+   also requires fixing `recount`, which refuses a row with an unexpected field count and has no
+   notion of a voided ballot, so today it would both reject the file and count voided ballots.
+7. **`WITHOUT ROWID` on `ballot`** is the whole basis of the secret-ballot guarantee. Migrations are
+   hand-written SQL precisely so this clause is visible. A test must assert the table has it.
+8. **No ORM.** `wrangler d1 migrations` + D1's prepared-statement API + hand-written row types.
+9. **All three deployments must share one apex domain.** `SameSite` is judged by
+   registrable domain, not subdomain. On `*.workers.dev` / `*.pages.dev` / `*.vercel.app`
+   the session cookie is never sent and every authenticated request fails silently.
+   Auth cannot be tested on preview URLs. CORS must send an explicit origin with
+   `Access-Control-Allow-Credentials: true`, never `*`.
+
+---
+
+## 8. Constraints from the Plan 2a review — ALL NOW ADDRESSED (kept for the reasoning)
 
 1. **A session cookie is not proof of eligibility.** A voter session proves only that
    someone passed USU-id + surname at time T. Spec §5 allows an officer to un-check-in a
@@ -271,7 +273,7 @@ export; (11) verified — `0001_initial.sql` was not touched by Plan 2b, and 000
 
 ---
 
-## 7. `packages/core` public surface (what Plan 2 consumes)
+## 9. `packages/core` public surface (what Plan 2 consumes)
 
 ```
 count, recount, toBallotsCsv, toCandidatesCsv
@@ -289,7 +291,7 @@ Deliberately NOT exported: `bulkExclusionSet`, `countback`, `History`, `SCALE`, 
 
 ---
 
-## 8. Decisions that are settled (do not relitigate)
+## 10. Decisions that are settled (do not relitigate)
 
 - npm workspaces, not pnpm. Node 20+.
 - Two CSV tokenizers stay separate: `usu-import` partially recovers from a malformed third-party
@@ -302,7 +304,7 @@ Deliberately NOT exported: `bulkExclusionSet`, `countback`, `History`, `SCALE`, 
 
 ---
 
-## 9. Plan 2a known weakness
+## 11. Plan 2a known weakness
 
 Tasks 2 and 5 specify their implementation in prose plus exhaustive tests rather than
 verbatim code. The schema is quoted exactly in spec §2 (10 `CREATE TABLE` statements,
@@ -310,9 +312,11 @@ verbatim code. The schema is quoted exactly in spec §2 (10 `CREATE TABLE` state
 weaker. In both cases the tests are complete and carry the contract. If an implementer
 reports ambiguity there, believe them and tighten the brief rather than pushing on.
 
-## 10. SDD workspaces
+## 12. SDD workspaces
 
 - Plan 1: `.superpowers/sdd/2026-09-16-core-counting-library/progress.md` (27 rulings)
 - Plan 2a: `.superpowers/sdd/2026-09-17-api-foundation/progress.md`
+- Plan 2b: `.superpowers/sdd/2026-09-21-api-voting-path/progress.md` — the plan-vs-spec check that
+  found the recast defect, the three options put to the user, and every ruling taken during execution
 
-Both are gitignored. This file is the committed summary; the ledgers hold the detail.
+All three are gitignored. This file is the committed summary; the ledgers hold the detail.
