@@ -1,0 +1,12 @@
+/**
+ * Component classes for the admin app. Tokens and element defaults come from
+ * @election/styles; nothing here redefines a token.
+ */
+
+.field > label {
+  display: block;
+  margin-bottom: calc(var(--step) / 2);
+  font-weight: 600;
+}
+
+.field + .field { margin-top: calc(var(--step) * 2); }
