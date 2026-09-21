@@ -10,7 +10,7 @@
  * message they did not write (spec §3).
  */
 
-const BASE = (import.meta.env['VITE_API_BASE'] as string | undefined) ?? 'http://localhost:8787'
+const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787'
 
 /**
  * `status` 0 means the request never completed — a phone losing wifi — which the

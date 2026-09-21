@@ -6,11 +6,19 @@ const mockFetch = (status: number, body: unknown) =>
     status, headers: { 'content-type': 'application/json' },
   })))
 
+/**
+ * A spy whose parameters are declared, so `mock.calls[0]` is a real tuple. A
+ * bare `vi.fn(async () => …)` types its calls as `[]`, and every assertion about
+ * what was sent becomes a type error.
+ */
+const spyFetch = (respond: () => Response) =>
+  vi.fn(async (_url: string, _init?: RequestInit) => respond())
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('api client', () => {
   it('sends credentials, or the session cookie never travels', async () => {
-    const spy = vi.fn(async () => new Response(JSON.stringify({ first_name: 'Ada' }), { status: 200 }))
+    const spy = spyFetch(() => new Response(JSON.stringify({ first_name: 'Ada' }), { status: 200 }))
     vi.stubGlobal('fetch', spy)
     await voterSignIn('b1', '2400001', 'Lovelace')
     expect(spy.mock.calls[0]![1]).toMatchObject({ credentials: 'include' })
@@ -43,14 +51,14 @@ describe('api client', () => {
   })
 
   it('never puts the usu_id in a ballot body — the session carries it', async () => {
-    const spy = vi.fn(async () => new Response(JSON.stringify({ receipt_token: 't' }), { status: 201 }))
+    const spy = spyFetch(() => new Response(JSON.stringify({ receipt_token: 't' }), { status: 201 }))
     vi.stubGlobal('fetch', spy)
     await submitBallot('b1', 'e1', ['a', 'b'])
     expect(spy.mock.calls[0]![1]!.body).toBe(JSON.stringify({ preferences: ['a', 'b'] }))
   })
 
   it('encodes a slug that would otherwise break the path', async () => {
-    const spy = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }))
+    const spy = spyFetch(() => new Response(JSON.stringify({}), { status: 200 }))
     vi.stubGlobal('fetch', spy)
     const { getBatchBySlug } = await import('../src/api.js')
     await getBatchBySlug('a/b')
