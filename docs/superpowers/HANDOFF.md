@@ -1,13 +1,13 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (Plans 2b, 2c and 2d COMPLETE; `apps/api` done against spec §5; frontends spec written)
+**Last updated:** 2026-09-21 (**ALL PLANS COMPLETE** — api, core, voter, admin, e2e. 666 unit tests + 1 browser smoke)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
-**Next action:** write Plan 3a (`apps/voter` + `packages/styles` + the `e2e/` smoke) from
-`docs/superpowers/specs/2026-09-21-frontends-design.md`, then Plan 3b (`apps/admin` + the lazy door
-route). The frontends design is approved and committed; §0 of it is already built (Plan 2d). Do the
-plan-vs-spec check in §6 before executing either: it caught a blocking defect in 2b, four gaps in 2c,
-and three plan bugs in 2d before any code was written.
+**Next action:** nothing is planned. The rewrite is feature-complete against the spec. Before a real
+AGM runs on it, the two things that matter are in §5 (**the missing known-answer corpus for multi-seat
+counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `backend/`,
+`admin-frontend/` and `voter-frontend/` directories are still present and can be retired once
+`backend/irv.py` is no longer needed by the differential test.
 
 ---
 
@@ -22,18 +22,21 @@ and three plan bugs in 2d before any code was written.
 | Plan 2c — result path | **COMPLETE.** 7 tasks + 1 added (§2 below). api 359/359, typecheck clean. `apps/api` is complete against spec §5 — all 33 routes |
 | Plan 2d — guests + door additions | **COMPLETE.** 4 tasks. api 399/399, typecheck clean. Migration `0004` |
 | Frontends design | `docs/superpowers/specs/2026-09-21-frontends-design.md` — approved. Mobile-first, plain-CSS tokens, door as a lazy admin route |
-| Plan 3a — `apps/voter` | Not started, **not yet planned** |
-| Plan 3b — `apps/admin` | Not started, **not yet planned** |
+| Plan 3a — `apps/voter` | **COMPLETE.** 6 tasks. voter 60/60 + 1 Playwright smoke. Preact, mobile-first |
+| Plan 3b — `apps/admin` | **COMPLETE.** 6 tasks. admin 65/65. React 19, door as its own chunk |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
 | Execution ledger | `.superpowers/sdd/<plan>/progress.md`, one per plan (gitignored, on disk only) |
 
 **Verify state on resume:**
 ```bash
-npm run -w @election/core test            # expect 142/142
-npm run -w @election/api test             # expect 399/399
-cd packages/core && npx tsc --noEmit      # expect clean
-cd apps/api && npx tsc --noEmit           # expect clean
+npm test                                  # core 142, admin 65, api 399, voter 60
+npm run typecheck                         # all four clean
+npm run e2e                               # 1 Playwright smoke (needs: npx playwright install chromium)
 ```
+
+`npm test` deliberately does **not** run the e2e suite — it needs a browser binary, and the default
+suite must never depend on one. The e2e workspace's script is therefore called `e2e`, not `test`;
+renaming it back silently pulls Playwright into every run.
 
 `npm run -w @election/api typecheck` works too, but note it resolves `tsconfig.json` relative to the
 workspace directory, so run it from `apps/api` if you invoke `tsc` by hand. Do not trust the commit
@@ -82,6 +85,27 @@ Two door actions that must stay separate (`docs/superpowers/specs/2026-09-21-fro
   it is reported by `GET /quorum` and is a column in both attendance exports. The roll import's upsert
   must not mention it in its `SET` list.
 - **The purge covers `guest`.** A guest's name is personal data and nothing else reaches that table.
+
+### What the frontends settled (Plans 3a, 3b)
+
+1. **No `.tsx` file contains a `style` attribute or a utility class.** This one rule is what makes the
+   styling upgradable — restyling either app touches CSS only. The legacy apps cannot be restyled
+   without editing JSX, because their styling *is* JSX. Grep for `style=` in `apps/*/src` to check.
+2. **`packages/styles` is the whole design system:** `tokens.css` (values, plus a dark-mode block) and
+   `base.css` (element defaults). `--touch: 44px` and the 16px input floor live there because they are
+   mobile *constraints*, not preferences — iOS Safari zooms the viewport for a smaller input.
+3. **Both apps' screens are lazy, and the entry chunk contains neither side's code.** Making only the
+   door lazy is not enough: it leaves the officer screens in the entry chunk that every route loads.
+   `apps/admin/tests/codeSplit.test.ts` guards this, because a single static import undoes it with
+   nothing failing.
+4. **The API clients are duplicated between the two apps, deliberately.** They overlap on one endpoint
+   out of thirty-three; sharing would couple two release cycles to save thirty lines.
+5. **Reordering a ballot is arrows, never drag**, and the boundary arrows are disabled rather than
+   hidden so a row does not reflow under a moving thumb.
+6. **The door roll is never written to browser storage**, and a test asserts no storage write happens
+   at all rather than inspecting `localStorage` (which in the test environment is a locked proxy).
+7. **There is no seeding endpoint in `apps/api` and there must never be one.** `e2e/seed.ts` provisions
+   through documented endpoints with the dev super-admin key.
 
 ### What Plan 2c settled that Plan 3 must not undo
 
@@ -355,5 +379,8 @@ reports ambiguity there, believe them and tighten the brief rather than pushing 
   found the recast defect, the three options put to the user, and every ruling taken during execution
 - Plan 2c: `.superpowers/sdd/2026-09-21-api-result-path/progress.md` — the four gaps the check found,
   the retention decision, and a debugging note on a failure that read as a test-runner bug and was not
+- Plan 2d: `.superpowers/sdd/2026-09-21-api-guests-and-door-additions/progress.md`
+- Plans 3a/3b: `.superpowers/sdd/2026-09-21-frontends/progress.md` — including the code split that did
+  not do what it claimed, and two rule violations only a whole-repo run exposed
 
-All four are gitignored. This file is the committed summary; the ledgers hold the detail.
+All six are gitignored. This file is the committed summary; the ledgers hold the detail.
