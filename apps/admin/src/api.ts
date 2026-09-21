@@ -56,3 +56,91 @@ export const doorSignIn = (batchId: string, password: string) =>
   request<{ ok: true; role: string }>(`/api/batches/${batchId}/door/session`, postJson({ password }))
 
 export { request as apiRequest, postJson as apiPostJson, BASE as API_BASE }
+
+// --- roll ------------------------------------------------------------------
+
+export type RollPreview = {
+  total: number
+  eligible: number
+  excluded: number
+  skipped: number
+  shifted: boolean
+}
+
+const uploadRoll = (batchId: string, path: string, file: File) => {
+  const body = new FormData()
+  // The part must be named `file`: that is what routes/roll.ts reads.
+  body.append('file', file)
+  return request<RollPreview>(`/api/batches/${batchId}${path}`, { method: 'POST', body })
+}
+
+export const previewRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll/preview', file)
+export const commitRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll', file)
+
+// --- elections -------------------------------------------------------------
+
+export type ElectionStatus = 'draft' | 'open' | 'closed'
+export type Candidate = { id: string; name: string }
+
+export type AdminElection = {
+  id: string
+  name: string
+  seats: number
+  status: ElectionStatus
+  candidates: Candidate[]
+}
+
+export const listPublicElections = (batchId: string) =>
+  request<AdminElection[]>(`/api/batches/${batchId}/elections`)
+
+export const createElection = (batchId: string, name: string, seats: number) =>
+  request<{ id: string; name: string; seats: number; status: ElectionStatus }>(
+    `/api/batches/${batchId}/elections`,
+    postJson({ name, seats }),
+  )
+
+export const addCandidate = (batchId: string, electionId: string, name: string) =>
+  request<Candidate>(
+    `/api/batches/${batchId}/elections/${electionId}/candidates`,
+    postJson({ name }),
+  )
+
+export const renameCandidate = (batchId: string, electionId: string, candidateId: string, name: string) =>
+  request<Candidate>(`/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+
+export const removeCandidate = (batchId: string, electionId: string, candidateId: string) =>
+  request<void>(`/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`, {
+    method: 'DELETE',
+  })
+
+export const openElection = (batchId: string, electionId: string) =>
+  request<{ id: string; status: ElectionStatus }>(
+    `/api/batches/${batchId}/elections/${electionId}/open`,
+    { method: 'POST' },
+  )
+
+export const closeElection = (batchId: string, electionId: string) =>
+  request<{ closed_at: number; ballot_count: number; ballots_sha256: string }>(
+    `/api/batches/${batchId}/elections/${electionId}/close`,
+    { method: 'POST' },
+  )
+
+/**
+ * Turnout, and only turnout. Three counts plus the provenance of the fourth.
+ * There is deliberately no per-candidate figure here and there must never be
+ * one: an officer who can watch the result develop makes every other control
+ * decorative (spec §4).
+ */
+export type Turnout = {
+  ballots_cast: number
+  voters_checked_in: number
+  eligible: number
+  added_at_door: number
+}
+
+export const getTurnout = (batchId: string, electionId: string) =>
+  request<Turnout>(`/api/batches/${batchId}/elections/${electionId}/turnout`)
