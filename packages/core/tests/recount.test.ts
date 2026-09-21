@@ -17,10 +17,10 @@ describe('public surface', () => {
 describe('recount', () => {
   const candidatesCsv = 'candidate_id,name\na,Alex\nb,Bo\nc,Cass\n'
   const ballotsCsv = [
-    'ballot_id,preferences',
-    'b1,"a|b"', 'b2,"a|b"', 'b3,"a|b"', 'b4,"a|b"',
-    'b5,"b|a"', 'b6,"b|a"', 'b7,"b|a"', 'b8,"b|a"',
-    'b9,"c|a"', 'b10,"c|a"',
+    'ballot_id,preferences,voided',
+    'b1,"a|b","0"', 'b2,"a|b","0"', 'b3,"a|b","0"', 'b4,"a|b","0"',
+    'b5,"b|a","0"', 'b6,"b|a","0"', 'b7,"b|a","0"', 'b8,"b|a","0"',
+    'b9,"c|a","0"', 'b10,"c|a","0"',
   ].join('\n')
 
   it('reproduces a count from exported CSVs alone', async () => {
@@ -55,9 +55,9 @@ describe('recount', () => {
       { id: 'c', name: 'Cass' },
     ]
     const ballots = [
-      ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 1}`, preferences: ['a', 'b'] })),
-      ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 5}`, preferences: ['b', 'a'] })),
-      ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i + 9}`, preferences: ['c', 'a'] })),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 1}`, preferences: ['a', 'b'], voided: false })),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 5}`, preferences: ['b', 'a'], voided: false })),
+      ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i + 9}`, preferences: ['c', 'a'], voided: false })),
     ]
 
     const producedCandidatesCsv = toCandidatesCsv(candidates)
@@ -78,9 +78,9 @@ describe('recount', () => {
   })
 
   const stdBallots = [
-    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 1}`, preferences: ['a', 'b'] })),
-    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 5}`, preferences: ['b', 'a'] })),
-    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i + 9}`, preferences: ['c', 'a'] })),
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 1}`, preferences: ['a', 'b'], voided: false })),
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i + 5}`, preferences: ['b', 'a'], voided: false })),
+    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i + 9}`, preferences: ['c', 'a'], voided: false })),
   ]
 
   it('round-trips a candidate name containing a newline, byte for byte', async () => {
@@ -169,7 +169,7 @@ describe('recount', () => {
   })
 
   it('throws on an unterminated quoted field in ballotsCsv rather than mangling rows', async () => {
-    const badBallotsCsv = 'ballot_id,preferences\n"b1","a\n"b2","b"\n'
+    const badBallotsCsv = 'ballot_id,preferences,voided\n"b1","a\n"b2","b","0"\n'
 
     await expect(
       recount(badBallotsCsv, candidatesCsv, 1, 'e1', 'ee'.repeat(8)),
@@ -178,7 +178,7 @@ describe('recount', () => {
 
   it('drops a whitespace-only line between two valid candidate rows instead of admitting a phantom candidate', async () => {
     const candidatesCsvWithBlankLine = 'candidate_id,name\n"a","Alex"\n   \n"b","Bo"\n'
-    const minimalBallotsCsv = 'ballot_id,preferences\n"b1","a"\n"b2","b"\n'
+    const minimalBallotsCsv = 'ballot_id,preferences,voided\n"b1","a","0"\n"b2","b","0"\n'
 
     const r = await recount(minimalBallotsCsv, candidatesCsvWithBlankLine, 1, 'e1', 'ee'.repeat(8))
 
@@ -190,7 +190,7 @@ describe('recount', () => {
 
   it('still drops a genuinely empty line between two valid candidate rows', async () => {
     const candidatesCsvWithEmptyLine = 'candidate_id,name\n"a","Alex"\n\n"b","Bo"\n'
-    const minimalBallotsCsv = 'ballot_id,preferences\n"b1","a"\n"b2","b"\n'
+    const minimalBallotsCsv = 'ballot_id,preferences,voided\n"b1","a","0"\n"b2","b","0"\n'
 
     const r = await recount(minimalBallotsCsv, candidatesCsvWithEmptyLine, 1, 'e1', 'ee'.repeat(8))
 
@@ -205,7 +205,7 @@ describe('recount', () => {
  */
 describe('recount: blank rows with more than one field', () => {
   const twoCandidates = 'candidate_id,name\n"a","Alex"\n"b","Bo"\n'
-  const threeBallots = 'ballot_id,preferences\n"x1","a"\n"x2","a"\n"x3","b"\n'
+  const threeBallots = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","b","0"\n'
 
   it('does not let a bare comma row in ballotsCsv change the quota', async () => {
     // floor(3 / (1 + 1)) + 1 = 2. A phantom fourth ballot would make it 3,
@@ -214,7 +214,7 @@ describe('recount: blank rows with more than one field', () => {
     const clean = await recount(threeBallots, twoCandidates, 1, 'e1', 'ee'.repeat(8))
     expect(clean.quota).toBe('2.00000')
 
-    const withBareComma = 'ballot_id,preferences\n"x1","a"\n"x2","a"\n,\n"x3","b"\n'
+    const withBareComma = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n,\n"x3","b","0"\n'
     const dirty = await recount(withBareComma, twoCandidates, 1, 'e1', 'ee'.repeat(8))
 
     expect(dirty.quota).toBe('2.00000')
@@ -245,7 +245,7 @@ describe('recount: blank rows with more than one field', () => {
   })
 
   it('drops a mixed whitespace-and-empty row in ballotsCsv without moving the quota', async () => {
-    const withWhitespaceRow = 'ballot_id,preferences\n"x1","a"\n"  ",""\n"x2","a"\n"x3","b"\n'
+    const withWhitespaceRow = 'ballot_id,preferences,voided\n"x1","a","0"\n"  ",""\n"x2","a","0"\n"x3","b","0"\n'
 
     const r = await recount(withWhitespaceRow, twoCandidates, 1, 'e1', 'ee'.repeat(8))
 
@@ -259,9 +259,9 @@ describe('recount: blank rows with more than one field', () => {
       { id: 'b', name: 'Bo' },
     ]
     const ballots = [
-      { id: 'x1', preferences: ['a'] },
-      { id: 'x2', preferences: ['a'] },
-      { id: 'x3', preferences: ['b'] },
+      { id: 'x1', preferences: ['a'], voided: false },
+      { id: 'x2', preferences: ['a'], voided: false },
+      { id: 'x3', preferences: ['b'], voided: false },
     ]
 
     const viaCsv = await recount(
@@ -281,7 +281,7 @@ describe('recount: blank rows with more than one field', () => {
     // in they would collide, and the ballot for 'a' would land in the wrong
     // pile.
     const padded = 'candidate_id,name\n"  a  ","Padded"\n"a","Alex"\n'
-    const ballots = 'ballot_id,preferences\n"x1","a"\n"x2","a"\n"x3","  a  "\n'
+    const ballots = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","  a  ","0"\n'
 
     const r = await recount(ballots, padded, 1, 'e1', 'ee'.repeat(8))
 
@@ -297,7 +297,7 @@ describe('recount: blank rows with more than one field', () => {
  */
 describe('recount: fails closed on a corrupt row', () => {
   const twoCandidates = 'candidate_id,name\n"a","Alex"\n"b","Bo"\n'
-  const twoBallots = 'ballot_id,preferences\n"x1","a"\n"x2","b"\n'
+  const twoBallots = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","b","0"\n'
   const args = [1, 'e1', 'ee'.repeat(8)] as const
 
   it('throws on a surviving row with an empty candidate id', async () => {
@@ -315,7 +315,7 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws on a surviving row with an empty ballot id', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n,"b"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n,"b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 has an empty ballot id — the CSV is corrupt. No count was performed.',
     )
@@ -329,18 +329,18 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws on a row with too few fields', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
-      'recount: row 3 has 1 field(s), expected 2 — the CSV is corrupt. No count was performed.',
+      'recount: row 3 has 1 field(s), expected 3 — the CSV is corrupt. No count was performed.',
     )
   })
 
   it('throws when the header row is missing, rather than eating the first record', async () => {
     // Without the header check, slice(1) would discard ballot x1 and the
     // quota would be computed from one ballot fewer.
-    const headerless = '"x1","a"\n"x2","b"\n'
+    const headerless = '"x1","a","0"\n"x2","b","0"\n'
     await expect(recount(headerless, twoCandidates, ...args)).rejects.toThrow(
-      'recount: expected a "ballot_id,preferences" header row — the CSV is corrupt. No count was performed.',
+      'recount: expected a "ballot_id,preferences,voided" header row — the CSV is corrupt. No count was performed.',
     )
   })
 
@@ -365,7 +365,7 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws on a duplicate ballot id', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x1","b"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x1","b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 repeats ballot id "x1" — the CSV is corrupt. No count was performed.',
     )
@@ -374,28 +374,28 @@ describe('recount: fails closed on a corrupt row', () => {
   it('throws on a preference naming a candidate absent from candidatesCsv', async () => {
     // Deleting one candidate line would otherwise silently exhaust every
     // paper that ranked them, redistributing their votes with no warning.
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2","z|b"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","z|b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 lists preference "z", which is not a candidate — the CSV is corrupt. No count was performed.',
     )
   })
 
   it('throws on an empty preference token inside a list', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2","a||b"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a||b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 has an empty preference — the CSV is corrupt. No count was performed.',
     )
   })
 
   it('throws on a trailing pipe in a preference list', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2","b|"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","b|","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 has an empty preference — the CSV is corrupt. No count was performed.',
     )
   })
 
   it('throws on a repeated preference within one ballot', async () => {
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2","b|a|b"\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","b|a|b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 repeats preference "b" — the CSV is corrupt. No count was performed.',
     )
@@ -406,10 +406,10 @@ describe('recount: fails closed on a corrupt row', () => {
     // it splits into two on the way back and the file no longer describes the
     // election it came from. Enforced at the writer rather than left as a
     // naming rule somebody downstream has to know.
-    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a|b', 'c'] }])).toThrow(
+    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a|b', 'c'], voided: false }])).toThrow(
       /contains '\|'/,
     )
-    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a', 'b'] }])).not.toThrow()
+    expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a', 'b'], voided: false }])).not.toThrow()
   })
 
   it('throws on a ballot whose preferences field is empty', async () => {
@@ -427,10 +427,82 @@ describe('recount: fails closed on a corrupt row', () => {
     // anybody. Five candidates, 2 seats, 23 ballots elects {a,b} at a quota of
     // 8; append four rows ranking nobody and the quota becomes 10 and the
     // winners become {b,d}. A hand-added blank field would change the result.
-    const csv = 'ballot_id,preferences\n"x1","a"\n"x2","a"\n"x3",""\n'
+    const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","","0"\n'
 
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 4 has an empty preference list — the CSV is corrupt. No count was performed.',
     )
+  })
+})
+
+describe('voided ballots in the CSV round trip', () => {
+  const candidates = [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }]
+
+  it('emits a voided column', () => {
+    const csv = toBallotsCsv([
+      { id: 'b1', preferences: ['a', 'b'], voided: false },
+      { id: 'b2', preferences: ['b', 'a'], voided: true },
+    ])
+    expect(csv.split('\n')[0]).toBe('ballot_id,preferences,voided')
+    expect(csv).toMatch(/"b2","b\|a","1"/)
+    expect(csv).toMatch(/"b1","a\|b","0"/)
+  })
+
+  it('EXCLUDES voided ballots from the count', async () => {
+    const csv = toBallotsCsv([
+      { id: 'b1', preferences: ['a'], voided: false },
+      { id: 'b2', preferences: ['a'], voided: false },
+      { id: 'b3', preferences: ['b'], voided: true },
+    ])
+    const r = await recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32))
+    // 2 counted, not 3: floor(2/2)+1
+    expect(r.quota).toBe('2.00000')
+    expect(r.winners.map((w) => w.id)).toEqual(['a'])
+  })
+
+  it('still round-trips against a direct count', async () => {
+    const ballots = [
+      { id: 'b1', preferences: ['a', 'b'], voided: false },
+      { id: 'b2', preferences: ['b', 'a'], voided: false },
+      { id: 'b3', preferences: ['a', 'b'], voided: false },
+    ]
+    const viaCsv = await recount(toBallotsCsv(ballots), toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32))
+    const direct = await core.count({
+      candidates,
+      ballots: ballots.map(({ id, preferences }) => ({ id, preferences })),
+      seats: 1,
+      electionId: 'e',
+      ballotsSha256: 'ff'.repeat(32),
+    })
+    expect(viaCsv).toEqual(direct)
+  })
+
+  it('rejects a voided value that is neither 0 nor 1', async () => {
+    const csv = 'ballot_id,preferences,voided\n"b1","a","maybe"\n'
+    await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
+      .rejects.toThrow(/voided|corrupt/i)
+  })
+
+  it('rejects the old two-column format rather than guessing', async () => {
+    const csv = 'ballot_id,preferences\n"b1","a"\n'
+    await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
+      .rejects.toThrow(/field|header|corrupt/i)
+  })
+
+  it('still validates a voided ballot rather than waving it through', async () => {
+    // A voided row is not counted, but it is still part of the sealed file: a
+    // preference naming nobody means the file does not describe this election,
+    // whether that row was counted or not.
+    const csv = 'ballot_id,preferences,voided\n"b1","a","0"\n"b2","ghost","1"\n'
+    await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
+      .rejects.toThrow(/not a candidate/i)
+  })
+
+  it('refuses a file of nothing but voided ballots', async () => {
+    // Zero counted ballots is not a count, it is a file that cannot produce
+    // one -- droopQuota would divide an empty box.
+    const csv = toBallotsCsv([{ id: 'b1', preferences: ['a'], voided: true }])
+    await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
+      .rejects.toThrow()
   })
 })

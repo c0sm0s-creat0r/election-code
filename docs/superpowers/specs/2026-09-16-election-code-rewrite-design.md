@@ -222,15 +222,21 @@ is permanent.
 row for the election, sorted by `id` ascending, each row rendered as
 `id|preferences_json|voided` and joined with newlines. Deterministic.
 
-**It is not currently reproducible from the exported ballot CSV.**
-`toBallotsCsv` emits `ballot_id,preferences` only — no `voided` column — so a
-recount can recompute the count but cannot verify that the ballots it was
-handed are the sealed ones. `recount` takes `ballotsSha256` as a parameter and
-uses it solely to seed tie-break draws; it never recomputes or compares it.
+**It is reproducible from the exported ballot CSV** (since 2026-09-21).
+`toBallotsCsv` emits `ballot_id,preferences,voided`, which is exactly the three
+fields the digest is computed over, so a holder of the export can recompute
+`ballots_sha256` themselves and confirm that the ballots they were handed are
+the sealed ones before recounting them. `apps/api`'s ballot export writes the
+rows with an explicit `ORDER BY id`, matching the definition above.
 
-Closing this requires the export to carry `voided` and `recount` to recompute
-the digest and refuse a mismatch. Until then the offline recount proves the
-arithmetic, not the provenance — state it that way to anyone relying on it.
+Two limits to state plainly to anyone relying on it:
+
+- `recount` still takes `ballotsSha256` as a parameter and uses it solely to
+  seed tie-break draws. It does not recompute the digest or refuse a mismatch —
+  the check is available to the auditor, not performed on their behalf.
+- Voided ballots are in the digest and out of the count. `recount` parses and
+  validates them like any other row, then excludes them from the tally, so a
+  file of nothing but voided ballots is refused rather than counted as empty.
 
 ### Atomicity
 

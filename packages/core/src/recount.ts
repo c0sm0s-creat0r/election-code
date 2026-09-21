@@ -2,6 +2,18 @@ import { count } from './count.js'
 import type { Candidate, CountBallot, CountResult } from './types.js'
 
 /**
+ * A ballot as the export carries it: the count's view plus whether the ballot
+ * was voided.
+ *
+ * `voided` is required rather than optional-defaulting-to-false on purpose.
+ * This is the one format whose job is provenance — `ballots_sha256` is computed
+ * over `id|preferences|voided` for every row — so a caller who omitted the
+ * field would write `0` for a voided ballot and produce a file whose digest
+ * silently disagrees with the seal it is supposed to prove.
+ */
+export type ExportBallot = CountBallot & { voided: boolean }
+
+/**
  * A parsed CSV row, carrying the 1-based ordinal of the row as it appears
  * in the file (the header is row 1, and blank rows are counted before they
  * are dropped) so that an error can point an auditor at the offending line.
@@ -113,7 +125,7 @@ function parseCsvRows(text: string): CsvRow[] {
  * reader in `recount` cannot drift apart.
  */
 const CANDIDATE_HEADER = ['candidate_id', 'name'] as const
-const BALLOT_HEADER = ['ballot_id', 'preferences'] as const
+const BALLOT_HEADER = ['ballot_id', 'preferences', 'voided'] as const
 
 /** Quote a CSV field, escaping any `"` inside it as `""`. */
 function csvField(value: string): string {
@@ -133,11 +145,17 @@ export function toCandidatesCsv(candidates: Candidate[]): string {
 }
 
 /**
- * Produce the `ballot_id,preferences` CSV this library's `recount` reads
- * back, with preferences pipe-joined inside one quoted field. The inverse
- * of the ballots half of `recount`'s input.
+ * Produce the `ballot_id,preferences,voided` CSV this library's `recount` reads
+ * back, with preferences pipe-joined inside one quoted field. The inverse of
+ * the ballots half of `recount`'s input.
+ *
+ * **The `voided` column is what makes the seal reproducible from this file.**
+ * `election_seal.ballots_sha256` is SHA-256 over `id|preferences|voided` for
+ * every ballot sorted by id, so a holder of this export can recompute the
+ * digest and confirm these are the sealed ballots *before* recounting them.
+ * Without the column the recount proved the arithmetic and not the provenance.
  */
-export function toBallotsCsv(ballots: CountBallot[]): string {
+export function toBallotsCsv(ballots: ExportBallot[]): string {
   const lines = [BALLOT_HEADER.join(',')]
   for (const b of ballots) {
     for (const pref of b.preferences) {
@@ -154,7 +172,7 @@ export function toBallotsCsv(ballots: CountBallot[]): string {
         )
       }
     }
-    lines.push(`${csvField(b.id)},${csvField(b.preferences.join('|'))}`)
+    lines.push(`${csvField(b.id)},${csvField(b.preferences.join('|'))},${csvField(b.voided ? '1' : '0')}`)
   }
   return lines.join('\n') + '\n'
 }
@@ -164,12 +182,14 @@ export function toBallotsCsv(ballots: CountBallot[]): string {
  * the writers above could not have produced.
  *
  * `recount` reads only this library's own output, so the header is fixed and
- * every data row has exactly two fields. A missing header would make
- * `slice(1)` eat a real record - for ballots, one fewer ballot changes the
- * quota - and a row with the wrong field count means the line was
- * hand-edited. Neither is something to guess past.
+ * every data row has exactly as many fields as that header. A missing header
+ * would make `slice(1)` eat a real record - for ballots, one fewer ballot
+ * changes the quota - and a row with the wrong field count means the line was
+ * hand-edited. Neither is something to guess past. That includes a two-column
+ * ballot file from before the `voided` column existed: such a file cannot be
+ * checked against a seal, so it is refused rather than read optimistically.
  */
-function dataRows(csv: string, header: readonly [string, string]): CsvRow[] {
+function dataRows(csv: string, header: readonly string[]): CsvRow[] {
   const rows = parseCsvRows(csv)
   const first = rows[0]
   const headerOk =
@@ -234,11 +254,19 @@ export async function recount(
 
   const ballots: CountBallot[] = []
   const seenBallotIds = new Set<string>()
+  let voidedCount = 0
   for (const row of dataRows(ballotsCsv, BALLOT_HEADER)) {
     const id = row.fields[0] ?? ''
     const prefsField = row.fields[1] ?? ''
+    const voidedField = row.fields[2] ?? ''
     if (id.trim() === '') {
       throw corrupt(`row ${row.n} has an empty ballot id`)
+    }
+    // Only the two values this library writes. Anything else - 'true', 'yes',
+    // '' - was hand-edited, and guessing at it would decide whether a ballot
+    // counts.
+    if (voidedField !== '0' && voidedField !== '1') {
+      throw corrupt(`row ${row.n} has voided=${JSON.stringify(voidedField)}, expected "0" or "1"`)
     }
     // Ballot ids are unique in the export they came from. A repeat means the
     // file was concatenated or a line duplicated by hand - and a duplicated
@@ -280,7 +308,27 @@ export async function recount(
       seenPrefs.add(pref)
     }
 
+    // A voided ballot is validated like any other - it is part of the sealed
+    // file, and a preference naming nobody means the file does not describe
+    // this election whether that row counted or not - but it is not passed to
+    // `count`. It stays in the box and out of the tally, exactly as the
+    // database holds it.
+    if (voidedField === '1') {
+      voidedCount++
+      continue
+    }
+
     ballots.push({ id, preferences })
+  }
+
+  // The Droop quota divides by the number of counted ballots, so an empty box
+  // is not a count with no winner - it is a file that cannot produce one.
+  if (ballots.length === 0) {
+    throw corrupt(
+      voidedCount > 0
+        ? `every one of the ${voidedCount} ballot(s) is voided, so there is nothing to count`
+        : 'the ballot file has no ballots',
+    )
   }
 
   return count({ candidates, ballots, seats, electionId, ballotsSha256 })
