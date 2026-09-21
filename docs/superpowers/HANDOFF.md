@@ -1,6 +1,6 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (Plan 2a complete; multi-seat Critical fixed; Plan 2b written, not executed)
+**Last updated:** 2026-09-21 (Plan 2a complete; multi-seat Critical fixed; Plans 2b and 2c written, not executed)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 
@@ -14,7 +14,7 @@
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
 | Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
 | Plan 2b — voting path | **Plan written**, not executed. `docs/superpowers/plans/2026-09-21-api-voting-path.md` — 7 tasks |
-| Plan 2c — result path | Not written. Scope listed at the end of the 2b plan |
+| Plan 2c — result path | **Plan written**, not executed. `docs/superpowers/plans/2026-09-21-api-result-path.md` — 7 tasks |
 | Plan 3 — frontends | Not started |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
 | Execution ledger | `.superpowers/sdd/2026-09-16-core-counting-library/progress.md` (gitignored, on disk only) |
@@ -114,7 +114,9 @@ execution, not only code-vs-plan during it.
 5. **`CountInput.overrides` is `Record<string, { candidateId, reason }>`** — the officer's reason is
    required and reaches `TieBreakRecord.reason`.
 6. **The ballot export carries no `voided` column**, so a recount proves the arithmetic, not the
-   provenance (spec §2 documents this). Closing it needs the column plus a digest comparison.
+   provenance (spec §2 documents this). **Plan 2c Task 4 closes it** — note that adding the column
+   also requires fixing `recount`, which refuses a row with an unexpected field count and has no
+   notion of a voided ballot, so today it would both reject the file and count voided ballots.
 7. **`WITHOUT ROWID` on `ballot`** is the whole basis of the secret-ballot guarantee. Migrations are
    hand-written SQL precisely so this clause is visible. A test must assert the table has it.
 8. **No ORM.** `wrangler d1 migrations` + D1's prepared-statement API + hand-written row types.
