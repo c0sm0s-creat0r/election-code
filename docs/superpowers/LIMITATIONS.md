@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-21, during Plan 3 brainstorming (11 entries).
+**Last updated:** 2026-09-21, after Plan 2d (11 live entries, 1 closed).
 
 ---
 
@@ -167,23 +167,44 @@ on a volunteer's personal device, outside the reach of the purge — which would
 claim to something much less defensible. The door session's TTL is an hour anyway, so a reload
 frequently means re-authenticating regardless.
 
-## 11. The door cannot enrol a member the export missed
+## ~~11. The door cannot enrol a member the export missed~~ — CLOSED, 2026-09-21
 
-**Where:** guest attendance, `docs/superpowers/specs/2026-09-21-frontends-design.md` §0.
+Recorded and closed the same day. It was accepted for a few hours on the reasoning that a door which
+can create voters would mean one door password could manufacture an electorate. The user then asked
+for that flow explicitly, and it was built in Plan 2d **with the controls this entry named as the
+condition for reopening it** — a distinct flag, and the count of door-added voters stated wherever the
+total is. `POST /api/batches/:id/voters` creates the member and checks them in; they can sign in and
+vote immediately.
 
-A guest added at the door attends and **cannot vote**. So if someone is genuinely an eligible member
-but absent from the USU export — they joined last week and the CSV is stale — the door has no way to
-give them a ballot. Adding them as a guest records their attendance and nothing more.
+Kept here rather than deleted, because the reasoning is the condition on which it stays closed. See
+item 12 for what replaced it.
 
-**Why accepted (2026-09-21):** the alternative is a door that can create voters, which would mean one
-door password could manufacture an electorate and the claim that eligibility derives from the
-membership export would stop being true. The roll means exactly one thing: the export.
+## 12. A door password can enrol a voter
 
-**The remedy, which the door UI must point at rather than hide:** the officer re-imports a corrected
-export. The roll import is an upsert, so this is safe mid-AGM and updates eligibility in place — and
-because eligibility is re-verified inside the ballot insert, a member added that way can vote
-immediately without anything being restarted.
+**Where:** `apps/api/src/routes/doorVoters.ts`, migration `0004`.
 
-**What would close it:** the "add member at the door" flow that was considered and rejected, with a
-distinct flag, its own audit row, and the count of door-added voters stated wherever the total is.
-Re-open this only with those controls attached.
+"Eligibility derives from the USU membership export" is now "…derives from the export, plus N people
+the returning officer's door staff added". Anyone holding the door password can create an eligible
+voter, and the door password is typed on volunteers' phones in a public room.
+
+**Why accepted (2026-09-21, by the user, having been shown this cost):** the alternative is turning
+away a member who has paid, because the CSV was exported before they joined. That is worse. A member
+standing at the desk with proof of membership is the common case; an attacker with the door password
+is the rare one, and they are bounded by needing to be in the room with a door session.
+
+**What keeps the total defensible, and must not be removed:**
+
+- `voter_roll.added_at_door` flags every such row and is **never cleared** — a later corrected export
+  refreshes the name and eligibility and leaves the flag alone.
+- `GET /quorum` reports `added_at_door` beside the totals, so the number is never shown without it.
+- **Both attendance exports carry it as a column**, so a committee reading the file sees which voters
+  came from the export and which did not. This is the control that matters most: it is the one a
+  scrutineer can check without trusting us.
+- The endpoint refuses a `usu_id` already on the roll rather than upserting, so a mistyped id cannot
+  overwrite a real member's name in the table eligibility is judged from.
+- A door-added member cannot be removed once they have voted, and a member from the export cannot be
+  removed at the door at all.
+
+**What would narrow it:** requiring an officer session rather than a door session for this one action,
+which trades a volunteer's autonomy at the desk for a stronger claim. Worth revisiting if a real AGM
+shows the door rarely needs it.
