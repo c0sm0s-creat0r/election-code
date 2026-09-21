@@ -57,6 +57,9 @@ export type BallotRow = {
   voided: number // 0 | 1
 }
 
+/** The two columns the count needs from a ballot. */
+export type CountBallotRow = Pick<BallotRow, 'id' | 'preferences'>
+
 // who voted, never what. This is the mark-off on the roll.
 export type VoteReceiptRow = {
   election_id: string
@@ -88,6 +91,8 @@ export type ElectionResultRow = {
   id: number
   election_id: string
   computed_at: number
+  /** Fixed-point, formatted, e.g. "2.00000". Added in 0003; see that migration. */
+  quota: string
   rounds: string // full round-by-round JSON
   winners: string
   tie_breaks: string // every tie, method, seed or reason

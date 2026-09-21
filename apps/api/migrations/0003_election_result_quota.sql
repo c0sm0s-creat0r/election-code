@@ -1,0 +1,14 @@
+-- The quota a count was computed against, so a stored result is a complete
+-- result document.
+--
+-- `election_result` holds rounds, winners and tie-breaks, and the result
+-- endpoint serves a second request from that stored row rather than recounting.
+-- The quota cannot be recovered from any of it: `Round` does not carry it, and
+-- `election_seal.ballot_count` includes voided ballots while the count excludes
+-- them, so floor(count/(seats+1))+1 cannot be recomputed from the seal either.
+-- Without this column the first response and the second would differ.
+--
+-- NOT NULL DEFAULT '' because D1 requires a default when adding a NOT NULL
+-- column to an existing table. No row can ever observe the default: the code
+-- that first writes `election_result` at all ships with this migration.
+ALTER TABLE election_result ADD COLUMN quota TEXT NOT NULL DEFAULT '';
