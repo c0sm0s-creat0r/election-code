@@ -69,4 +69,19 @@ app.route('/', auth)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
+/**
+ * Every route in this API answers JSON, including its failures. Hono's default
+ * handler returns a text/plain "Internal Server Error", so a frontend calling
+ * res.json() throws on the parse and surfaces a parse error instead of the 500
+ * that actually happened — the sort of thing that wastes an hour at an AGM.
+ *
+ * The error itself is logged, never returned: assertUsableSecret and similar
+ * guards throw messages about configuration that a caller has no business
+ * reading.
+ */
+app.onError((err, c) => {
+  console.error('unhandled error', err)
+  return c.json({ error: 'internal' }, 500)
+})
+
 export default app
