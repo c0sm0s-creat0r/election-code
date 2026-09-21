@@ -24,7 +24,7 @@ const create = (body: unknown, key?: string) =>
 
 const valid = {
   name: 'SciSoc AGM 2026', slug: 'scisoc-2026',
-  officer_password: 'officer-pw', door_password: 'door-pw',
+  officer_password: 'officer-password-1', door_password: 'door-password-1',
   branding: { title: 'Executive Elections', org_name: 'SciSoc', accent_color: '#2563eb', logo_url: '' },
 }
 
@@ -47,8 +47,8 @@ describe('POST /api/batches', () => {
 
   it('never returns a password or a hash', async () => {
     const text = await (await create(valid, KEY)).text()
-    expect(text).not.toContain('officer-pw')
-    expect(text).not.toContain('door-pw')
+    expect(text).not.toContain('officer-password-1')
+    expect(text).not.toContain('door-password-1')
     expect(text).not.toContain('pbkdf2')
   })
 
@@ -67,6 +67,36 @@ describe('POST /api/batches', () => {
 
   it('rejects a missing field with 400', async () => {
     expect((await create({ name: 'x' }, KEY)).status).toBe(400)
+  })
+
+  it('audits a DENIED super-admin-key attempt, with a null batch_id', async () => {
+    // The highest-privileged action in the system, and the direct descendant
+    // of the legacy unauthenticated tenant-creation endpoint. batch_id is
+    // NULL because no batch exists to attribute the attempt to.
+    expect((await create(valid, 'wrong')).status).toBe(401)
+    const row = await env.DB.prepare(`SELECT batch_id, role, action, detail FROM audit_log`)
+      .first<{ batch_id: string | null; role: string; action: string; detail: string | null }>()
+    expect(row).toEqual({ batch_id: null, role: 'super', action: 'batch.create.denied', detail: null })
+  })
+
+  it('audits a MISSING super-admin-key attempt too', async () => {
+    expect((await create(valid)).status).toBe(401)
+    const { results } = await env.DB.prepare(`SELECT id FROM audit_log WHERE action = 'batch.create.denied'`).all()
+    expect(results).toHaveLength(1)
+  })
+
+  it('never records the supplied key, or any prefix of it, in the audit row', async () => {
+    // A near-miss guess written into `detail` is a credential sitting in a
+    // table officers and exports can read.
+    const guess = 'super-secret-test-kex'
+    await create(valid, guess)
+    const row = await env.DB.prepare(`SELECT detail FROM audit_log`).first<{ detail: string | null }>()
+    expect(row?.detail).toBeNull()
+    const all = JSON.stringify(
+      (await env.DB.prepare(`SELECT * FROM audit_log`).all()).results,
+    )
+    expect(all).not.toContain(guess)
+    expect(all).not.toContain(guess.slice(0, 6))
   })
 
   it('writes an audit_log row', async () => {
@@ -161,6 +191,33 @@ describe('POST /api/batches validation', () => {
 
   it('accepts the empty-string logo_url used by the fixture ("no logo")', async () => {
     expect((await withBranding({ logo_url: '' })).status).toBe(201)
+  })
+
+  // PBKDF2 at 210k iterations buys a constant factor; it does not rescue a
+  // one-character door password, which is typed on a volunteer's phone in a
+  // public room and chosen in a hurry.
+  const withPasswords = (officer: string, door: string) =>
+    create({ ...valid, officer_password: officer, door_password: door }, KEY)
+
+  it('rejects a one-character door password', async () => {
+    expect((await withPasswords('officer-password-1', 'x')).status).toBe(400)
+  })
+
+  it('rejects a one-character officer password', async () => {
+    expect((await withPasswords('x', 'door-password-1')).status).toBe(400)
+  })
+
+  it('rejects an 11-character password but accepts 12', async () => {
+    expect((await withPasswords('a'.repeat(11), 'door-password-1')).status).toBe(400)
+    expect((await withPasswords('a'.repeat(12), 'b'.repeat(12))).status).toBe(201)
+  })
+
+  it('refuses a short password without echoing it back', async () => {
+    // The 400 body is a fixed literal; the Zod message stays server-side so
+    // nothing the caller typed is reflected.
+    const res = await withPasswords('short', 'door-password-1')
+    expect(res.status).toBe(400)
+    expect(await res.text()).not.toContain('short')
   })
 })
 

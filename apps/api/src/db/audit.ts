@@ -1,5 +1,11 @@
 export type AuditEntry = {
-  batchId: string
+  /**
+   * null only where the action genuinely has no batch -- a denied
+   * super-admin-key attempt on POST /api/batches. Every other caller must
+   * pass an id it has already loaded from the database: audit_log has no
+   * foreign key, so an unvalidated path parameter would sail straight in.
+   */
+  batchId: string | null
   role: 'super' | 'officer' | 'door' | 'voter'
   action: string
   detail?: unknown

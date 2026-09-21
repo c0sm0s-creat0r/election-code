@@ -89,7 +89,9 @@ export type AuditLogRole = 'super' | 'officer' | 'door' | 'voter'
 
 export type AuditLogRow = {
   id: number
-  batch_id: string
+  // null for a privileged action that has no batch to attribute -- a
+  // denied super-admin-key attempt. See migrations/0001_initial.sql.
+  batch_id: string | null
   role: AuditLogRole
   action: string
   detail: string | null

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { Env } from '../index.js'
 import { hashPassword } from '../auth/password.js'
 import { timingSafeEqual } from '../auth/timing-safe-equal.js'
-import { auditLogStatement } from '../db/audit.js'
+import { auditLogStatement, recordAudit } from '../db/audit.js'
 import type { BatchRow } from '../db/types.js'
 
 // The voter-facing URL is vote.<domain>/<slug>: reject anything that would
@@ -40,11 +40,21 @@ const brandingSchema = z.object({
   logo_url: logoUrlSchema,
 })
 
+// PBKDF2 at 210k iterations is the only thing standing in front of these,
+// and it slows an attacker down by a constant factor -- it does not rescue a
+// one-character door password. The door password in particular is typed on a
+// volunteer's phone in a public room and is often chosen in a hurry, so the
+// floor belongs at provisioning time where it is set, not at sign-in where it
+// is too late.
+const PASSWORD_MIN = 12
+const passwordSchema = (label: string) =>
+  z.string().min(PASSWORD_MIN, `${label} must be at least ${PASSWORD_MIN} characters`)
+
 const createBatchSchema = z.object({
   name: z.string().min(1),
   slug: slugSchema,
-  officer_password: z.string().min(1),
-  door_password: z.string().min(1),
+  officer_password: passwordSchema('officer_password'),
+  door_password: passwordSchema('door_password'),
   branding: brandingSchema,
 })
 
@@ -75,6 +85,15 @@ batches.post('/api/batches', async (c) => {
   // unauthorised caller should not be able to probe validation behaviour.
   const provided = c.req.header('x-super-admin-key')
   if (!isSuperAdminKey(provided, c.env.SUPER_ADMIN_KEY)) {
+    // This is the direct descendant of the legacy unauthenticated
+    // tenant-creation endpoint, so a *denied* attempt is worth a row of its
+    // own: batch_id is NULL because no batch exists to attribute it to.
+    //
+    // `detail` deliberately records nothing about the supplied key -- not
+    // the value, not a prefix, not a length. A near-miss guess written into
+    // the audit trail is a credential sitting in a table that officers and
+    // exports can read.
+    await recordAudit(c.env.DB, { batchId: null, role: 'super', action: 'batch.create.denied' })
     return c.json({ error: 'unauthorized' }, 401)
   }
 

@@ -87,7 +87,14 @@ CREATE TABLE election_result (       -- one row per count run
 
 CREATE TABLE audit_log (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  batch_id TEXT NOT NULL,
+  -- Nullable on purpose. The highest-privileged action in the system --
+  -- a super-admin-key attempt against POST /api/batches -- has no batch
+  -- to attribute when it is *denied*, and that denial is precisely the
+  -- event spec section 6 wants recorded. A sentinel id would oblige every
+  -- future reader to know a magic string; NULL is self-describing and
+  -- SQL-native. There is deliberately no foreign key either: an audit
+  -- trail that cascades away with its subject is not an audit trail.
+  batch_id TEXT,
   role     TEXT NOT NULL,            -- super | officer | door | voter
   action   TEXT NOT NULL,
   detail   TEXT,
