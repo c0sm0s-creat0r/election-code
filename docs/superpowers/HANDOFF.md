@@ -114,6 +114,38 @@ execution, not only code-vs-plan during it.
 
 ---
 
+## 6b. Constraints Plan 2b must honour (from the Plan 2a whole-branch review)
+
+1. **A session cookie is not proof of eligibility.** A voter session proves only that
+   someone passed USU-id + surname at time T. Spec §5 allows an officer to un-check-in a
+   voter *after* their cookie was issued, and the post-AGM roll purge removes rows while
+   cookies stay valid for their full TTL. **Re-verify `eligible` and `check_in` inside the
+   ballot transaction on every submission.** Never treat the cookie as the eligibility check.
+
+2. **`requireRole` binds to the literal path param `id`.** Every 2b route must use
+   `/api/batches/:id/...`, not `:batchId`. A mismatch produces a middleware that denies
+   everything — it fails closed, so a test catches it, but it reads as a mysterious 403.
+   If you mount sub-routers under `/api/batches/:id`, verify parent-param inheritance
+   rather than assuming it.
+
+3. **Rate limiting is load-bearing for two things, not one.** Both sign-in routes are
+   unauthenticated, cost ~210k PBKDF2 iterations per call, and write an `audit_log` row per
+   failure. Unthrottled that is both a billable-CPU amplifier and a way for an anonymous
+   caller to flood the audit trail until real entries are unreadable — degrading the exact
+   artifact the audit design exists to produce. KV limits must cover `officer/session` and
+   `door/session` explicitly, not only roll lookup and ballot submission as §6 words it.
+
+4. **Write `ORDER BY id` explicitly** in the seal serialisation and the ballot export.
+   Because `ballot` is `WITHOUT ROWID`, physical order is *already* UUID order, so it will
+   be tempting to omit it. Spec §2 defines the digest as sorted by `id` ascending — inherit
+   that from the query, not from a storage detail.
+
+5. **Once `0001_initial.sql` is applied to the production D1, it is immutable.** Editing an
+   applied migration leaves the deployed database unchanged while the local test database
+   silently diverges. All later schema changes go in a new numbered migration.
+
+---
+
 ## 7. `packages/core` public surface (what Plan 2 consumes)
 
 ```

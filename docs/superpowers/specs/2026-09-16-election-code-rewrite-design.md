@@ -196,8 +196,9 @@ CREATE TABLE election_result (       -- one row per count run
 
 CREATE TABLE audit_log (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  batch_id TEXT NOT NULL,
-  role     TEXT NOT NULL,            -- super | officer | door
+  batch_id TEXT,                     -- NULL for system-level events with no batch,
+                                     -- e.g. a denied super-admin provisioning attempt
+  role     TEXT NOT NULL,            -- super | officer | door | voter
   action   TEXT NOT NULL,
   detail   TEXT,
   at       INTEGER NOT NULL
