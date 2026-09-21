@@ -130,10 +130,18 @@ checkIn.get('/api/batches/:id/quorum', requireRole('door'), async (c) => {
          (SELECT count(*) FROM voter_roll WHERE batch_id = ?1 AND eligible = 1) AS eligible,
          (SELECT count(*) FROM check_in ci
             JOIN voter_roll vr ON vr.batch_id = ci.batch_id AND vr.usu_id = ci.usu_id
-           WHERE ci.batch_id = ?1 AND vr.eligible = 1) AS checked_in`,
+           WHERE ci.batch_id = ?1 AND vr.eligible = 1) AS checked_in,
+         (SELECT count(*) FROM guest WHERE batch_id = ?1) AS guests`,
     )
     .bind(batchId)
-    .first<{ eligible: number; checked_in: number }>()
+    .first<{ eligible: number; checked_in: number; guests: number }>()
 
-  return c.json({ checked_in: row?.checked_in ?? 0, eligible: row?.eligible ?? 0 })
+  // `guests` is reported beside the ratio and never summed into it: spec §4
+  // defines quorum as checked_in / eligible against the roll, and a guest is
+  // not an eligible member.
+  return c.json({
+    checked_in: row?.checked_in ?? 0,
+    eligible: row?.eligible ?? 0,
+    guests: row?.guests ?? 0,
+  })
 })
