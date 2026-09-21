@@ -14,6 +14,8 @@ import { override } from './routes/override.js'
 import { exports_ } from './routes/exports.js'
 import { logo } from './routes/logo.js'
 import { purge } from './routes/purge.js'
+import { turnout } from './routes/turnout.js'
+import { branding } from './routes/branding.js'
 
 export type Env = {
   DB: D1Database
@@ -97,6 +99,8 @@ app.route('/', override)
 app.route('/', exports_)
 app.route('/', logo)
 app.route('/', purge)
+app.route('/', turnout)
+app.route('/', branding)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 

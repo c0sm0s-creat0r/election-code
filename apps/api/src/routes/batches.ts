@@ -34,7 +34,7 @@ const logoUrlSchema = z
     },
   )
 
-const brandingSchema = z.object({
+export const brandingSchema = z.object({
   title: z.string(),
   org_name: z.string(),
   accent_color: accentColorSchema,
