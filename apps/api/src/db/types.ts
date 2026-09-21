@@ -63,6 +63,16 @@ export type VoteReceiptRow = {
   usu_id: string // = "Net Id" in the USU export
   voted_at: number
   recast_count: number
+  /**
+   * The receipt hash of this voter's CURRENT live ballot, or null if they hold
+   * none (they have voided, or the election has closed). Added in 0002; see
+   * that migration for why it exists and why it must not outlive the count.
+   *
+   * Non-null, this is a join from a usu_id to a ballot's preferences. Do not
+   * select it into anything, do not export it, and do not leave it set once
+   * ballots can no longer be voided.
+   */
+  live_receipt_hash: string | null
 }
 
 // written once at close, never updated
