@@ -1,0 +1,24 @@
+{
+  "_source": "https://github.com/AndrewConway/ConcreteSTV — examples/SimpleExample.stv + SimpleExample.md",
+  "_provenance": "THIRD-PARTY DIFFERENTIAL, NOT AN AUTHORITY'S PUBLISHED RESULT. ConcreteSTV is an independent implementation whose results were used to find real defects in the 2013, 2016 and 2019 federal Senate counts, so disagreeing with it is strong evidence we are wrong — but it is not a published electoral-commission count. No small officially-published IGM count exists: IGM is used only for federal Senate elections, and the smallest of those is ~300k ballots.",
+  "_ruleset": "AEC2013",
+  "_transformation": "ConcreteSTV stores above-the-line party tickets; our model has no ATL/BTL concept, so each ticket is expanded to the plain candidate preference list it stands for. parties: [1,2,0] -> A1,A2,P1,C1,C2.",
+  "seats": 3,
+  "quota": "61.00000",
+  "candidates": [
+    { "id": "C1", "name": "C1" },
+    { "id": "C2", "name": "C2" },
+    { "id": "A1", "name": "A1" },
+    { "id": "A2", "name": "A2" },
+    { "id": "P1", "name": "P1" }
+  ],
+  "ballotGroups": [
+    { "preferences": ["C1", "C2", "A1", "A2"], "n": 110, "_from": "atl parties [0,1]" },
+    { "preferences": ["A1", "A2", "P1", "C1", "C2"], "n": 100, "_from": "atl parties [1,2,0]" },
+    { "preferences": ["P1", "A1", "A2"], "n": 10, "_from": "atl parties [2,1]" },
+    { "preferences": ["P1"], "n": 10, "_from": "atl parties [2]" },
+    { "preferences": ["A1", "P1", "A2"], "n": 10, "_from": "btl candidates [2,4,3]" }
+  ],
+  "expectedWinners": ["C1", "A1", "A2"],
+  "_expectedNotes": "Walkthrough: C1 and A1 both exceed quota on first preferences. A1's 49 surplus at TV 49/110 sends ~44.5 to A2 and ~4.5 to P1. C1's 49 surplus goes entirely to C2. P1 is then excluded and A2 takes the third seat."
+}
