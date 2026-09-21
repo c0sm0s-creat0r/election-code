@@ -255,7 +255,7 @@ ballot is voided.
 
 ### Retention
 
-After the AGM, `voter_roll` and `check_in` are purged. `ballot`,
+After the AGM, `voter_roll`, `check_in` and `guest` are purged. `ballot`,
 `election_seal` and `election_result` are anonymous and are the audit record,
 so they are kept. The result: a fully checkable count and none of the members'
 names.
@@ -269,6 +269,18 @@ the attendance export is built from it — so what is retained is: which member
 voted in which election, when, and how many times they recast. Not how they
 voted; nothing joins it to a ballot once the election is closed, because
 `live_receipt_hash` is cleared at close.
+
+**`guest` holds a name and nothing else** (migration `0004`): someone in the room
+who is not on the roll and cannot vote. It is purged with the roll, and it is
+exported separately as `guests.csv` rather than as attendance rows, because
+attendance is the `vote_receipt` mark-off and a guest did not vote.
+
+**`voter_roll.added_at_door`** marks a member a door volunteer created because
+the export missed them. They can vote, so the flag is a provenance control, not
+a convenience: it is reported by `GET /quorum` beside the totals and carried as a
+column in both attendance exports, so a committee reading the file can see which
+voters came from the membership export and which did not. It is never cleared — a
+later corrected export refreshes the name and eligibility and leaves it alone.
 
 The purge is refused while any election is still open or in draft, since Plan
 2b's ballot insert re-checks `voter_roll` on every submission: purging mid-AGM
@@ -514,7 +526,12 @@ POST   /api/batches/:id/door/session
 GET    /api/batches/:id/roll
 POST   /api/batches/:id/check-in            {usu_id}
 DELETE /api/batches/:id/check-in/:usu_id
-GET    /api/batches/:id/quorum
+POST   /api/batches/:id/guests              {name, note?}   (attends, cannot vote)
+GET    /api/batches/:id/guests
+DELETE /api/batches/:id/guests/:guestId
+POST   /api/batches/:id/voters              {usu_id, first_name, last_name}
+DELETE /api/batches/:id/voters/:usu_id
+GET    /api/batches/:id/quorum              -> {checked_in, eligible, guests, added_at_door}
 ```
 
 **Officer session**
@@ -540,7 +557,15 @@ GET    /api/batches/:id/elections/:eid/ballots.csv
 GET    /api/batches/:id/elections/:eid/candidates.csv
 GET    /api/batches/:id/elections/:eid/result.json
 GET    /api/batches/:id/attendance.csv
+GET    /api/batches/:id/guests.csv
 ```
+
+**The two door additions are deliberately separate routes.** `POST /guests`
+records someone who attends and cannot vote; `POST /voters` records a member the
+export missed, who can. One endpoint doing both would let a UI grant a vote by
+accident. `POST /voters` refuses a `usu_id` already on the roll rather than
+upserting it, because a mistyped id matching a real member would otherwise
+overwrite that member's name in the table eligibility is judged from.
 
 **Super admin**
 

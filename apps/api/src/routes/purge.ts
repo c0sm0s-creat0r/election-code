@@ -37,10 +37,11 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
       `SELECT
          (SELECT count(*) FROM election WHERE batch_id = ?1 AND status != 'closed') AS unfinished,
          (SELECT count(*) FROM voter_roll WHERE batch_id = ?1) AS roll,
-         (SELECT count(*) FROM check_in WHERE batch_id = ?1) AS checkins`,
+         (SELECT count(*) FROM check_in WHERE batch_id = ?1) AS checkins,
+         (SELECT count(*) FROM guest WHERE batch_id = ?1) AS guests`,
     )
     .bind(batchId)
-    .first<{ unfinished: number; roll: number; checkins: number }>()
+    .first<{ unfinished: number; roll: number; checkins: number; guests: number }>()
 
   const unfinished = counts?.unfinished ?? 0
   if (unfinished > 0) {
@@ -56,6 +57,10 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
 
   const roll = counts?.roll ?? 0
   const checkins = counts?.checkins ?? 0
+  // A guest's name is personal data and `guest` is not reachable from any other
+  // purge, so it goes in the same transaction. Leaving it behind would reinstate
+  // exactly the false retention claim spec §2 had corrected.
+  const guests = counts?.guests ?? 0
 
   // check_in first: its foreign key references voter_roll(batch_id, usu_id).
   // The delete order matters even with ON DELETE CASCADE, because the cascade
@@ -63,15 +68,16 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM check_in WHERE batch_id = ?`).bind(batchId),
     c.env.DB.prepare(`DELETE FROM voter_roll WHERE batch_id = ?`).bind(batchId),
+    c.env.DB.prepare(`DELETE FROM guest WHERE batch_id = ?`).bind(batchId),
     auditLogStatement(c.env.DB, {
       batchId,
       role: 'officer',
       action: 'roll.purge',
-      detail: { kind: 'roll_purge', rowsDeleted: roll + checkins },
+      detail: { kind: 'roll_purge', rowsDeleted: roll + checkins + guests },
     }),
   ])
 
   // Idempotent: a second call deletes nothing and reports zeros, so a retry
   // after a dropped connection is safe.
-  return c.json({ voter_roll: roll, check_in: checkins })
+  return c.json({ voter_roll: roll, check_in: checkins, guest: guests })
 })

@@ -123,9 +123,24 @@ async function runWholeElection() {
   await SELF.fetch(`https://example.com/api/receipts/${first}/void`, { method: 'POST' })
   await submit(voters[0]!, [candidates[1]!, candidates[0]!])
 
+  // A guest and a member the export missed (Plan 2d). Both before the purge, or
+  // the inventory below would not see their actions at all. The door-added
+  // member is then removed again, so both of that pair's actions are exercised.
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/guests`, {
+    method: 'POST', headers: { ...json, cookie: doorCookie },
+    body: JSON.stringify({ name: 'Jo Verydistinctiveguest', note: 'observer' }),
+  })
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/voters`, {
+    method: 'POST', headers: { ...json, cookie: doorCookie },
+    body: JSON.stringify({ usu_id: '2400777', first_name: 'Nina', last_name: 'Verydistinctivejoiner' }),
+  })
+  await SELF.fetch(`https://example.com/api/batches/${batchId}/voters/2400777`, {
+    method: 'DELETE', headers: { cookie: doorCookie },
+  })
+
   // ...and on through the result path: close, seal, count, edit the branding,
-  // then purge. Every audited action Plan 2c added runs here, which is what
-  // makes the inventory below a check rather than a snapshot of one half.
+  // then purge. Every audited action Plans 2c and 2d added runs here, which is
+  // what makes the inventory below a check rather than a snapshot of one half.
   const officer = { cookie: officerCookie }
   await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/close`, {
     method: 'POST', headers: officer,
@@ -173,6 +188,7 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
       'election.count',
       'election.create',
       'election.open',
+      'guest.add',
       'roll.import',
       'roll.purge',
       'session.door.ok',
@@ -180,16 +196,30 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
       'session.officer.ok',
       'session.voter.fail',
       'session.voter.ok',
+      'voter.add_at_door',
+      'voter.remove_at_door',
     ])
   })
 
   it('stores no email address anywhere in the database', async () => {
     await runWholeElection()
-    const tables = ['batch', 'voter_roll', 'check_in', 'election', 'candidate', 'ballot', 'vote_receipt', 'audit_log']
+    const tables = ['batch', 'voter_roll', 'check_in', 'guest', 'election', 'candidate', 'ballot', 'vote_receipt', 'audit_log']
     for (const t of tables) {
       const rows = await env.DB.prepare(`SELECT * FROM ${t}`).all()
       expect(JSON.stringify(rows.results), `${t} carried an email address`).not.toMatch(/@example\.com/)
     }
+  })
+
+  it('never records a guest name or a door-added usu_id in the audit log', async () => {
+    // For a guest the name IS the payload, and a door-added member's usu_id is
+    // the one identifier that action could leak. audit_log cannot be purged, so
+    // neither may ever appear in it.
+    await runWholeElection()
+    const rows = await env.DB.prepare('SELECT * FROM audit_log').all()
+    const text = JSON.stringify(rows.results)
+    expect(text).not.toMatch(/Verydistinctiveguest/)
+    expect(text).not.toMatch(/Verydistinctivejoiner/)
+    expect(text).not.toMatch(/2400777/)
   })
 
   it('keeps ballot free of any voter reference or timestamp', async () => {

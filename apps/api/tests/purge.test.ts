@@ -137,6 +137,27 @@ describe('roll purge', () => {
     expect(row!.detail).not.toMatch(/\d{7}/)
   })
 
+  it('PURGES GUESTS — a guest name is personal data', async () => {
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/guests`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: f.doorCookie },
+      body: JSON.stringify({ name: 'Jo Visitor' }),
+    })
+    await close()
+    const res = await purge()
+    expect(await res.json()).toMatchObject({ guest: 1 })
+    expect(await countOf('guest')).toBe(0)
+  })
+
+  it('purges a door-added member like any other roll row', async () => {
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/voters`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: f.doorCookie },
+      body: JSON.stringify({ usu_id: '2400777', first_name: 'Nina', last_name: 'Newjoiner' }),
+    })
+    await close()
+    await purge()
+    expect(await countOf('voter_roll')).toBe(0)
+  })
+
   it('leaves no live ballot link behind for a purged voter', async () => {
     await close()
     await purge()

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
-import { setUp, submitBallot, sha256Hex, type Fixture } from './helpers.js'
+import { setUp, submitBallot, voterSignIn, sha256Hex, JSON_HEADERS, type Fixture } from './helpers.js'
 
 let f: Fixture
 
@@ -40,7 +40,7 @@ describe('exports', () => {
   it('exports attendance as who voted, never what', async () => {
     await close()
     const text = await (await get(`/elections/${f.electionId}/attendance.csv`)).text()
-    expect(text.split('\n')[0]).toBe('usu_id,first_name,last_name,voted_at,recast_count')
+    expect(text.split('\n')[0]).toBe('usu_id,first_name,last_name,voted_at,recast_count,added_at_door')
     expect(text).not.toMatch(/preferences|ballot_id/)
     expect(text).toContain('2400001')
     expect(text).toContain('Lovelace')
@@ -119,7 +119,8 @@ describe('exports', () => {
   it('exports the whole batch attendance across elections', async () => {
     await close()
     const text = await (await get('/attendance.csv')).text()
-    expect(text.split('\n')[0]).toBe('election_id,election_name,usu_id,first_name,last_name,voted_at')
+    expect(text.split('\n')[0])
+      .toBe('election_id,election_name,usu_id,first_name,last_name,voted_at,added_at_door')
     expect(text).toContain('President')
   })
 
@@ -151,5 +152,45 @@ describe('exports', () => {
 
   it('404s an election in another batch', async () => {
     expect((await get(`/elections/${crypto.randomUUID()}/ballots.csv`)).status).toBe(404)
+  })
+
+  it('carries added_at_door in the attendance export, so the total has provenance', async () => {
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/voters`, {
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
+      body: JSON.stringify({ usu_id: '2400777', first_name: 'Nina', last_name: 'Newjoiner' }),
+    })
+    const cookie = await voterSignIn(f.batchId, '2400777', 'Newjoiner')
+    await submitBallot(f.batchId, f.electionId, cookie, [f.candidateIds.a, f.candidateIds.b])
+    await close()
+    const text = await (await get(`/elections/${f.electionId}/attendance.csv`)).text()
+    expect(text.split('\n')[0]).toBe('usu_id,first_name,last_name,voted_at,recast_count,added_at_door')
+    const nina = text.split('\n').find((l) => l.includes('2400777'))
+    expect(nina).toMatch(/"1"$/)
+    // and a member from the export is marked 0, so the column distinguishes
+    const ada = text.split('\n').find((l) => l.includes('2400001'))
+    expect(ada).toMatch(/"0"$/)
+  })
+
+  it('carries added_at_door in the batch attendance export too', async () => {
+    await close()
+    const text = await (await get('/attendance.csv')).text()
+    expect(text.split('\n')[0])
+      .toBe('election_id,election_name,usu_id,first_name,last_name,voted_at,added_at_door')
+  })
+
+  it('exports guests as their own file, not as attendance rows', async () => {
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/guests`, {
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
+      body: JSON.stringify({ name: 'Jo Visitor', note: 'observer' }),
+    })
+    const text = await (await get('/guests.csv')).text()
+    expect(text.split('\n')[0]).toBe('name,note,checked_in_at')
+    expect(text).toContain('Jo Visitor')
+    const attendance = await (await get('/attendance.csv')).text()
+    expect(attendance).not.toContain('Jo Visitor')
+  })
+
+  it('requires an officer session for the guest export', async () => {
+    expect((await get('/guests.csv', f.doorCookie)).status).toBe(403)
   })
 })

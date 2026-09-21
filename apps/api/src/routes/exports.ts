@@ -57,21 +57,32 @@ exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('offi
 
   const { results } = await c.env.DB
     .prepare(
-      `SELECT vr.usu_id, r.first_name, r.last_name, vr.voted_at, vr.recast_count
+      `SELECT vr.usu_id, r.first_name, r.last_name, vr.voted_at, vr.recast_count,
+              COALESCE(r.added_at_door, 0) AS added_at_door
          FROM vote_receipt vr
          LEFT JOIN voter_roll r ON r.batch_id = ?1 AND r.usu_id = vr.usu_id
         WHERE vr.election_id = ?2
         ORDER BY r.last_name, r.first_name, vr.usu_id`,
     )
     .bind(batchId, electionId)
-    .all<{ usu_id: string; first_name: string | null; last_name: string | null; voted_at: number; recast_count: number }>()
+    .all<{
+      usu_id: string; first_name: string | null; last_name: string | null
+      voted_at: number; recast_count: number; added_at_door: number
+    }>()
 
   return csvResponse(
     c,
     `attendance-${electionId}.csv`,
+    // `added_at_door` is the provenance column. A door password can enrol a
+    // voter (routes/doorVoters.ts), so a committee reading this file must be
+    // able to see which voters came from the membership export and which did
+    // not. COALESCE because the LEFT JOIN yields NULL once the roll is purged.
     csv(
-      ['usu_id', 'first_name', 'last_name', 'voted_at', 'recast_count'],
-      results.map((r) => [r.usu_id, r.first_name ?? '', r.last_name ?? '', String(r.voted_at), String(r.recast_count)]),
+      ['usu_id', 'first_name', 'last_name', 'voted_at', 'recast_count', 'added_at_door'],
+      results.map((r) => [
+        r.usu_id, r.first_name ?? '', r.last_name ?? '',
+        String(r.voted_at), String(r.recast_count), String(r.added_at_door),
+      ]),
     ),
   )
 })
@@ -83,7 +94,8 @@ exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c
   const { results } = await c.env.DB
     .prepare(
       `SELECT e.id AS election_id, e.name AS election_name,
-              vr.usu_id, r.first_name, r.last_name, vr.voted_at
+              vr.usu_id, r.first_name, r.last_name, vr.voted_at,
+              COALESCE(r.added_at_door, 0) AS added_at_door
          FROM vote_receipt vr
          JOIN election e ON e.id = vr.election_id
          LEFT JOIN voter_roll r ON r.batch_id = ?1 AND r.usu_id = vr.usu_id
@@ -94,16 +106,17 @@ exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c
     .all<{
       election_id: string; election_name: string; usu_id: string
       first_name: string | null; last_name: string | null; voted_at: number
+      added_at_door: number
     }>()
 
   return csvResponse(
     c,
     `attendance-${batchId}.csv`,
     csv(
-      ['election_id', 'election_name', 'usu_id', 'first_name', 'last_name', 'voted_at'],
+      ['election_id', 'election_name', 'usu_id', 'first_name', 'last_name', 'voted_at', 'added_at_door'],
       results.map((r) => [
         r.election_id, r.election_name, r.usu_id,
-        r.first_name ?? '', r.last_name ?? '', String(r.voted_at),
+        r.first_name ?? '', r.last_name ?? '', String(r.voted_at), String(r.added_at_door),
       ]),
     ),
   )
@@ -135,6 +148,27 @@ exports_.get('/api/batches/:id/elections/:eid/ballots.csv', requireRole('officer
   }))
 
   return csvResponse(c, `ballots-${electionId}.csv`, toBallotsCsv(ballots))
+})
+
+/**
+ * Guests, as their own file.
+ *
+ * Not rows in `attendance.csv`, which is the `vote_receipt` mark-off and is
+ * therefore about voting. A guest did not vote, and putting them in that file
+ * would misrepresent both the guest and the turnout.
+ */
+exports_.get('/api/batches/:id/guests.csv', requireRole('officer'), async (c) => {
+  const batchId = requireSession(c).batchId
+  const { results } = await c.env.DB
+    .prepare(`SELECT name, note, checked_in_at FROM guest WHERE batch_id = ? ORDER BY checked_in_at`)
+    .bind(batchId)
+    .all<{ name: string; note: string | null; checked_in_at: number }>()
+
+  return csvResponse(
+    c,
+    `guests-${batchId}.csv`,
+    csv(['name', 'note', 'checked_in_at'], results.map((r) => [r.name, r.note ?? '', String(r.checked_in_at)])),
+  )
 })
 
 /** The other half of a recount's input. */
