@@ -1,7 +1,7 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (Plan 2a complete; Plan 2b not started)
-**Branch:** `rewrite/core-counting` (NOT merged, NOT mergeable — see Open Critical)
+**Last updated:** 2026-09-21 (Plan 2a complete; multi-seat Critical FIXED; Plan 2b not started)
+**Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 
 ---
@@ -28,7 +28,7 @@ npm run -w @election/core typecheck      # expect clean
 
 ---
 
-## 2. OPEN CRITICAL — do not merge, do not run a multi-seat election
+## 2. RESOLVED (was Critical) — multi-seat surplus defect, fixed 2026-09-21 in 1227df5
 
 **A surplus flows onto a candidate already lifted to quota by an earlier surplus in the same round.**
 `packages/core/src/count.ts` — statuses are frozen for the whole `electionOrder` loop, so no candidate
@@ -55,8 +55,18 @@ Concretely, calling `assertNoContinuingAtQuota(n)` *inside* the `electionOrder` 
 above throw. Related, same root cause, lower severity: bulk exclusion transfers all excluded
 candidates' papers in one step.
 
-**Status by seat count:** correct at `seats = 1` (no surplus code runs; 197/200 differential agreement
-with `irv.py`). Known-wrong at `seats >= 2`.
+**FIXED** in `1227df5` by giving the count sub-round granularity: elect everyone at quota,
+distribute the largest pending surplus, then immediately elect anyone that transfer lifted to
+quota and add their surplus to the pending set. CEA s273(8) elects at that count; s273(1) then
+stops them being a continuing candidate, so later surpluses skip them.
+
+Verified: the 40-ballot fixture now returns `a,b,c,e` with a, b **and** c elected in round 1;
+the 11-ballot fixture returns `c,d,b`. `seats = 1` is unchanged — the `irv.py` differential
+still diverges on exactly cases 71, 120, 179 with the same 14 null-winner cases.
+
+`election_order` was **inert** before this fix (two opposite resolutions of the same tie produced
+byte-identical round tables, because no status changed inside the distribution loop). It is now
+load-bearing, with a test showing the same tie resolved each way moving the last seat.
 
 ---
 
@@ -136,8 +146,9 @@ execution, not only code-vs-plan during it.
    artifact the audit design exists to produce. KV limits must cover `officer/session` and
    `door/session` explicitly, not only roll lookup and ballot submission as §6 words it.
 
-4. **Constrain `AuditEntry.detail` before writing any 2b handler — this is the sharpest
-   unguarded edge in the foundation.** `detail` is typed `unknown` and JSON-stringified
+4. **DONE (823a97d) — `AuditEntry.detail` is now an allow-list.** Kept here because the
+   *reasoning* still binds every new audited action: adding one means adding a variant, and
+   the rule is **never a usu_id, never a ballot id, never a preference list**. Why: `detail` is typed `unknown` and JSON-stringified
    straight into a permanent, undeletable table. Two consequences:
    - The natural implementation of `POST /api/batches/:id/check-in {usu_id}` records the
      usu_id in `detail`. That leaves personal identifiers in a table the retention rule
