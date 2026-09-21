@@ -36,6 +36,9 @@ export type AuthedEnv = { Bindings: Env; Variables: { session: Session | undefin
 
 export type UnauthenticatedCode = 'no_session' | 'expired' | 'invalid'
 
+const unauthenticated = (c: Context<AuthedEnv>, code: UnauthenticatedCode) =>
+  c.json({ error: 'unauthenticated', code }, 401)
+
 /**
  * Narrows `c.get('session')` for a handler that is only ever reached behind
  * `requireRole`. Throws (Hono turns this into a 500) if somehow called
@@ -53,9 +56,7 @@ const ALL_ROLES: readonly Role[] = ['officer', 'door', 'voter']
 export function requireRole(role: Role) {
   return async (c: Context<AuthedEnv>, next: Next) => {
     const batchId = c.req.param('id')
-    if (!batchId) {
-      return c.json({ error: 'unauthenticated', code: 'no_session' satisfies UnauthenticatedCode }, 401)
-    }
+    if (!batchId) return unauthenticated(c, 'no_session')
 
     const token = getCookie(c, cookieName(batchId, role))
 
@@ -80,18 +81,13 @@ export function requireRole(role: Role) {
           return c.json({ error: 'forbidden' }, 403)
         }
       }
-      return c.json({ error: 'unauthenticated', code: 'no_session' satisfies UnauthenticatedCode }, 401)
+      return unauthenticated(c, 'no_session')
     }
 
     const result = await verifySessionResult(token, c.env.SESSION_SECRET)
-    if (!result.ok) {
-      return c.json({ error: 'unauthenticated', code: result.reason satisfies UnauthenticatedCode }, 401)
-    }
+    if (!result.ok) return unauthenticated(c, result.reason)
 
-    // From here the session is genuine: any refusal is about authority, not
-    // identity. Note `session.role !== role` is still reachable despite the
-    // role-scoped cookie name — a hand-forged Cookie header can put any token
-    // under any name, and the cookie name is not covered by the signature.
+    // From here the session is genuine: any refusal is about authority.
     const { session } = result
     if (session.role !== role || session.batchId !== batchId) {
       return c.json({ error: 'forbidden' }, 403)

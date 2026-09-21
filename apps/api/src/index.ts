@@ -40,25 +40,6 @@ export type Env = {
 
 const app = new Hono<{ Bindings: Env }>()
 
-/**
- * CORS. Spec §6 lists the legacy `CORS(app)` — fully open — as a hole to
- * close, and spec §1 requires `Access-Control-Allow-Credentials: true`
- * against an explicit origin.
- *
- * **Never relax this to `origin: '*'` or to reflecting the request's Origin
- * header.** Both look like the fix when authenticated requests are failing,
- * and neither is: `*` is rejected by browsers in combination with
- * credentials, and reflection is `*` with extra steps — it grants every site
- * on the internet credentialed access to an officer's session.
- *
- * The reason the temptation will arise is worth stating. A cross-origin
- * failure here is *indistinguishable in the browser* from the shared-apex
- * precondition in spec §1 (a `SameSite=Strict` cookie is simply not sent
- * when the API and the frontend differ by registrable domain). Both present
- * as "authenticated requests fail with an opaque error". If sign-in appears
- * to work but every subsequent request is unauthorised, check the deployment
- * hostnames *before* touching this middleware.
- */
 const allowedOrigins = (raw: string | undefined): string[] =>
   (raw ?? '')
     .split(',')
@@ -67,10 +48,17 @@ const allowedOrigins = (raw: string | undefined): string[] =>
 
 app.use('/api/*', (c, next) =>
   cors({
+    /**
+     * **Never `origin: '*'`, and never reflect the request's Origin.** Both look
+     * like the fix when authenticated requests fail, and neither is: `*` is
+     * rejected by browsers alongside credentials, and reflection is `*` with
+     * extra steps. When requests fail opaquely, check the deployment hostnames
+     * first — docs/EXECUTION.md §1.
+     *
+     * Returning null omits the header entirely, which is what makes the browser
+     * refuse, rather than a header saying "denied".
+     */
     origin: (origin) => {
-      // Exact match against the allow-list only. Returning null omits the
-      // Access-Control-Allow-Origin header entirely, which is what makes the
-      // browser refuse — not a header saying "denied".
       const list = allowedOrigins(c.env.ALLOWED_ORIGINS)
       return list.includes(origin) ? origin : null
     },

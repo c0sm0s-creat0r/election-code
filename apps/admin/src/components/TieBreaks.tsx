@@ -8,13 +8,8 @@
  * collect the exact opposite of the officer's intent, and the resulting sealed
  * document would look perfectly correct.
  *
- * | kind | what the id means |
- * | --- | --- |
- * | `exclusion` | the candidate to exclude |
- * | `election_order` | the candidate to elect first, whose surplus goes out first |
- *
  * The seed is shown because spec §3 makes the draw verifiable: anyone holding the
- * sealed ballots can re-derive it and check the draw was not steered.
+ * sealed ballots can re-derive it and check it was not steered.
  */
 import { useState } from 'react'
 import type { TieBreakKind, TieBreakRecord } from '@election/core'

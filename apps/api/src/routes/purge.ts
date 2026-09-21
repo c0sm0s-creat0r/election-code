@@ -6,11 +6,6 @@
  * they are the audit record. What is left is a fully checkable result and none
  * of the 1,302 members' personal details.
  *
- * **The seal is what makes this safe.** Deleting the roll does not weaken the
- * result, because the count was sealed against the ballots, not against the
- * roll — the exported ballots still hash to `ballots_sha256` afterwards, and a
- * test asserts the export is byte-identical across a purge.
- *
  * **`vote_receipt` is kept, and it holds a `usu_id`.** That is a deliberate
  * exception to "all the personal data goes", decided on 2026-09-21: the
  * mark-off is half the integrity story — it is what shows that 200 distinct
@@ -57,9 +52,6 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
 
   const roll = counts?.roll ?? 0
   const checkins = counts?.checkins ?? 0
-  // A guest's name is personal data and `guest` is not reachable from any other
-  // purge, so it goes in the same transaction. Leaving it behind would reinstate
-  // exactly the false retention claim spec §2 had corrected.
   const guests = counts?.guests ?? 0
 
   // check_in first: its foreign key references voter_roll(batch_id, usu_id).
@@ -68,6 +60,7 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM check_in WHERE batch_id = ?`).bind(batchId),
     c.env.DB.prepare(`DELETE FROM voter_roll WHERE batch_id = ?`).bind(batchId),
+    // A guest's name is personal data and nothing else reaches this table.
     c.env.DB.prepare(`DELETE FROM guest WHERE batch_id = ?`).bind(batchId),
     auditLogStatement(c.env.DB, {
       batchId,

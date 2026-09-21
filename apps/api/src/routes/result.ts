@@ -44,24 +44,39 @@ export async function loadSealed(
   batchId: string,
   electionId: string,
 ): Promise<SealedElection | { error: 'not_found' } | { error: 'not_closed'; status: ElectionRow['status'] }> {
-  const election = await db
-    .prepare(`SELECT id, name, seats, status FROM election WHERE id = ? AND batch_id = ?`)
+  const row = await db
+    .prepare(
+      `SELECT e.id, e.name, e.seats, e.status,
+              s.closed_at, s.ballot_count, s.ballots_sha256
+         FROM election e
+         LEFT JOIN election_seal s ON s.election_id = e.id
+        WHERE e.id = ? AND e.batch_id = ?`,
+    )
     .bind(electionId, batchId)
-    .first<Pick<ElectionRow, 'id' | 'name' | 'seats' | 'status'>>()
-  if (!election) return { error: 'not_found' }
-  if (election.status !== 'closed') return { error: 'not_closed', status: election.status }
+    .first<
+      Pick<ElectionRow, 'id' | 'name' | 'seats' | 'status'> &
+      Partial<Pick<ElectionSealRow, 'closed_at' | 'ballot_count' | 'ballots_sha256'>>
+    >()
 
-  const seal = await db
-    .prepare(`SELECT closed_at, ballot_count, ballots_sha256 FROM election_seal WHERE election_id = ?`)
-    .bind(electionId)
-    .first<Pick<ElectionSealRow, 'closed_at' | 'ballot_count' | 'ballots_sha256'>>()
+  if (!row) return { error: 'not_found' }
+  if (row.status !== 'closed') return { error: 'not_closed', status: row.status }
+
   // Closed but unsealed is the retry window in routes/close.ts. Treat it as not
-  // yet closed rather than counting an unsealed box: without a digest there is
-  // nothing to seed a tie-break draw from, and nothing to prove later that
-  // these were the ballots.
-  if (!seal) return { error: 'not_closed', status: election.status }
+  // yet closed rather than counting an unsealed box: with no digest there is
+  // nothing to seed a tie-break draw from, and nothing to prove later that these
+  // were the ballots.
+  if (row.ballots_sha256 === null || row.ballots_sha256 === undefined) {
+    return { error: 'not_closed', status: row.status }
+  }
 
-  return { election, seal }
+  return {
+    election: { id: row.id, name: row.name, seats: row.seats, status: row.status },
+    seal: {
+      closed_at: row.closed_at as number,
+      ballot_count: row.ballot_count as number,
+      ballots_sha256: row.ballots_sha256,
+    },
+  }
 }
 
 /** The stored result currently in force: the one nothing else supersedes. */

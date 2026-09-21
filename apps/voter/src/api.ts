@@ -1,9 +1,8 @@
 /**
  * The five endpoints this app touches, over `fetch`.
  *
- * Deliberately not shared with the admin app. That app calls 28 endpoints and
- * this one calls 5, sharing exactly one (`by-slug`), so a common client would
- * couple two apps to buy one function (spec §1.1).
+ * Deliberately not shared with the admin app — see the note in
+ * `apps/admin/src/api.ts` for the reasoning.
  *
  * Every failure reaches a screen as an `ApiError` carrying the API's own `code`
  * when there is one, so screens map a code to a remedy rather than printing a

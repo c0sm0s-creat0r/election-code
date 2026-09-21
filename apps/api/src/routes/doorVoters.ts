@@ -13,20 +13,9 @@
  * attendance exports, so a committee reading the file sees which voters came
  * from the export and which did not.
  *
- * Three rules, each closing a specific way this could go wrong:
- *
- * 1. **The roll row and the check-in are one transaction.** The volunteer's
- *    intent is "this person is here and needs to vote"; a roll row with no
- *    check-in is a member who still cannot.
- * 2. **A `usu_id` already on the roll is refused, not upserted.** A mistyped id
- *    that happens to match a real member would otherwise overwrite that
- *    member's name with the typed one — silently, and in the table eligibility
- *    is judged from. The 409 tells the volunteer the right action instead:
- *    search for them and check them in.
- * 3. **Removal is refused once they have voted.** Deleting the roll row behind a
- *    ballot already in the box destroys the eligibility evidence for it, and no
- *    door volunteer should be able to do that by tapping undo. A member from the
- *    export cannot be removed here at all — that is the roll import's job.
+ * The roll row and the check-in are one transaction: the volunteer's intent is
+ * "this person is here and needs to vote", and a roll row with no check-in is a
+ * member who still cannot.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'

@@ -54,7 +54,6 @@ export function auditLogStatement(db: D1Database, entry: AuditEntry): D1Prepared
     .bind(entry.batchId, entry.role, entry.action, entry.detail === undefined ? null : JSON.stringify(entry.detail), Date.now())
 }
 
-/** Every privileged action leaves a row. Spec §6. */
 export async function recordAudit(db: D1Database, entry: AuditEntry): Promise<void> {
   await auditLogStatement(db, entry).run()
 }

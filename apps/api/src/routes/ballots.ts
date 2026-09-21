@@ -78,19 +78,22 @@ ballots.post(
     const parsed = ballotSchema.safeParse(await c.req.json().catch(() => undefined))
     if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
 
-    const election = await c.env.DB
-      .prepare(`SELECT id, status, seats FROM election WHERE id = ? AND batch_id = ?`)
-      .bind(electionId, batchId)
-      .first<Pick<ElectionRow, 'id' | 'status' | 'seats'>>()
+    // One round trip, not two: the candidate query binds nothing from the
+    // election query, and this runs once per voter in the room.
+    const [election, { results: candidates }] = await Promise.all([
+      c.env.DB
+        .prepare(`SELECT id, status, seats FROM election WHERE id = ? AND batch_id = ?`)
+        .bind(electionId, batchId)
+        .first<Pick<ElectionRow, 'id' | 'status' | 'seats'>>(),
+      c.env.DB
+        .prepare(`SELECT id FROM candidate WHERE election_id = ? ORDER BY ordinal`)
+        .bind(electionId)
+        .all<Pick<CandidateRow, 'id'>>(),
+    ])
     if (!election) return c.json({ error: 'not found' }, 404)
     if (election.status !== 'open') {
       return c.json({ error: `voting is not open (election is ${election.status})`, code: 'not_open' }, 409)
     }
-
-    const { results: candidates } = await c.env.DB
-      .prepare(`SELECT id FROM candidate WHERE election_id = ? ORDER BY ordinal`)
-      .bind(electionId)
-      .all<Pick<CandidateRow, 'id'>>()
 
     // The same validation the voter's browser ran, run again here. Its reason
     // strings are written to be read by a voter mid-ballot, so they are

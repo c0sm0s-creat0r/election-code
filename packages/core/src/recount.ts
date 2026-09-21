@@ -20,7 +20,6 @@ export type ExportBallot = CountBallot & { voided: boolean }
  */
 type CsvRow = { n: number; fields: string[] }
 
-/** Every refusal reads the same way and ends the same way. */
 function corrupt(detail: string): Error {
   return new Error(`recount: ${detail} — the CSV is corrupt. No count was performed.`)
 }
@@ -120,22 +119,13 @@ function parseCsvRows(text: string): CsvRow[] {
   return rows.filter((r) => !r.fields.every((f) => f.trim() === ''))
 }
 
-/**
- * The header row of each table, named once so the writer below and the
- * reader in `recount` cannot drift apart.
- */
 const CANDIDATE_HEADER = ['candidate_id', 'name'] as const
 const BALLOT_HEADER = ['ballot_id', 'preferences', 'voided'] as const
 
-/** Quote a CSV field, escaping any `"` inside it as `""`. */
 function csvField(value: string): string {
   return `"${value.replace(/"/g, '""')}"`
 }
 
-/**
- * Produce the `candidate_id,name` CSV this library's `recount` reads back.
- * The inverse of the candidates half of `recount`'s input.
- */
 export function toCandidatesCsv(candidates: Candidate[]): string {
   const lines = [CANDIDATE_HEADER.join(',')]
   for (const c of candidates) {
@@ -241,10 +231,8 @@ export async function recount(
     if (id.trim() === '') {
       throw corrupt(`row ${row.n} has an empty candidate id`)
     }
-    // `count` keys status, piles and names by candidate id. A repeat would
-    // collapse in those maps but still appear twice in every round table and
-    // in the continuing-candidate count, changing when the field is declared
-    // full and how many may be excluded in bulk.
+    // A repeat collapses in `count`'s maps but still appears twice in the round
+    // table and the continuing-candidate count.
     if (seenCandidateIds.has(id)) {
       throw corrupt(`row ${row.n} repeats candidate id ${JSON.stringify(id)}`)
     }
@@ -268,23 +256,13 @@ export async function recount(
     if (voidedField !== '0' && voidedField !== '1') {
       throw corrupt(`row ${row.n} has voided=${JSON.stringify(voidedField)}, expected "0" or "1"`)
     }
-    // Ballot ids are unique in the export they came from. A repeat means the
-    // file was concatenated or a line duplicated by hand - and a duplicated
-    // ballot is counted twice, inflating `ballots.length` and moving the
-    // quota, the same harm as a phantom row.
     if (seenBallotIds.has(id)) {
       throw corrupt(`row ${row.n} repeats ballot id ${JSON.stringify(id)}`)
     }
     seenBallotIds.add(id)
 
-    // An empty preferences field is exactly as impossible as 'a||b', and is
-    // refused for the same reason. Spec section 3 requires a ballot to rank at
-    // least `seats` candidates, and `validateBallot` rejects an empty list, so
-    // no export this library wrote can contain one: the row was added or
-    // emptied by hand. It is not harmless either - `count` uses
-    // `ballots.length` as the Droop denominator, so a row that ranks nobody
-    // raises the quota while contributing nothing to any candidate, and enough
-    // of them change who wins.
+    // Not harmless: `ballots.length` is the Droop denominator, so a row ranking
+    // nobody raises the quota while contributing to no candidate.
     if (prefsField === '') {
       throw corrupt(`row ${row.n} has an empty preference list`)
     }
@@ -294,11 +272,9 @@ export async function recount(
       if (pref === '') {
         throw corrupt(`row ${row.n} has an empty preference`)
       }
-      // A preference naming someone absent from candidatesCsv is not a lost
-      // vote to be shrugged off: `count` would skip it as non-continuing and
-      // exhaust the paper, so deleting one candidate line would silently
-      // redistribute all of their votes. The two files no longer describe
-      // the same election, so there is nothing honest to recompute.
+      // `count` would treat an unknown preference as non-continuing and exhaust
+      // the paper, so deleting one candidate line silently redistributes all of
+      // their votes.
       if (!seenCandidateIds.has(pref)) {
         throw corrupt(`row ${row.n} lists preference ${JSON.stringify(pref)}, which is not a candidate`)
       }

@@ -37,12 +37,9 @@ export type RankedBallotProps = {
 export function RankedBallot({
   candidates, seats, onSubmit, submitting, initialRanking,
 }: RankedBallotProps) {
-  // One array of candidate ids, in rank order — exactly the shape the API wants,
-  // so nothing has to be transformed on the way out.
   const [ranking, setRanking] = useState<string[]>(initialRanking ?? [])
 
-  // The same function the API calls, so the two can never disagree about what a
-  // valid ballot is. It is min(seats, candidateCount), floored at 1.
+  // The same function the API calls, so the two cannot disagree.
   const minimum = minimumPreferences(seats, candidates.length)
   const nameOf = new Map(candidates.map((c) => [c.id, c.name]))
   const unranked = candidates.filter((c) => !ranking.includes(c.id))

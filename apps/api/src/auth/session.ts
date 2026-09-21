@@ -10,11 +10,7 @@ import { timingSafeEqual } from './timing-safe-equal.js'
 
 export type Role = 'officer' | 'door' | 'voter'
 
-/**
- * An officer or door session. `subject` is typed `never`-ish (optional
- * `undefined`) rather than simply omitted so that a staff session cannot be
- * constructed *with* one by accident.
- */
+/** `subject?: undefined` rather than omitted, so a staff session cannot be given one. */
 export type StaffSession = {
   batchId: string
   role: 'officer' | 'door'
@@ -82,8 +78,27 @@ const unb64url = (s: string): Uint8Array<ArrayBuffer> => {
   return Uint8Array.from(atob(pad + '='.repeat((4 - (pad.length % 4)) % 4)), (c) => c.charCodeAt(0))
 }
 
+/**
+ * Imported once per isolate rather than once per HMAC. `requireRole` runs on
+ * every authenticated request, and up to three times on the no-cookie path while
+ * it probes the other roles, so this was a key import per request on the ballot
+ * path. Keyed by the secret so a rotation cannot be served a stale key; the value
+ * derives from a binding, so nothing crosses between requests that should not.
+ */
+const keyCache = new Map<string, Promise<CryptoKey>>()
+
+function hmacKey(secret: string): Promise<CryptoKey> {
+  const cached = keyCache.get(secret)
+  if (cached) return cached
+  const key = crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  keyCache.set(secret, key)
+  return key
+}
+
 async function hmac(data: string, secret: string): Promise<Uint8Array<ArrayBuffer>> {
-  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const key = await hmacKey(secret)
   return new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(data)))
 }
 
