@@ -21,6 +21,26 @@ export type VoterRollRow = {
   first_name: string
   last_name: string
   eligible: number // 0 | 1; computed at import: "Left Group" = 0
+  /**
+   * 1 when a door volunteer created this row because the export missed the
+   * member. Added in 0004, and never cleared -- see that migration. This is
+   * what keeps a door-added voter visible in `GET /quorum` and in both
+   * attendance exports.
+   */
+  added_at_door: number // 0 | 1
+}
+
+/**
+ * Someone in the room who is not on the roll and cannot vote. Migration 0004.
+ * Deliberately has no `usu_id`: nothing joins a guest to the roll, so the
+ * ballot insert's eligibility clause has nothing to match.
+ */
+export type GuestRow = {
+  id: string
+  batch_id: string
+  name: string
+  note: string | null
+  checked_in_at: number
 }
 
 export type CheckInRow = {

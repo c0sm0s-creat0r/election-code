@@ -27,7 +27,7 @@ const cookieOf = (res: Response) => (res.headers.get('set-cookie') ?? '').split(
 
 export const ALL_TABLES = [
   'ballot', 'vote_receipt', 'election_result', 'election_seal',
-  'candidate', 'election', 'check_in', 'voter_roll', 'audit_log', 'batch',
+  'candidate', 'election', 'check_in', 'guest', 'voter_roll', 'audit_log', 'batch',
 ] as const
 
 export async function resetDatabase(): Promise<void> {

@@ -76,7 +76,12 @@ describe('roll import', () => {
   it('stores only id and name — no email, no membership data', async () => {
     await upload('/roll')
     const cols = await env.DB.prepare('PRAGMA table_info(voter_roll)').all<{ name: string }>()
-    expect(cols.results.map((r) => r.name).sort()).toEqual(['batch_id', 'eligible', 'first_name', 'last_name', 'usu_id'])
+    // added_at_door (migration 0004) is provenance, not personal data: it
+    // records that a volunteer created the row, not anything about the member.
+    // Everything else the USU export carries -- email, payments, tags, officer
+    // notes, expiry dates -- still must never appear here.
+    expect(cols.results.map((r) => r.name).sort())
+      .toEqual(['added_at_door', 'batch_id', 'eligible', 'first_name', 'last_name', 'usu_id'])
   })
 
   it('writes no email address anywhere in the database', async () => {

@@ -57,8 +57,12 @@ describe('schema', () => {
     // nothing else to catch it.
     const cols = await env.DB.prepare(`PRAGMA table_info(voter_roll)`).all<{ name: string }>()
     const names = cols.results.map((r) => r.name)
+    // added_at_door arrived in 0004. It is provenance, not personal data: it
+    // records that a volunteer created the row, never anything about the
+    // member. Everything the export actually carries -- email, payments, tags,
+    // officer notes, expiry dates -- still must never appear here.
     expect(names.sort()).toEqual(
-      ['batch_id', 'usu_id', 'first_name', 'last_name', 'eligible'].sort(),
+      ['batch_id', 'usu_id', 'first_name', 'last_name', 'eligible', 'added_at_door'].sort(),
     )
   })
 
@@ -88,5 +92,29 @@ describe('schema', () => {
       env.DB.prepare(
         `INSERT INTO election (id,batch_id,name,seats,status) VALUES ('e3','b1','E',1,'counting')`).run(),
     ).rejects.toThrow(/CHECK|constraint/i)
+  })
+})
+
+describe('0004: guests and door additions', () => {
+  it('creates a guest table with no usu_id — a guest cannot be joined to the roll', async () => {
+    const cols = await env.DB.prepare('PRAGMA table_info(guest)').all<{ name: string }>()
+    expect(cols.results.map((r) => r.name).sort()).toEqual(['batch_id', 'checked_in_at', 'id', 'name', 'note'])
+  })
+
+  it('adds added_at_door to voter_roll, defaulting to 0', async () => {
+    const cols = await env.DB.prepare('PRAGMA table_info(voter_roll)').all<{ name: string; dflt_value: string | null }>()
+    const col = cols.results.find((c) => c.name === 'added_at_door')
+    expect(col).toBeTruthy()
+    expect(col!.dflt_value).toBe('0')
+  })
+
+  it('leaves a row the import wrote flagged as not door-added', async () => {
+    await env.DB.prepare(`INSERT OR IGNORE INTO batch (id, slug, name, officer_hash, door_hash, branding, created_at)
+                          VALUES ('b-0004','s-0004','n','h','h','{}',1)`).run()
+    await env.DB.prepare(`INSERT INTO voter_roll (batch_id, usu_id, first_name, last_name, eligible)
+                          VALUES ('b-0004','2400001','Ada','Lovelace',1)`).run()
+    const row = await env.DB.prepare(`SELECT added_at_door FROM voter_roll WHERE batch_id = 'b-0004'`)
+      .first<{ added_at_door: number }>()
+    expect(row!.added_at_door).toBe(0)
   })
 })
