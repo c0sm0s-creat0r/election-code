@@ -116,9 +116,6 @@ roll.post('/api/batches/:id/roll', requireRole('officer'), async (c) => {
     await c.env.DB.batch(statements.slice(i, i + CHUNK))
   }
 
-  // Counts, never identities. `roll_import` is an allow-listed variant for
-  // precisely this reason: the natural thing to record here is who was
-  // excluded, and audit_log is the one table the retention purge cannot reach.
   await c.env.DB.batch([
     auditLogStatement(c.env.DB, {
       batchId,

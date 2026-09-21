@@ -6,6 +6,8 @@
  * frozen at close, against which the exported ballots can be checked later.
  */
 
+import { sha256Hex } from './hash.js'
+
 export type SealableBallot = { id: string; preferences: string; voided: number }
 
 /**
@@ -24,8 +26,5 @@ export type SealableBallot = { id: string; preferences: string; voided: number }
 export const sealSerialisation = (rows: readonly SealableBallot[]): string =>
   rows.map((r) => `${r.id}|${r.preferences}|${r.voided}`).join('\n')
 
-export async function ballotsSha256(rows: readonly SealableBallot[]): Promise<string> {
-  const bytes = new TextEncoder().encode(sealSerialisation(rows))
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
+export const ballotsSha256 = (rows: readonly SealableBallot[]): Promise<string> =>
+  sha256Hex(sealSerialisation(rows))

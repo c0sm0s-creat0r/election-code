@@ -20,7 +20,7 @@ export function Exports({ batchId, electionId }: ExportsProps) {
       <h2>Exports</h2>
 
       {electionId !== undefined && (
-        <ul className="export-list">
+        <ul className="export-list plain-list">
           <li>
             <a href={`${base}/elections/${electionId}/ballots.csv`}>Ballots (CSV)</a>
             <span className="muted">
@@ -51,7 +51,7 @@ export function Exports({ batchId, electionId }: ExportsProps) {
         </ul>
       )}
 
-      <ul className="export-list">
+      <ul className="export-list plain-list">
         <li>
           <a href={`${base}/attendance.csv`}>Attendance across the AGM (CSV)</a>
           <span className="muted">Every election's mark-off in one file, for the minutes.</span>

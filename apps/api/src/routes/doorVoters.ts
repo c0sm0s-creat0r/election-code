@@ -30,7 +30,7 @@
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { auditLogStatement } from '../db/audit.js'
+import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
@@ -93,9 +93,6 @@ doorVoters.post(
            ON CONFLICT(batch_id, usu_id) DO NOTHING`,
         )
         .bind(batchId, usuId, Date.now()),
-      // No detail. The usu_id and the name are exactly what must never reach a
-      // table the purge cannot touch; accountability lives in added_at_door and
-      // the attendance exports, which the purge can reach.
       auditLogStatement(c.env.DB, { batchId, role: 'door', action: 'voter.add_at_door' }),
     ])
 
@@ -152,8 +149,6 @@ doorVoters.delete('/api/batches/:id/voters/:usuId', requireRole('door'), async (
     )
   }
 
-  await c.env.DB.batch([
-    auditLogStatement(c.env.DB, { batchId, role: 'door', action: 'voter.remove_at_door' }),
-  ])
+  await recordAudit(c.env.DB, { batchId, role: 'door', action: 'voter.remove_at_door' })
   return c.body(null, 204)
 })

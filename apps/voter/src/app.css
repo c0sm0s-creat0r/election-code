@@ -5,26 +5,10 @@
 
 /* --- the ranked ballot ----------------------------------------------------- */
 
-.ranked-list,
-.add-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .ranked-list > li + li,
 .add-list > li + li { margin-top: var(--step); }
 
-.ranked-item {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--step) * 1.5);
-  min-height: var(--touch);
-  padding: var(--step);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper);
-}
+.ranked-item { background: var(--paper); }
 
 /* The fix for the legacy defect: rank is shown, never inferred from tap order. */
 .ordinal {
@@ -58,19 +42,6 @@
 
 .add-mark { font-size: 1.25rem; line-height: 1; }
 
-/*
- * The primary action sits at the bottom, where a thumb reaches, and inside the
- * safe area so the iPhone home bar never covers it.
- */
-.submit-bar {
-  position: sticky;
-  bottom: 0;
-  padding: calc(var(--step) * 1.5) 0;
-  padding-bottom: calc(var(--step) * 1.5 + env(safe-area-inset-bottom));
-  background: var(--paper);
-  border-top: 1px solid var(--rule);
-}
-
 .submit-bar > .submit { width: 100%; }
 
 .progress { margin: 0; }
@@ -88,15 +59,7 @@
   border: 0;
 }
 
-/* --- forms and the receipt ------------------------------------------------- */
-
-.field > label {
-  display: block;
-  margin-bottom: calc(var(--step) / 2);
-  font-weight: 600;
-}
-
-.field + .field { margin-top: calc(var(--step) * 2); }
+/* --- the receipt ----------------------------------------------------------- */
 
 .receipt-token {
   padding: calc(var(--step) * 1.5);

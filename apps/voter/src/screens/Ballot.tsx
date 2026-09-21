@@ -81,7 +81,7 @@ export function Ballot({
 
   return (
     <section class="stack">
-      <p class="muted election-progress">
+      <p class="muted">
         Election {index + 1} of {total}
       </p>
       <h2>{election.name}</h2>

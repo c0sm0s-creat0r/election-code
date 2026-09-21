@@ -1,6 +1,6 @@
 /**
- * Element defaults, shared by both apps. Component classes live in each app's
- * own app.css; nothing here is app-specific.
+ * Element defaults and the few primitives both apps use identically. Anything
+ * specific to one app belongs in that app's own app.css.
  */
 *,
 *::before,
@@ -81,3 +81,38 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .figures { font-family: var(--font-figures); font-variant-numeric: tabular-nums; }
 
 .stack > * + * { margin-top: calc(var(--step) * 2); }
+
+.plain-list { list-style: none; margin: 0; padding: 0; }
+
+.field > label {
+  display: block;
+  margin-bottom: calc(var(--step) / 2);
+  font-weight: 600;
+}
+
+.field + .field { margin-top: calc(var(--step) * 2); }
+
+/* A row of content with a control on the right: ballot preferences, candidates,
+   the door's roll. 44px tall so a thumb in a queue hits it. */
+.spread { justify-content: space-between; }
+
+.row-card {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--step) * 1.5);
+  min-height: var(--touch);
+  padding: var(--step);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+/* Pinned above the home bar. The safe-area inset is the non-obvious part: without
+   it the iPhone home bar sits on top of whatever is in here. */
+.sticky-bar {
+  position: sticky;
+  bottom: 0;
+  padding: calc(var(--step) * 1.5) 0;
+  padding-bottom: calc(var(--step) * 1.5 + env(safe-area-inset-bottom));
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}

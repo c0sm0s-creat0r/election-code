@@ -18,15 +18,11 @@
  * is always found *through* the hash and so is always the true owner's.
  */
 import { Hono } from 'hono'
-import { auditLogStatement } from '../db/audit.js'
+import { recordAudit } from '../db/audit.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
+import { sha256Hex } from '../lib/hash.js'
 import type { Env } from '../index.js'
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 export const receipts = new Hono<{ Bindings: Env }>()
 
@@ -119,11 +115,8 @@ receipts.post('/api/receipts/:token/void', rateLimit(RATE_LIMITS.voting), async 
   }
 
   // Attributed to the batch that owns the ballot, so a void appears in that
-  // batch's audit export -- a run of them is something an officer needs to see.
-  // No detail: not the token, not the ballot id, not the voter.
-  await c.env.DB.batch([
-    auditLogStatement(c.env.DB, { batchId: owner.batch_id, role: 'voter', action: 'ballot.void' }),
-  ])
+  // batch's audit export: a run of them is something an officer needs to see.
+  await recordAudit(c.env.DB, { batchId: owner.batch_id, role: 'voter', action: 'ballot.void' })
 
   return c.json({ status: 'voided' })
 })

@@ -7,15 +7,10 @@
  * search is instant and keeps working if venue wifi drops mid-queue. A server
  * round-trip per keystroke is the wrong shape for a queue of 1,300 people.
  *
- * **Nothing here may reach `audit_log.detail`.** A check-in event is about one
- * named person, so the obvious `detail: { usu_id }` would leave identifiers in
- * the one table the post-AGM purge cannot touch — breaking spec §2's claim
- * that `voter_roll` and `check_in` are all the personal data held. The action
- * name and the batch are recorded; who, deliberately, is not.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { auditLogStatement } from '../db/audit.js'
+import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import type { VoterRollRow } from '../db/types.js'
@@ -90,7 +85,7 @@ checkIn.post('/api/batches/:id/check-in', requireRole('door'), async (c) => {
     return c.json({ checked_in: true, already: true })
   }
 
-  await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'door', action: 'check_in.add' })])
+  await recordAudit(c.env.DB, { batchId, role: 'door', action: 'check_in.add' })
   return c.json({ checked_in: true, already: false })
 })
 
@@ -112,7 +107,7 @@ checkIn.delete('/api/batches/:id/check-in/:usuId', requireRole('door'), async (c
     .run()
 
   if (result.meta.changes > 0) {
-    await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'door', action: 'check_in.remove' })])
+    await recordAudit(c.env.DB, { batchId, role: 'door', action: 'check_in.remove' })
   }
   return c.body(null, 204)
 })

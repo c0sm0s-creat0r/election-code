@@ -75,7 +75,7 @@ export function SignIn({ batchId, onSignedIn }: SignInProps) {
         </p>
       )}
 
-      <div class="submit-bar">
+      <div class="submit-bar sticky-bar">
         <button type="submit" class="primary submit" disabled={!ready || busy}>
           {busy ? 'Checking…' : 'Continue'}
         </button>

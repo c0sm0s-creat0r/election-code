@@ -49,8 +49,8 @@ export function RoundsTable({ rounds, quota }: RoundsTableProps) {
                 return (
                   <td className="figures" key={round.n} data-status={cell?.status}>
                     {cell ? cell.votes : '—'}
-                    {cell?.status === 'elected' && <span className="mark" aria-label="elected"> ✓</span>}
-                    {cell?.status === 'excluded' && <span className="mark" aria-label="excluded"> ✕</span>}
+                    {cell?.status === 'elected' && <span aria-label="elected"> ✓</span>}
+                    {cell?.status === 'excluded' && <span aria-label="excluded"> ✕</span>}
                   </td>
                 )
               })}
@@ -70,7 +70,7 @@ export function RoundsTable({ rounds, quota }: RoundsTableProps) {
       {rounds.some((round) => round.elected.length > 0) && (
         <>
           <h4>Surpluses distributed</h4>
-          <ul className="counts">
+          <ul className="counts plain-list">
             {rounds.flatMap((round) =>
               round.elected.map((elected) => (
                 <li key={`${round.n}-${elected.candidateId}`}>

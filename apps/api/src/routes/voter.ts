@@ -98,9 +98,6 @@ voter.post(
     const token = await signSession({ batchId, role: 'voter', subject: usuId, exp }, c.env.SESSION_SECRET)
     setCookie(c, cookieName(batchId, 'voter'), token, cookieOptions(VOTER_TTL_SECONDS))
 
-    // No detail, ever. A usu_id here would put an identifier in the one table
-    // the post-AGM purge cannot reach, and a voter sign-in row timestamped
-    // beside a ballot row is the correlation the secret ballot exists to break.
     await recordAudit(c.env.DB, { batchId, role: 'voter', action: 'session.voter.ok' })
 
     return c.json({ first_name: row.first_name })

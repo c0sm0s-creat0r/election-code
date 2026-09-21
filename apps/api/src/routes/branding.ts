@@ -31,9 +31,9 @@ branding.patch('/api/batches/:id/branding', requireRole('officer'), async (c) =>
     c.env.DB
       .prepare(`UPDATE batch SET branding = ? WHERE id = ?`)
       .bind(JSON.stringify(parsed.data), batchId),
-    // No detail: branding is not sensitive, but an audit row carrying a whole
-    // JSON object would be the first exception to "counts and reasons, not
-    // payloads", and the next one would be a ballot.
+    // Not even the new branding: an audit row carrying a whole JSON payload
+    // would be the first exception to "counts and reasons", and the next would
+    // be a ballot.
     auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'branding.update' }),
   ])
 

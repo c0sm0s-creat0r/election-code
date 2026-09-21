@@ -75,7 +75,7 @@ export function RollImport({ batchId }: RollImportProps) {
 
       {counts && (
         <>
-          <ul className="counts">
+          <ul className="counts plain-list">
             <li>{counts.total} members in the file</li>
             <li>{counts.eligible} eligible</li>
             <li>{counts.excluded} excluded (left the group)</li>

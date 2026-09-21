@@ -22,10 +22,11 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validateBallot } from '@election/core'
-import { auditLogStatement } from '../db/audit.js'
+import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
+import { sha256Hex } from '../lib/hash.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
 
 const ballotSchema = z.object({
@@ -58,11 +59,6 @@ const NO_LIVE_BALLOT = `
     SELECT 1 FROM vote_receipt
      WHERE election_id = ?2 AND usu_id = ?3 AND live_receipt_hash IS NOT NULL
   )`
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 export const ballots = new Hono<AuthedEnv>()
 
@@ -164,10 +160,7 @@ ballots.post(
       throw new Error('ballot and receipt disagreed inside one transaction')
     }
 
-    // No detail. A usu_id here would put an identifier in the one table the
-    // purge cannot reach, and a ballot id beside a timestamp rebuilds the
-    // correlation WITHOUT ROWID and the absent cast_at exist to prevent.
-    await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'voter', action: 'ballot.cast' })])
+    await recordAudit(c.env.DB, { batchId, role: 'voter', action: 'ballot.cast' })
 
     return c.json({ receipt_token: receiptToken }, 201)
   },

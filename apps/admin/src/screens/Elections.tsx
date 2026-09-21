@@ -59,7 +59,7 @@ export function Elections({ batchId, slug }: ElectionsProps) {
       {elections.length === 0 ? (
         <p className="muted">No elections yet.</p>
       ) : (
-        <ul className="election-list">
+        <ul className="election-list plain-list">
           {elections.map((election) => (
             <li className="election-row" key={election.id}>
               <button type="button" onClick={() => setSelected(election.id)}>

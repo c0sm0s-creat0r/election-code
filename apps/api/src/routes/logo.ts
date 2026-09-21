@@ -22,6 +22,7 @@ import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { pathParam } from '../http/params.js'
 import { detectImageType } from '../lib/imageType.js'
+import { sha256HexBytes } from '../lib/hash.js'
 import type { BatchRow } from '../db/types.js'
 import type { Env } from '../index.js'
 
@@ -56,9 +57,7 @@ logo.post('/api/batches/:id/logo', requireRole('officer'), async (c) => {
     return c.json({ error: 'that file is not a PNG, JPEG, GIF or WebP image', code: 'not_an_image' }, 400)
   }
 
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-  const key = `batches/${batchId}/${hash}.${type.ext}`
+  const key = `batches/${batchId}/${await sha256HexBytes(bytes)}.${type.ext}`
 
   await c.env.LOGOS.put(key, bytes, { httpMetadata: { contentType: type.mime } })
 
@@ -76,8 +75,6 @@ logo.post('/api/batches/:id/logo', requireRole('officer'), async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE batch SET branding = ? WHERE id = ?`).bind(JSON.stringify(branding), batchId),
-    // No detail: the filename is the officer's own, and it is not worth
-    // recording in a table that cannot be purged.
     auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'logo.upload' }),
   ])
 

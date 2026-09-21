@@ -19,7 +19,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
-import { auditLogStatement } from '../db/audit.js'
+import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
 import type { Env } from '../index.js'
@@ -176,7 +176,7 @@ elections.post('/api/batches/:id/elections/:eid/candidates', requireRole('office
 
   if (result.meta.changes === 0) return explainNoChange(c, batchId, electionId)
 
-  await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'candidate.add' })])
+  await recordAudit(c.env.DB, { batchId, role: 'officer', action: 'candidate.add' })
   return c.json({ id, name: parsed.data.name }, 201)
 })
 
@@ -198,7 +198,7 @@ elections.patch('/api/batches/:id/elections/:eid/candidates/:cid', requireRole('
 
   if (result.meta.changes === 0) return explainNoChange(c, batchId, electionId)
 
-  await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'candidate.update' })])
+  await recordAudit(c.env.DB, { batchId, role: 'officer', action: 'candidate.update' })
   return c.json({ id: candidateId, name: parsed.data.name })
 })
 
@@ -218,7 +218,7 @@ elections.delete('/api/batches/:id/elections/:eid/candidates/:cid', requireRole(
 
   if (result.meta.changes === 0) return explainNoChange(c, batchId, electionId)
 
-  await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'candidate.remove' })])
+  await recordAudit(c.env.DB, { batchId, role: 'officer', action: 'candidate.remove' })
   return c.body(null, 204)
 })
 
@@ -266,14 +266,12 @@ elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), a
     .bind(electionId)
     .first<{ seats: number; candidates: number }>()
 
-  await c.env.DB.batch([
-    auditLogStatement(c.env.DB, {
-      batchId,
-      role: 'officer',
-      action: 'election.open',
-      detail: { kind: 'election_open', seats: counts?.seats ?? 0, candidates: counts?.candidates ?? 0 },
-    }),
-  ])
+  await recordAudit(c.env.DB, {
+    batchId,
+    role: 'officer',
+    action: 'election.open',
+    detail: { kind: 'election_open', seats: counts?.seats ?? 0, candidates: counts?.candidates ?? 0 },
+  })
 
   return c.json({ id: electionId, status: 'open' satisfies ElectionRow['status'] })
 })

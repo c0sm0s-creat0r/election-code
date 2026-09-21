@@ -130,7 +130,7 @@ export function App() {
             token={screen.token}
             onVoided={() => setScreen({ kind: 'ballot', index: screen.index })}
           />
-          <div class="submit-bar">
+          <div class="submit-bar sticky-bar">
             <button
               type="button"
               class="primary submit"

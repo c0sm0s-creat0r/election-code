@@ -85,9 +85,9 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
       )}
 
       <h3>Candidates</h3>
-      <ul className="candidate-list">
+      <ul className="candidate-list plain-list">
         {election.candidates.map((candidate) => (
-          <li className="candidate-row" key={candidate.id}>
+          <li className="row-card spread" key={candidate.id}>
             <span>{candidate.name}</span>
             {isDraft && (
               <button
@@ -150,7 +150,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
         <>
           <h3>Turnout</h3>
           {turnout ? (
-            <ul className="counts figures">
+            <ul className="counts plain-list figures">
               <li>{turnout.ballots_cast} ballots cast</li>
               <li>{turnout.voters_checked_in} voters checked in</li>
               <li>{turnout.eligible} eligible members</li>

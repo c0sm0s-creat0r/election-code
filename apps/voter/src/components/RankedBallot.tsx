@@ -73,7 +73,7 @@ export function RankedBallot({
   }
 
   return (
-    <div class="ballot stack">
+    <div class="stack">
       <p class="muted">
         Rank at least {minimum} candidate{minimum === 1 ? '' : 's'}, starting with your favourite.
         You may rank more if you wish.
@@ -84,9 +84,9 @@ export function RankedBallot({
         {ranking.length === 0 ? (
           <p class="muted">Nothing ranked yet. Choose a candidate below.</p>
         ) : (
-          <ol class="ranked-list">
+          <ol class="ranked-list plain-list">
             {ranking.map((id, index) => (
-              <li class="ranked-item" key={id} data-testid={`ranked-${index}`}>
+              <li class="ranked-item row-card" key={id} data-testid={`ranked-${index}`}>
                 <span class="ordinal figures" data-testid={`ordinal-${index}`} aria-hidden="true">
                   {index + 1}
                 </span>
@@ -128,7 +128,7 @@ export function RankedBallot({
       {unranked.length > 0 && (
         <section aria-labelledby="to-rank">
           <h2 id="to-rank">Tap to add</h2>
-          <ul class="add-list">
+          <ul class="add-list plain-list">
             {unranked.map((candidate) => (
               <li class="add-row" key={candidate.id}>
                 <button
@@ -154,7 +154,7 @@ export function RankedBallot({
         {complete ? ' — ready to submit' : ''}
       </p>
 
-      <div class="submit-bar">
+      <div class="submit-bar sticky-bar">
         <button type="button" class="primary submit" disabled={!complete || submitting} onClick={submit}>
           {submitting ? 'Submitting…' : 'Submit ballot'}
         </button>

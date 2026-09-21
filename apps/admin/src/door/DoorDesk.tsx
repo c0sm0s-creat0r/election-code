@@ -79,7 +79,7 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
   }
 
   return (
-    <section className="stack door">
+    <section className="stack">
       <h2>Door check-in</h2>
 
       <div className="field">
@@ -95,9 +95,9 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
 
       {error !== '' && <p className="error" role="alert">{error}</p>}
 
-      <ul className="roll-list">
+      <ul className="roll-list plain-list">
         {found.map((entry) => (
-          <li className="roll-row" key={entry.usu_id}>
+          <li className="row-card spread" key={entry.usu_id}>
             <span className="roll-name">
               {entry.first_name} {entry.last_name}
               <span className="muted figures roll-id"> {entry.usu_id}</span>
@@ -129,9 +129,9 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
       {guests.length > 0 && (
         <>
           <h3>Guests</h3>
-          <ul className="roll-list">
+          <ul className="roll-list plain-list">
             {guests.map((guest) => (
-              <li className="roll-row" key={guest.id}>
+              <li className="row-card spread" key={guest.id}>
                 <span className="roll-name">
                   {guest.name}
                   {guest.note !== null && <span className="muted"> · {guest.note}</span>}
@@ -175,7 +175,7 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
       )}
 
       {quorum && (
-        <p className="quorum figures" role="status">
+        <p className="quorum sticky-bar figures" role="status">
           {quorum.checked_in} / {quorum.eligible} members · {quorum.guests} guests ·{' '}
           {quorum.added_at_door} added at the door
         </p>

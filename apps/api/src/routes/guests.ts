@@ -13,13 +13,10 @@
  * do not resolve a guest into `voter_roll`: a member the export missed is a
  * different action, in `routes/doorVoters.ts`.
  *
- * **Nothing here records a name in `audit_log`.** For a guest the name is the
- * entire payload, and `audit_log` cannot be purged (spec §2 gives the sealed
- * tables no cascade). The action and the batch are recorded; who is not.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { auditLogStatement } from '../db/audit.js'
+import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
@@ -79,7 +76,7 @@ guests.delete('/api/batches/:id/guests/:guestId', requireRole('door'), async (c)
     .run()
 
   if (result.meta.changes > 0) {
-    await c.env.DB.batch([auditLogStatement(c.env.DB, { batchId, role: 'door', action: 'guest.remove' })])
+    await recordAudit(c.env.DB, { batchId, role: 'door', action: 'guest.remove' })
   }
   return c.body(null, 204)
 })
