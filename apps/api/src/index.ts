@@ -4,6 +4,7 @@ import { batches } from './routes/batches.js'
 import { auth } from './routes/auth.js'
 import { roll } from './routes/roll.js'
 import { checkIn } from './routes/checkIn.js'
+import { elections } from './routes/elections.js'
 
 export type Env = {
   DB: D1Database
@@ -75,6 +76,7 @@ app.route('/', batches)
 app.route('/', auth)
 app.route('/', roll)
 app.route('/', checkIn)
+app.route('/', elections)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
