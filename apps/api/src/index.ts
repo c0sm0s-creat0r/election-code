@@ -7,6 +7,7 @@ import { checkIn } from './routes/checkIn.js'
 import { elections } from './routes/elections.js'
 import { voter } from './routes/voter.js'
 import { ballots } from './routes/ballots.js'
+import { receipts } from './routes/receipts.js'
 
 export type Env = {
   DB: D1Database
@@ -81,6 +82,7 @@ app.route('/', checkIn)
 app.route('/', elections)
 app.route('/', voter)
 app.route('/', ballots)
+app.route('/', receipts)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
