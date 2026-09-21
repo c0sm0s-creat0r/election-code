@@ -1,6 +1,6 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-17 (Plan 2a execution begun)
+**Last updated:** 2026-09-21 (Plan 2a complete; Plan 2b not started)
 **Branch:** `rewrite/core-counting` (NOT merged, NOT mergeable — see Open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | Spec | `docs/superpowers/specs/2026-09-16-election-code-rewrite-design.md` — approved, amended twice |
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
-| Plan 2a — `apps/api` foundation | **Plan written**, execution started. `docs/superpowers/plans/2026-09-17-api-foundation.md` — 6 tasks |
+| Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
 | Plan 2b — `apps/api` endpoints | Not written. Scope listed at the end of the 2a plan |
 | Plan 3 — frontends | Not started |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
@@ -22,6 +22,7 @@
 ```bash
 git log --oneline main..HEAD | wc -l     # expect 27
 npm run -w @election/core test           # expect 118/118
+npm run -w @election/api test            # expect 105/105
 npm run -w @election/core typecheck      # expect clean
 ```
 
@@ -135,12 +136,51 @@ execution, not only code-vs-plan during it.
    artifact the audit design exists to produce. KV limits must cover `officer/session` and
    `door/session` explicitly, not only roll lookup and ballot submission as §6 words it.
 
-4. **Write `ORDER BY id` explicitly** in the seal serialisation and the ballot export.
+4. **Constrain `AuditEntry.detail` before writing any 2b handler — this is the sharpest
+   unguarded edge in the foundation.** `detail` is typed `unknown` and JSON-stringified
+   straight into a permanent, undeletable table. Two consequences:
+   - The natural implementation of `POST /api/batches/:id/check-in {usu_id}` records the
+     usu_id in `detail`. That leaves personal identifiers in a table the retention rule
+     cannot purge, **breaking spec §2's claim that `voter_roll` and `check_in` are all the
+     personal data held**.
+   - `audit_log.id` is `AUTOINCREMENT` and `at` is a timestamp, so a ballot-submission
+     audit row carrying a ballot id — or a usu_id alongside a ballot event — **rebuilds
+     exactly the correlation join that `WITHOUT ROWID` and the absent `cast_at` exist to
+     prevent**.
+
+   Type `detail` to an explicit allow-list, or enforce a documented rule: never a usu_id,
+   never a ballot id.
+
+5. **The ballot eligibility re-check cannot be a read-then-write.** Constraint 1 above
+   requires re-verifying `eligible` and `check_in` at submission, but doing it as a
+   separate `.first()` before the transaction reintroduces precisely the race spec §6
+   claims to fix in `attendee.voted`. Fold it into the insert:
+   `INSERT ... SELECT ... WHERE EXISTS (...)`.
+
+6. **Add `POST /api/batches` to the KV rate-limit list.** The denied-attempt audit row
+   turned it from a zero-DB-work 401 into an *unauthenticated D1 write*. The row is
+   entirely attacker-uncontrolled and `NULL batch_id` keeps it out of batch-scoped
+   exports, but it is unbounded.
+
+7. **Add a JSON `app.onError`.** `src/index.ts` has none, so a thrown error returns
+   hono's `text/plain` "Internal Server Error" and a frontend calling `res.json()` throws
+   on the parse instead of surfacing the 500. Needed before 2b adds handlers that throw.
+
+8. **Two cheap one-liners worth taking:** tighten `requireRole`'s other-role lookup to
+   assert `role` and `batchId` on the token it finds (its comment already claims this);
+   and enforce the 32-character `SESSION_SECRET` floor in `verifySession` too, so a
+   misconfigured deployment accepts *nothing* rather than accepting only forgeries.
+
+9. **If 2b fetches exports rather than navigating to them**, add
+   `exposeHeaders: ['content-disposition']` to the CORS config, or the frontend cannot
+   read the filename off `attendance.csv` / `ballots.csv`.
+
+10. **Write `ORDER BY id` explicitly** in the seal serialisation and the ballot export.
    Because `ballot` is `WITHOUT ROWID`, physical order is *already* UUID order, so it will
    be tempting to omit it. Spec §2 defines the digest as sorted by `id` ascending — inherit
    that from the query, not from a storage detail.
 
-5. **Once `0001_initial.sql` is applied to the production D1, it is immutable.** Editing an
+11. **Once `0001_initial.sql` is applied to the production D1, it is immutable.** Editing an
    applied migration leaves the deployed database unchanged while the local test database
    silently diverges. All later schema changes go in a new numbered migration.
 
