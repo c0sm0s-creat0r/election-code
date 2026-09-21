@@ -255,10 +255,25 @@ ballot is voided.
 
 ### Retention
 
-After the AGM, `voter_roll` and `check_in` are purged. That is all the
-personal data. `ballot`, `election_seal` and `election_result` are anonymous
-and are the audit record, so they are kept. The result: a fully defensible
-count and none of the members' details.
+After the AGM, `voter_roll` and `check_in` are purged. `ballot`,
+`election_seal` and `election_result` are anonymous and are the audit record,
+so they are kept. The result: a fully checkable count and none of the members'
+names.
+
+**`vote_receipt` is kept, and it holds a `usu_id`.** This paragraph used to say
+the purge removed all the personal data, which was not true, and the honest fix
+was to name the exception rather than delete the data to make the sentence
+correct (decided 2026-09-21). The mark-off is half the integrity story — it is
+what shows that N distinct eligible members cast the N ballots in the box, and
+the attendance export is built from it — so what is retained is: which member
+voted in which election, when, and how many times they recast. Not how they
+voted; nothing joins it to a ballot once the election is closed, because
+`live_receipt_hash` is cleared at close.
+
+The purge is refused while any election is still open or in draft, since Plan
+2b's ballot insert re-checks `voter_roll` on every submission: purging mid-AGM
+would make every remaining voter ineligible. Deleting the roll never weakens a
+result, because the count is sealed against the ballots rather than the roll.
 
 ---
 
