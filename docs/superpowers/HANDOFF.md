@@ -1,6 +1,6 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (Plan 2a complete; multi-seat Critical fixed; Plans 2b and 2c written, not executed)
+**Last updated:** 2026-09-21 (Plan 2b COMPLETE; multi-seat Critical fixed; Plan 2c written, not executed)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 
@@ -13,19 +13,23 @@
 | Spec | `docs/superpowers/specs/2026-09-16-election-code-rewrite-design.md` — approved, amended twice |
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
 | Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
-| Plan 2b — voting path | **Plan written**, not executed. `docs/superpowers/plans/2026-09-21-api-voting-path.md` — 7 tasks |
+| Plan 2b — voting path | **COMPLETE.** 7 tasks, amended once before execution (see §2b below). api 245/245, typecheck clean |
 | Plan 2c — result path | **Plan written**, not executed. `docs/superpowers/plans/2026-09-21-api-result-path.md` — 7 tasks |
 | Plan 3 — frontends | Not started |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
-| Execution ledger | `.superpowers/sdd/2026-09-16-core-counting-library/progress.md` (gitignored, on disk only) |
+| Execution ledger | `.superpowers/sdd/<plan>/progress.md`, one per plan (gitignored, on disk only) |
 
 **Verify state on resume:**
 ```bash
-git log --oneline main..HEAD | wc -l     # expect 27
-npm run -w @election/core test           # expect 118/118
-npm run -w @election/api test            # expect 105/105
-npm run -w @election/core typecheck      # expect clean
+npm run -w @election/core test            # expect 135/135
+npm run -w @election/api test             # expect 245/245
+cd packages/core && npx tsc --noEmit      # expect clean
+cd apps/api && npx tsc --noEmit           # expect clean
 ```
+
+`npm run -w @election/api typecheck` works too, but note it resolves `tsconfig.json` relative to the
+workspace directory, so run it from `apps/api` if you invoke `tsc` by hand. Do not trust the commit
+count as a state check — it moves with every docs commit.
 
 ---
 
@@ -128,7 +132,63 @@ execution, not only code-vs-plan during it.
 
 ---
 
-## 6b. Constraints Plan 2b must honour (from the Plan 2a whole-branch review)
+## 2b. What Plan 2b changed about the data model — READ BEFORE PLAN 2c
+
+**Migration `0002_live_receipt_hash.sql` adds `vote_receipt.live_receipt_hash`.**
+
+Plan 2b's Task 7 could not be implemented as written. It prescribed
+`UPDATE vote_receipt SET recast_count = recast_count + 1 WHERE ...` with no `WHERE` clause, and none
+was possible: `ballot` carries no voter reference — that absence *is* the secret ballot — so a void
+keyed on `receipt_hash` alone cannot find the mark-off row to clear. Task 6's plain `INSERT` then
+meant a post-void re-cast hit the primary key, so Tasks 6 and 7 could not both pass.
+
+The user chose, from three options and after being shown the cost of each, to store the live
+ballot's `receipt_hash` on `vote_receipt`. **The cost: while a ballot is live, the database holds a
+join from `usu_id` to that ballot's preferences** — the correlation spec §2 drops `cast_at` and
+ROWID to prevent — readable by anyone with database access. It is bounded, and **Plan 2c must keep
+it bounded**:
+
+1. **Closing an election MUST `UPDATE vote_receipt SET live_receipt_hash = NULL` for that
+   election**, in the same transaction that writes `election_seal`. After close nothing can be
+   voided, so the link has no remaining purpose and must not outlive the count. This is the single
+   most important thing in 2c's brief.
+2. **The post-AGM purge must cover `vote_receipt`.** Spec §2's retention paragraph says `voter_roll`
+   and `check_in` are purged and that "that is all the personal data" — it does not name
+   `vote_receipt`, whose `usu_id` is personal data. The claim is false until the purge includes it.
+   This was already true before 0002; the new column makes it worse.
+3. **Never select, export or log `live_receipt_hash`.** A partial UNIQUE index stops two receipt
+   rows claiming one ballot; nothing stops a careless `SELECT *`.
+
+What the choice bought, beyond simplicity: because the receipt row is found *through* the hash, a
+void always clears the **true owner's** mark-off. A stolen token disenfranchises its owner — which
+spec §5's public void endpoint already accepts — but cannot mint a second live ballot. Two tests in
+`tests/receipts.test.ts` pin exactly that.
+
+**Other carried items for 2c:**
+
+- **An officer cannot list their own draft elections.** `GET /api/batches/:id/elections` is public
+  and returns only `open` and `closed`, per spec §5, which has no officer listing at all. After a
+  page reload an officer has only the id from the create response. I deliberately did not invent
+  one: making the public route's body depend on a cookie is a cache hazard (a shared cache could
+  serve a draft-bearing response to anyone), so it needs its own path and belongs with 2c's other
+  officer routes.
+- **`recast_count` is incremented by the void, not by the re-cast** (spec §4's wording). A voter who
+  voids and never returns therefore has `recast_count = 1` and no live ballot. Any turnout or
+  participation figure must count `vote_receipt` rows with a live ballot, not `recast_count`.
+- **Voter sign-in does not audit an unauthenticated miss**, deliberately, unlike staff sign-in — the
+  300/10min limit cannot be tightened (CGNAT), so auditing every wrong guess is a way to bury the
+  trail. It *does* audit a refusal that named a real roll member. If 2c adds a voter-facing route,
+  follow the same rule.
+- **`tests/privacy.test.ts` asserts Plan 2b's cross-cutting criteria** over a database that has been
+  through a whole election, and carries an action inventory. **A new audited action fails that
+  inventory test** — that is the reminder to decide, deliberately, that the new action carries no
+  identifier.
+- Test fixtures are bundled with Vite's `?raw`, never `node:fs`: the tests run inside the workers
+  runtime, which cannot reach the host filesystem.
+
+---
+
+## 6b. Constraints Plan 2b must honour (from the Plan 2a whole-branch review) — ALL NOW ADDRESSED
 
 1. **A session cookie is not proof of eligibility.** A voter session proves only that
    someone passed USU-id + surname at time T. Spec §5 allows an officer to un-check-in a
@@ -197,6 +257,17 @@ execution, not only code-vs-plan during it.
 11. **Once `0001_initial.sql` is applied to the production D1, it is immutable.** Editing an
    applied migration leaves the deployed database unchanged while the local test database
    silently diverges. All later schema changes go in a new numbered migration.
+
+---
+
+**Status of §6b at the end of Plan 2b:** (1) done — eligibility is re-verified in the insert;
+(2) done — every gated route uses `:id`; (3) done — Task 1 covers both sign-in routes explicitly;
+(4) was already done in 823a97d and the rule held for every new action; (5) done —
+`INSERT ... SELECT ... WHERE EXISTS`, no read-then-write; (6) done — `POST /api/batches` is limited
+at 10/hour; (7) was already done in 1dd27ad; (8) done in Plan 2a's fix wave; (9) `exposeHeaders:
+['content-disposition']` is already in the CORS config, so 2c's exports are covered; (10) still
+**open and owned by 2c** — write `ORDER BY id` explicitly in the seal serialisation and the ballot
+export; (11) verified — `0001_initial.sql` was not touched by Plan 2b, and 0002 is a new file.
 
 ---
 
