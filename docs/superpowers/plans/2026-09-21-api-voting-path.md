@@ -47,7 +47,7 @@ Foundational: Tasks 2–7 all attach limits. Also closes the unauthenticated-D1-
 | --- | --- | --- |
 | `POST /api/batches` | 10 / hour / IP | Operator-only, from anywhere. Tight is safe. |
 | `officer/session`, `door/session` | 30 / 10 min / IP | ~210k PBKDF2 iterations *and* an audit row per failure. Loose enough for a committee retyping a shared password, tight enough that the audit trail cannot be flooded until real entries are unreadable. |
-| voter sign-in, ballot submission | 300 / 10 min / IP | **Deliberately loose.** Integrity comes from the roll, the check-in and the `vote_receipt` primary key — never from the rate limit. A limit that blocks a queue of 200 people breaks the election; one that permits them cannot forge a ballot. |
+| roll lookup, voter sign-in, ballot submission | 300 / 10 min / IP | **Deliberately loose.** Integrity comes from the roll, the check-in and the `vote_receipt` primary key — never from the rate limit. A limit that blocks a queue of 200 people breaks the election; one that permits them cannot forge a ballot. |
 
 The short window matters: a stall recovers in ten minutes rather than an hour.
 
@@ -362,6 +362,8 @@ Expected: FAIL — routes not registered
 - Read the uploaded file from `await c.req.formData()`, reject anything over 2 MB (the real export is ~256 KB) and anything that is not a file, with 400.
 - Call `parseUsuExport(text)`. **Let its throw become a 400, not a 500** — an unterminated quoted field means the export is corrupt, and the message already says no roll was imported.
 - **Preview** returns `{ total, eligible, excluded, skipped, shifted }` and writes nothing.
+  `ImportResult` has no `total` — it is `members.length`, i.e. rows actually importable, which is
+  why `skipped` is reported beside it rather than folded into it.
 - **Commit** writes every member with `INSERT INTO voter_roll (batch_id, usu_id, first_name, last_name, eligible) VALUES (?,?,?,?,?) ON CONFLICT(batch_id, usu_id) DO UPDATE SET first_name=excluded.first_name, last_name=excluded.last_name, eligible=excluded.eligible`, chunked into `DB.batch()` calls of at most 100 statements (D1 has a per-call statement limit and the real roll is 1,302 rows), plus one `auditLogStatement` for `roll.import`.
 - Add the `roll_import` variant to `AuditDetail` if absent.
 
@@ -469,7 +471,10 @@ Expected: FAIL — routes not registered
 
 - [ ] **Step 3: Write minimal implementation**
 
-All four routes behind `requireRole('door')`.
+All four routes behind `requireRole('door')`. `GET /roll` additionally carries
+`rateLimit(RATE_LIMITS.voting)` — spec §6 names "roll lookup" as one of the three surfaces that
+must be limited, and a 50 KB response is the largest thing an authenticated door tablet can ask
+for in a loop.
 
 - `GET /roll` — `SELECT vr.usu_id, vr.first_name, vr.last_name, vr.eligible, ci.checked_in_at FROM voter_roll vr LEFT JOIN check_in ci ON ci.batch_id = vr.batch_id AND ci.usu_id = vr.usu_id WHERE vr.batch_id = ? ORDER BY vr.last_name, vr.first_name`.
 - `POST /check-in` — Zod `{ usu_id: string }`. Insert conditionally so the roll check cannot be raced:
@@ -708,7 +713,8 @@ The most important task in this plan. Read all of it before writing anything.
 
 **Files:**
 - Create: `apps/api/src/routes/ballots.ts`
-- Modify: `apps/api/src/index.ts`
+- Create: `apps/api/migrations/0002_live_receipt_hash.sql` (`0001` is applied to production and is immutable)
+- Modify: `apps/api/src/index.ts`, `apps/api/src/db/types.ts`
 - Test: `apps/api/tests/ballots.test.ts`
 
 **Interfaces:**
@@ -832,11 +838,18 @@ Expected: FAIL — route not registered
 - [ ] **Step 3: Write minimal implementation**
 
 ```ts
-// Both statements carry the SAME eligibility clause. If it fails, both insert
-// zero rows — no ballot, no receipt. If the voter has already voted, the
-// vote_receipt primary key throws and D1 rolls the whole batch back, so an
-// orphan ballot is impossible. Writing the ballot unconditionally and the
-// receipt conditionally would leave one.
+// Both statements carry the SAME eligibility clause AND the same
+// no-live-ballot clause, so they succeed together or not at all.
+//
+// ORDER MATTERS: the ballot insert runs FIRST. Reversed, the receipt upsert
+// sets live_receipt_hash and the ballot's own NOT EXISTS guard then fails
+// against the row it just wrote, refusing every first ballot.
+//
+// A voter holding a live ballot is refused by that guard rather than by the
+// vote_receipt primary key. After a void the receipt row still exists and
+// must be reusable, so a plain INSERT would 409 a legitimate recast. The
+// guarantee is unchanged: one transaction, both statements conditional, so a
+// second submission writes neither a ballot nor a receipt.
 const ELIGIBLE = `
   EXISTS (
     SELECT 1
@@ -846,16 +859,39 @@ const ELIGIBLE = `
     WHERE vr.batch_id = ?1 AND vr.usu_id = ?3 AND vr.eligible = 1
   )`
 
-const receiptStmt = c.env.DB.prepare(
-  `INSERT INTO vote_receipt (election_id, usu_id, voted_at, recast_count)
-   SELECT ?2, ?3, ?4, 0 WHERE ${ELIGIBLE}`,
-).bind(batchId, electionId, usuId, Date.now())
+const NO_LIVE_BALLOT = `
+  NOT EXISTS (
+    SELECT 1 FROM vote_receipt
+    WHERE election_id = ?2 AND usu_id = ?3 AND live_receipt_hash IS NOT NULL
+  )`
+
+// One tuple, both statements: the numbered placeholders mean each statement
+// uses the subset it needs and SQLite sizes the bind list by the highest index.
+const params = [batchId, electionId, usuId, Date.now(), crypto.randomUUID(), JSON.stringify(preferences), receiptHash]
 
 const ballotStmt = c.env.DB.prepare(
   `INSERT INTO ballot (id, election_id, preferences, receipt_hash, voided)
-   SELECT ?5, ?2, ?6, ?7, 0 WHERE ${ELIGIBLE}`,
-).bind(batchId, electionId, usuId, Date.now(), crypto.randomUUID(), JSON.stringify(preferences), receiptHash)
+   SELECT ?5, ?2, ?6, ?7, 0 WHERE ${ELIGIBLE} AND ${NO_LIVE_BALLOT}`,
+).bind(...params)
+
+// The mark-off. DO UPDATE, not a bare INSERT: the row survives a void.
+// recast_count is NOT touched here -- the void already counted the recast.
+const receiptStmt = c.env.DB.prepare(
+  `INSERT INTO vote_receipt (election_id, usu_id, voted_at, recast_count, live_receipt_hash)
+   SELECT ?2, ?3, ?4, 0, ?7 WHERE ${ELIGIBLE}
+   ON CONFLICT(election_id, usu_id) DO UPDATE
+     SET voted_at = ?4, live_receipt_hash = ?7
+     WHERE vote_receipt.live_receipt_hash IS NULL`,
+).bind(...params)
 ```
+
+**Migration `0002` adds `vote_receipt.live_receipt_hash`.** It is how the void in Task 7 knows
+whose mark-off to clear: `ballot` has no voter reference, so a void keyed only on `receipt_hash`
+has no other way to find the row. The cost, accepted deliberately by the user after being shown
+it: while a ballot is live, the database holds a join from `usu_id` to that ballot's preferences —
+the correlation spec §2 drops `cast_at` and ROWID to prevent. It is bounded, and must stay bounded:
+the void NULLs it, **Plan 2c's close must NULL it for the whole election**, and the post-AGM purge
+must cover `vote_receipt`. A partial UNIQUE index stops two receipt rows ever claiming one ballot.
 
 Order of work in the handler:
 
@@ -863,7 +899,11 @@ Order of work in the handler:
 2. Load the election's candidate ids and `seats`. If the election is not `open`, 409.
 3. `validateBallot(preferences, candidateIds, seats)` from `@election/core` — 400 with its `reason` on failure. The reason strings are written to be read by a voter mid-ballot.
 4. Mint a receipt token with `crypto.randomUUID()`; store `receipt_hash = sha256(token)` via `crypto.subtle`. **The token is returned once and never stored.**
-5. `DB.batch([receiptStmt, ballotStmt])` in one transaction. Catch a primary-key violation → 409 "already voted". If `changes === 0` on the receipt → 403 (not eligible, not checked in, or the election closed between steps 2 and 5).
+5. `DB.batch([ballotStmt, receiptStmt])` in one transaction — **ballot first**, per the comment
+   above. Both statements report `changes === 1` or both report `0`; the guards are equivalent, so a
+   1/0 split is unreachable and is treated as a bug rather than papered over. On `0`, read the
+   receipt row once to answer: a row with `live_receipt_hash IS NOT NULL` → **409** already voted;
+   anything else → **403** (not eligible, not checked in, or the election closed between steps 2 and 5).
 6. Audit `ballot.cast` with **no detail**.
 7. Return `201 { receipt_token }`.
 
@@ -970,10 +1010,34 @@ Expected: FAIL — routes not registered
 
 - Hash the supplied token and look up `ballot` by `receipt_hash` (the `ballot_receipt` index exists for this).
 - `GET` returns `{ status: 'recorded' | 'voided', election_name }`. **No preferences, ever.**
-- `POST /void` — conditional update so a closed election cannot be raced:
-  `UPDATE ballot SET voided = 1 WHERE receipt_hash = ? AND voided = 0 AND (SELECT status FROM election WHERE id = ballot.election_id) = 'open'`. `changes === 0` → 409.
-  In the same `DB.batch()`, `UPDATE vote_receipt SET recast_count = recast_count + 1, voted_at = ? WHERE ...` — the receipt row already exists, so this must be an UPDATE, not an INSERT.
-  Deleting the receipt instead would let the voter cast again *and* erase the mark-off, so the roll would no longer show they had voted.
+- `POST /void` — two conditional updates in one `DB.batch()`, so a closing election cannot be raced:
+
+```sql
+-- 1. the ballot. Stays in the table: the seal must still cover it.
+UPDATE ballot SET voided = 1
+ WHERE receipt_hash = ?1 AND voided = 0
+   AND (SELECT status FROM election WHERE id = ballot.election_id) = 'open';
+
+-- 2. the mark-off. live_receipt_hash IS the WHERE clause -- it is the only
+--    thing that connects this token to a voter, because ballot carries no
+--    voter reference. recast_count is incremented HERE (spec §4: "voiding
+--    ... increments recast_count"), so the re-cast in Task 6 must not
+--    increment it again.
+UPDATE vote_receipt
+   SET live_receipt_hash = NULL, recast_count = recast_count + 1, voted_at = ?2
+ WHERE live_receipt_hash = ?1
+   AND (SELECT status FROM election WHERE id = vote_receipt.election_id) = 'open';
+```
+
+  `changes === 0` on the ballot → 409. A second void of the same token finds `voided = 1` and a
+  `live_receipt_hash` already NULL, so both statements match nothing — 409, idempotently refused.
+
+  This must be an UPDATE, never a DELETE of the receipt: deleting would let the voter cast again
+  *and* erase the mark-off, so the roll would stop showing that they had voted.
+
+  Because the receipt row is found *through* the hash, a void always clears the true owner's flag.
+  Someone holding a stolen token can therefore destroy that voter's ballot — which spec §5's public
+  void endpoint already accepts — but cannot mint a second live ballot for themselves.
 - Rate-limited with `RATE_LIMITS.voting`. Audit `ballot.void` with **no detail**.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -999,9 +1063,14 @@ git commit -m "feat(api): inclusion-only receipts with void and recast"
 - `ballot` still has exactly `id, election_id, preferences, receipt_hash, voided` — no voter reference, no timestamp.
 - No `audit_log.detail` anywhere contains a 7-digit id or a UUID.
 - A receipt never returns preferences.
+- `vote_receipt.live_receipt_hash` is NULL for every voided ballot, and no two receipt rows ever
+  carry the same non-NULL value (enforced by a partial UNIQUE index, not by convention).
 - Candidates cannot be added, renamed or removed once an election is open.
 - An election with no candidates, or fewer candidates than seats, cannot be opened.
 
 ## What Plan 2b does NOT cover
 
-Plan 2c owns: closing an election and writing `election_seal`; counting via `@election/core`; the tie-break override (spec §5 names the field `winner_id`, but for `kind: 'exclusion'` the id is the candidate to **exclude** — rename it `resolved_id` or translate by `kind`); `election_result` versioning with `supersedes`; exports (attendance CSV, anonymous ballot CSV, sealed result) with `ORDER BY id` written **explicitly** rather than inherited from `WITHOUT ROWID` storage order; adding the `voided` column to the ballot export so the seal becomes reproducible from it (spec §2 currently documents that it is not); R2 logo upload with magic-byte validation; and the post-AGM roll purge.
+Plan 2c owns: closing an election and writing `election_seal` — **and, in the same transaction,
+`UPDATE vote_receipt SET live_receipt_hash = NULL` for that election, which is what keeps the
+ballot↔voter join open only while ballots can still be voided; the post-AGM purge must also cover
+`vote_receipt`, whose `usu_id` spec §2's retention paragraph does not currently name; counting via `@election/core`; the tie-break override (spec §5 names the field `winner_id`, but for `kind: 'exclusion'` the id is the candidate to **exclude** — rename it `resolved_id` or translate by `kind`); `election_result` versioning with `supersedes`; exports (attendance CSV, anonymous ballot CSV, sealed result) with `ORDER BY id` written **explicitly** rather than inherited from `WITHOUT ROWID` storage order; adding the `voided` column to the ballot export so the seal becomes reproducible from it (spec §2 currently documents that it is not); R2 logo upload with magic-byte validation; and the post-AGM roll purge.
