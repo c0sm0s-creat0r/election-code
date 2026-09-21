@@ -27,12 +27,19 @@ export type RankedBallotProps = {
   seats: number
   onSubmit: (preferences: string[]) => void
   submitting: boolean
+  /**
+   * A draft handed back after a session lapsed mid-ballot. A voter who has to
+   * sign in again must not lose their ranking (spec §4.4).
+   */
+  initialRanking?: string[]
 }
 
-export function RankedBallot({ candidates, seats, onSubmit, submitting }: RankedBallotProps) {
+export function RankedBallot({
+  candidates, seats, onSubmit, submitting, initialRanking,
+}: RankedBallotProps) {
   // One array of candidate ids, in rank order — exactly the shape the API wants,
   // so nothing has to be transformed on the way out.
-  const [ranking, setRanking] = useState<string[]>([])
+  const [ranking, setRanking] = useState<string[]>(initialRanking ?? [])
 
   // The same function the API calls, so the two can never disagree about what a
   // valid ballot is. It is min(seats, candidateCount), floored at 1.
