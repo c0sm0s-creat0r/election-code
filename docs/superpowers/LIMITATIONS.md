@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-21, during Plan 3 brainstorming.
+**Last updated:** 2026-09-21, during Plan 3 brainstorming (11 entries).
 
 ---
 
@@ -166,3 +166,24 @@ needs the network again.
 on a volunteer's personal device, outside the reach of the purge — which would narrow the retention
 claim to something much less defensible. The door session's TTL is an hour anyway, so a reload
 frequently means re-authenticating regardless.
+
+## 11. The door cannot enrol a member the export missed
+
+**Where:** guest attendance, `docs/superpowers/specs/2026-09-21-frontends-design.md` §0.
+
+A guest added at the door attends and **cannot vote**. So if someone is genuinely an eligible member
+but absent from the USU export — they joined last week and the CSV is stale — the door has no way to
+give them a ballot. Adding them as a guest records their attendance and nothing more.
+
+**Why accepted (2026-09-21):** the alternative is a door that can create voters, which would mean one
+door password could manufacture an electorate and the claim that eligibility derives from the
+membership export would stop being true. The roll means exactly one thing: the export.
+
+**The remedy, which the door UI must point at rather than hide:** the officer re-imports a corrected
+export. The roll import is an upsert, so this is safe mid-AGM and updates eligibility in place — and
+because eligibility is re-verified inside the ballot insert, a member added that way can vote
+immediately without anything being restarted.
+
+**What would close it:** the "add member at the door" flow that was considered and rejected, with a
+distinct flag, its own audit row, and the count of door-added voters stated wherever the total is.
+Re-open this only with those controls attached.
