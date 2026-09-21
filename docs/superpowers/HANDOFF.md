@@ -1,11 +1,13 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (Plans 2b and 2c COMPLETE; `apps/api` done against spec §5; multi-seat Critical fixed)
+**Last updated:** 2026-09-21 (Plans 2b, 2c and 2d COMPLETE; `apps/api` done against spec §5; frontends spec written)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
-**Next action:** Plan 3, the two frontends. No plan is written for it yet, so brainstorm and write
-one first. Do the plan-vs-spec check in §6 before executing it: it caught a blocking defect in 2b and
-four gaps in 2c, including two spec §5 routes that no plan had.
+**Next action:** write Plan 3a (`apps/voter` + `packages/styles` + the `e2e/` smoke) from
+`docs/superpowers/specs/2026-09-21-frontends-design.md`, then Plan 3b (`apps/admin` + the lazy door
+route). The frontends design is approved and committed; §0 of it is already built (Plan 2d). Do the
+plan-vs-spec check in §6 before executing either: it caught a blocking defect in 2b, four gaps in 2c,
+and three plan bugs in 2d before any code was written.
 
 ---
 
@@ -18,14 +20,17 @@ four gaps in 2c, including two spec §5 routes that no plan had.
 | Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
 | Plan 2b — voting path | **COMPLETE.** 7 tasks, amended once before execution (see §2 below). api 245/245, typecheck clean |
 | Plan 2c — result path | **COMPLETE.** 7 tasks + 1 added (§2 below). api 359/359, typecheck clean. `apps/api` is complete against spec §5 — all 33 routes |
-| Plan 3 — frontends | Not started, **not yet planned**. Voter app (Preact) + admin app (React 19) |
+| Plan 2d — guests + door additions | **COMPLETE.** 4 tasks. api 399/399, typecheck clean. Migration `0004` |
+| Frontends design | `docs/superpowers/specs/2026-09-21-frontends-design.md` — approved. Mobile-first, plain-CSS tokens, door as a lazy admin route |
+| Plan 3a — `apps/voter` | Not started, **not yet planned** |
+| Plan 3b — `apps/admin` | Not started, **not yet planned** |
 | Legacy code | `backend/`, `admin-frontend/`, `voter-frontend/` still present. `backend/irv.py` MUST remain until the differential test is retired |
 | Execution ledger | `.superpowers/sdd/<plan>/progress.md`, one per plan (gitignored, on disk only) |
 
 **Verify state on resume:**
 ```bash
 npm run -w @election/core test            # expect 142/142
-npm run -w @election/api test             # expect 359/359
+npm run -w @election/api test             # expect 399/399
 cd packages/core && npx tsc --noEmit      # expect clean
 cd apps/api && npx tsc --noEmit           # expect clean
 ```
@@ -65,6 +70,19 @@ Quota is not recoverable from anything `0001` stores (`Round` does not carry it,
 `ballot_count` includes voided ballots while the count excludes them), and the result endpoint serves
 a second request from the stored row, so without it two GETs would differ.
 
+### `0004` — guests, and members the export missed
+
+Two door actions that must stay separate (`docs/superpowers/specs/2026-09-21-frontends-design.md` §0):
+
+- **A guest attends and cannot vote.** `guest` has **no `usu_id`**, so the ballot insert's
+  eligibility clause has nothing to match. That absence *is* the control — **never add a `usu_id` to
+  that table** and never resolve a guest into `voter_roll`.
+- **A member the export missed can vote**, as a `voter_roll` row with `added_at_door = 1`. This means a
+  door password can enrol a voter, so the flag is a provenance control and **must never be cleared**:
+  it is reported by `GET /quorum` and is a column in both attendance exports. The roll import's upsert
+  must not mention it in its `SET` list.
+- **The purge covers `guest`.** A guest's name is personal data and nothing else reaches that table.
+
 ### What Plan 2c settled that Plan 3 must not undo
 
 1. **`resolved_id`, not `winner_id`.** For an exclusion tie the id is the candidate **excluded**. A
@@ -85,6 +103,9 @@ a second request from the stored row, so without it two GETs would differ.
 5. **`tests/privacy.test.ts` runs the whole system and inventories every audited action.** A new
    audited action **fails that test**. That is the mechanism, not a nuisance: it forces the
    "never a usu_id, never a ballot id, never a preference list" decision to be made explicitly.
+   **But it only sees routes its scenario calls.** Twice now (2c, then 2d) new actions passed silently
+   because `runWholeElection` never reached them. **Extending that scenario is part of adding an
+   audited action.**
 
 ---
 
