@@ -32,7 +32,7 @@ variable, and no stylesheet. Two things make them unfit rather than merely dated
 
 ---
 
-## 0. Prerequisite API work: guest attendance
+## 0. Prerequisite API work: guests, and members the export missed
 
 **This must ship before the door UI can use it, and it is not frontend work.** It is listed here
 because the requirement surfaced during this design, and because the door screen in §5.3 depends on it.
@@ -44,21 +44,45 @@ A guest is currently **impossible by construction**. `check_in` carries a foreig
 `WHERE EXISTS (SELECT 1 FROM voter_roll WHERE … AND eligible = 1)`. Ballot submission re-checks the
 same join inside its transaction. There is no way to record someone who is not on the roll, by design.
 
-### 0.2 The decision, and what it protects
+### 0.2 Two separate actions, deliberately not one
 
-**A guest attends and cannot vote.** An observer, a partner organisation, a member of staff, a
-partner. They are recorded so the room's head-count is right and so the minutes are accurate — not so
-they can cast a ballot.
+The door gets **two buttons**, because two different people turn up and conflating them would let a
+volunteer grant a vote by accident:
 
-This is deliberately the conservative reading, and the reason is the integrity story. If the door
-could add someone who may then vote, **one door password would be able to manufacture voters**, and
-the claim that eligibility derives from the USU membership export would no longer be true. Keeping
-guests out of `voter_roll` entirely means the roll still means exactly one thing: the export.
+| Action | Who it is for | Can vote |
+| --- | --- | --- |
+| **Add guest** | an observer, partner organisation, staff, a member's guest | **No** |
+| **Add member** | someone genuinely eligible whom the export missed — they joined last week | **Yes** |
 
-### 0.3 Schema — migration `0004_guest.sql`
+One catch-all button would mean the volunteer's finger decides whether a stranger gets a ballot. Two
+buttons, worded differently, with different fields and different confirmations, make that a decision
+rather than a side effect.
 
-A separate table, not a flag on `voter_roll`. Mixing invented rows into the roll would corrupt what
-the roll means, what the import's upsert does on the next re-import, and what "1,298 eligible" counts.
+**What "add member" costs, stated plainly.** It means a door password can enrol a voter, so the claim
+"eligibility derives from the USU membership export" becomes "…derives from the export, plus N people
+the returning officer's door staff added". That is a real weakening, and it is accepted because the
+alternative — turning away a member who has paid — is worse. What makes it defensible is that the N is
+never hidden:
+
+- **`voter_roll.added_at_door`** flags every such row, permanently.
+- **Both attendance exports carry the flag as a column**, so a committee reading the file sees which
+  voters came from the export and which did not.
+- **`GET /quorum` reports `added_at_door` beside the totals**, so the number is never presented
+  without it.
+- The flag is **sticky across a re-import**: if a corrected export later contains that member, the
+  upsert refreshes their name and eligibility but does not clear the flag. A human created that row at
+  the door, and a later file cannot un-happen it.
+
+**A guest, by contrast, has no `usu_id` at all.** Nothing joins a guest to the roll, so a guest cannot
+satisfy the ballot insert's eligibility clause — they cannot vote because the query has nothing to
+match, not because a check says no.
+
+### 0.3 Schema — migration `0004_guests_and_door_additions.sql`
+
+Guests get their own table rather than a flag on `voter_roll`: mixing rows that are not members into
+the roll would corrupt what the roll means, what the import's upsert does on re-import, and what
+"1,298 eligible" counts. A door-added *member* is the opposite case — they genuinely belong on the
+roll — so they are a roll row with a flag.
 
 ```sql
 CREATE TABLE guest (
@@ -68,21 +92,42 @@ CREATE TABLE guest (
   note          TEXT,                 -- optional: "observer, USU exec"
   checked_in_at INTEGER NOT NULL
 );
-```
 
-There is no `usu_id` column, and that absence is the control: nothing joins a guest to the roll, so
-no guest can satisfy the ballot insert's eligibility clause. A guest cannot vote because the schema
-gives the query nothing to match, not because a check says no.
+-- A roll row a human created at the door, not one the export produced. Never
+-- cleared: a later corrected export refreshes the name and eligibility, and the
+-- fact that someone typed this row in at a desk stays true.
+ALTER TABLE voter_roll ADD COLUMN added_at_door INTEGER NOT NULL DEFAULT 0;
+```
 
 ### 0.4 Endpoints
 
 ```
-POST   /api/batches/:id/guests           {name, note?} -> 201 {id, name}   door role
-GET    /api/batches/:id/guests                                             door role
-DELETE /api/batches/:id/guests/:guestId  -> 204                            door role
-GET    /api/batches/:id/quorum           -> {checked_in, eligible, guests} door role
-GET    /api/batches/:id/guests.csv                                         officer role
+POST   /api/batches/:id/guests            {name, note?}              -> 201   door role
+GET    /api/batches/:id/guests                                               door role
+DELETE /api/batches/:id/guests/:guestId                              -> 204   door role
+POST   /api/batches/:id/voters            {usu_id, first_name, last_name} -> 201  door role
+DELETE /api/batches/:id/voters/:usuId                                -> 204   door role
+GET    /api/batches/:id/quorum  -> {checked_in, eligible, guests, added_at_door}  door role
+GET    /api/batches/:id/guests.csv                                           officer role
 ```
+
+**`POST /voters` creates the roll row and the check-in in one transaction**, because the volunteer's
+intent is "this person is here and needs to vote", and a roll row without a check-in is a member who
+still cannot vote.
+
+**It refuses a `usu_id` already on the roll, with 409** — it is not an upsert. A mistyped id that
+happens to match a real member would otherwise overwrite that member's name with the typed one. If
+they are already on the roll, the correct action is to search for them and check them in, which is
+what the 409 tells the volunteer to do.
+
+**`DELETE /voters/:usuId` undoes a mistyped entry**, and only that: it refuses unless
+`added_at_door = 1` (never a member from the export) **and** that member has cast no ballot in this
+batch (no `vote_receipt` row). Deleting a roll row for someone who has voted would destroy the
+eligibility evidence behind a ballot that is already in the box.
+
+**A door-added member counts in `eligible` and `checked_in` like any other**, because they are a
+member. `added_at_door` is reported beside those numbers so the total is never shown without its
+provenance.
 
 - **`GET /quorum` gains `guests` as a third number and the existing two are unchanged.** Quorum is
   `checked_in / eligible` against the roll (spec §4); a guest must never move that ratio. They are a
@@ -98,23 +143,34 @@ body with `toEqual({ checked_in: 2, eligible: 4 })`, so a third key fails it. Th
 doing its job — it pins the response shape — and updating it is part of Plan 2d, not a regression to
 work around.
 
-### 0.5 Two obligations this creates
+### 0.5 Three obligations this creates
 
 1. **A guest's name is personal data, so the post-AGM purge must delete `guest`.** It goes in the same
    transaction as `check_in` and `voter_roll`, the return value gains a `guest` count, and spec §2's
    retention paragraph must name it. Getting this wrong recreates exactly the false retention claim
    that was corrected on 2026-09-21.
-2. **`guest.add` and `guest.remove` are audited with no detail at all.** The name is the whole payload
-   and `audit_log` cannot be purged. This adds two entries to the action inventory in
-   `apps/api/tests/privacy.test.ts`, which is the test designed to fail when a new audited action
-   appears.
+2. **Every new audited action carries no detail at all.** `guest.add`, `guest.remove`,
+   `voter.add_at_door` and `voter.remove_at_door` record the action and the batch, never the name and
+   never the usu_id — the name *is* the whole payload, and `audit_log` cannot be purged. The
+   accountability for a door-added voter lives in `voter_roll.added_at_door` and the attendance
+   exports, which the purge can reach; the audit log records only that it happened. This adds four
+   entries to the action inventory in `apps/api/tests/privacy.test.ts`, the test designed to fail when
+   a new audited action appears.
+3. **Both attendance exports gain an `added_at_door` column.** This is the control that makes the
+   weakening in §0.2 survivable: a committee reading the file can see which voters came from the
+   membership export and which were added at a desk. Never present the total without it.
 
 ### 0.6 Tests
 
-A guest can be added, listed and removed by the door role and nobody else; a guest **cannot be
-checked in as a voter and cannot sign in to vote**; `quorum` reports guests without moving
-`checked_in` or `eligible`; the purge deletes guests along with the roll; and no `audit_log` row
-carries a guest's name.
+Guests: added, listed and removed by the door role and nobody else; a guest **cannot be checked in as
+a voter and cannot sign in to vote**; `quorum` reports guests without moving `checked_in` or
+`eligible`; the purge deletes them; no `audit_log` row carries a guest's name.
+
+Door-added members: created with a check-in in one transaction; **can then sign in and cast a ballot**
+(the test that proves the feature works at all); refused when the `usu_id` is already on the roll, with
+the existing member's name left untouched; removable while they have not voted and refused once they
+have; flagged in `quorum` and in both attendance exports; and the flag survives a re-import that
+includes them.
 
 ---
 
