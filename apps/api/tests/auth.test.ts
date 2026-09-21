@@ -230,3 +230,60 @@ describe('sign-out', () => {
     expect(results).toHaveLength(0)
   })
 })
+
+describe('the other-role lookup verifies what the cookie name claims', () => {
+  /*
+   * When there is no cookie for the requested role, requireRole checks whether
+   * the caller holds a session for this batch under a DIFFERENT role, and
+   * answers 403 rather than 401 — a door volunteer tapping an officer route is
+   * authenticated and simply not authorised, and "sign in again" would send
+   * their tablet round a loop it cannot win.
+   *
+   * The cookie NAME is not covered by the signature, so a hand-forged Cookie
+   * header can file any token under any name. These two cases pin that the
+   * lookup verifies role and batch on what it finds, instead of treating any
+   * verifiable token as proof of a session it never was.
+   */
+
+  it('401s when the token under the door cookie name belongs to another batch', async () => {
+    const other = await SELF.fetch('https://example.com/api/batches', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY },
+      body: JSON.stringify({
+        name: 'O', slug: 'other', officer_password: 'officer-password-2', door_password: 'door-password-2',
+        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
+      }),
+    })
+    const otherId = (await other.json() as { id: string }).id
+
+    // A genuine door session for the OTHER batch, filed under THIS batch's name.
+    const token = await signSession(
+      { batchId: otherId, role: 'door', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)
+
+    const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {
+      headers: { cookie: `es_door_${batchId}=${token}` },
+    })
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: 'unauthenticated', code: 'no_session' })
+  })
+
+  it('401s when the token under the door cookie name is actually a voter session', async () => {
+    const token = await signSession(
+      { batchId, role: 'voter', subject: '2400001', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)
+
+    const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {
+      headers: { cookie: `es_door_${batchId}=${token}` },
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('still 403s a genuine door session for this batch', async () => {
+    const doorRes = await signIn('door', 'door-password-1')
+    const cookie = (doorRes.headers.get('set-cookie') ?? '').split(';')[0]!
+    const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {
+      headers: { cookie },
+    })
+    expect(res.status).toBe(403)
+  })
+})
+

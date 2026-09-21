@@ -173,3 +173,29 @@ describe('SESSION_SECRET strength', () => {
     expect(MIN_SECRET_LENGTH).toBe(32)
   })
 })
+
+describe('a weak SESSION_SECRET is refused on the verify side too', () => {
+  const WEAK = 'short-secret'
+
+  it('refuses a token even though its signature is genuine', async () => {
+    // Minted with the weak secret by bypassing signSession's own guard, so the
+    // signature really does verify. Without the verify-side check the API would
+    // accept *only* forgeries: signing already refuses a weak secret, so a
+    // misconfigured deployment issues no legitimate tokens at all.
+    const payload = btoa(JSON.stringify(base()))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const key = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(WEAK), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+    const sigBytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)))
+    const sig = btoa(String.fromCharCode(...sigBytes))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+    expect(await verifySession(`${payload}.${sig}`, WEAK)).toBeNull()
+  })
+
+  it('still accepts a token under a secret of the required length', async () => {
+    const strong = 'x'.repeat(32)
+    expect(await verifySession(await signSession(base(), strong), strong)).toEqual(base())
+  })
+})
+

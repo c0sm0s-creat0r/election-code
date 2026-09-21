@@ -114,6 +114,13 @@ export async function verifySessionResult(
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<VerifyResult> {
   const bad = { ok: false, reason: 'invalid' } as const
+  // A weak secret is refused on the verify side too, not only when minting.
+  // Signing already rejects it, so a misconfigured deployment issues nothing
+  // and has no legitimate (payload, signature) pair to attack offline. What
+  // this closes is the remaining case: an attacker who guesses a short secret
+  // and mints their own token. Without it the API would accept *only*
+  // forgeries. With it, it accepts nothing.
+  if (!isUsableSecret(secret)) return bad
   const parts = token.split('.')
   if (parts.length !== 2) return bad
   const [payload, sig] = parts as [string, string]

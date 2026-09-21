@@ -69,7 +69,14 @@ export function requireRole(role: Role) {
       for (const other of ALL_ROLES) {
         if (other === role) continue
         const otherToken = getCookie(c, cookieName(batchId, other))
-        if (otherToken && (await verifySession(otherToken, c.env.SESSION_SECRET))) {
+        if (otherToken === undefined) continue
+        // Verify the token actually IS what its cookie name claims. The name
+        // is not covered by the signature, so a hand-forged Cookie header can
+        // file any token under any name; without these two checks a token for
+        // another batch, or another role entirely, would earn a 403 here where
+        // 401 is the truthful answer.
+        const otherSession = await verifySession(otherToken, c.env.SESSION_SECRET)
+        if (otherSession && otherSession.role === other && otherSession.batchId === batchId) {
           return c.json({ error: 'forbidden' }, 403)
         }
       }

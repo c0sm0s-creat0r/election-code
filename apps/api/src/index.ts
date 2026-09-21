@@ -54,6 +54,10 @@ app.use('/api/*', (c, next) =>
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['content-type', 'x-super-admin-key'],
+    // The attendance and ballot CSV exports are cross-origin under spec §1.
+    // A frontend that fetches one to a blob cannot read its filename without
+    // this; an <a download> navigation would work, a fetch would not.
+    exposeHeaders: ['content-disposition'],
     maxAge: 600,
   })(c, next),
 )
