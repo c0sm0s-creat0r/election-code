@@ -173,8 +173,21 @@ Handler order:
 3. If `status === 'open'`: `UPDATE election SET status='closed', closed_at=? WHERE id=? AND batch_id=? AND status='open'`. `changes === 0` → 409 (someone else closed it first).
 4. If `status === 'closed'` and a seal already exists → 409. If closed with no seal, fall through and seal.
 5. `SELECT id, preferences, voided FROM ballot WHERE election_id = ? ORDER BY id` — **explicit `ORDER BY`**.
-6. `DB.batch([insertSeal, auditLogStatement])`, with `INSERT INTO election_seal ... ON CONFLICT(election_id) DO NOTHING` so a retry cannot overwrite.
+6. `DB.batch([insertSeal, clearLiveReceiptLinks, auditLogStatement])`, with
+   `INSERT INTO election_seal ... ON CONFLICT(election_id) DO NOTHING` so a retry cannot overwrite.
 7. Return `200 { closed_at, ballot_count, ballots_sha256 }`.
+
+**`clearLiveReceiptLinks` is not optional — see HANDOFF §2.** Plan 2b added
+`vote_receipt.live_receipt_hash` so a void can find the mark-off to clear, and while it is set it is
+a join from a `usu_id` to that ballot's preferences. After close nothing can be voided, so the
+column has no remaining purpose:
+
+```sql
+UPDATE vote_receipt SET live_receipt_hash = NULL WHERE election_id = ?
+```
+
+In the **same transaction** as the seal. The exposure was accepted as a bounded one; this statement
+is what bounds it.
 
 Add an `election_close` variant to `AuditDetail` if absent.
 
@@ -286,7 +299,14 @@ Expected: FAIL — route not registered
 2. If an `election_result` row exists with no superseding row, return it.
 3. Otherwise: load candidates (`ORDER BY ordinal`) and **non-voided** ballots (`WHERE voided = 0 ORDER BY id`).
 4. `await count({ candidates, ballots, seats, electionId, ballotsSha256 })` — `ballotsSha256` comes from the seal, which is what makes a seeded draw reproducible by anyone holding the export.
-5. `INSERT INTO election_result (election_id, computed_at, rounds, winners, tie_breaks, overridden, supersedes) VALUES (?,?,?,?,?,0,NULL)`, batched with the audit statement.
+5. `INSERT INTO election_result (election_id, computed_at, quota, rounds, winners, tie_breaks, overridden, supersedes) VALUES (?,?,?,?,?,?,0,NULL)`, batched with the audit statement.
+
+   **`quota` needs a column, added by `migrations/0003_election_result_quota.sql`.** The response
+   carries `quota` and a second request must be byte-identical to the first, but it is served from
+   the stored row — and quota cannot be recomputed from what 0001 stores: `Round` does not carry it,
+   and the seal's `ballot_count` includes voided ballots, which the count excludes. `NOT NULL DEFAULT
+   ''` because D1 requires a default when adding a NOT NULL column to an existing table; no row can
+   observe it, since this task is the first code that writes `election_result` at all.
 6. Return the result.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -499,6 +519,10 @@ Expected: FAIL — `toBallotsCsv` emits two columns
 - [ ] **Step 3: Write minimal implementation**
 
 - `toBallotsCsv(ballots: { id: string; preferences: string[]; voided: boolean }[])` emits `ballot_id,preferences,voided` with `voided` as `0`/`1`.
+  **`voided` is required, not optional with a `false` default**, even though that means updating
+  existing test fixtures. This is the one path whose whole purpose is provenance: a caller who
+  forgot the field would write `0` for a voided ballot and produce a digest that silently disagrees
+  with the seal.
 - `recount` expects exactly three fields per data row; anything else keeps the existing corrupt-file refusal. A `voided` value other than `0` or `1` is also corrupt.
 - Rows with `voided = 1` are parsed, **counted in no tally**, and simply not passed to `count`.
 - Keep the existing quote-aware parser, the unterminated-quote refusal, and the `|` guard on candidate ids.
@@ -610,7 +634,7 @@ Expected: FAIL — routes not registered
 
 All behind `requireRole('officer')`. Ballot and result exports 409 unless closed and sealed; attendance is available whenever the election exists.
 
-- `attendance.csv` — join `vote_receipt` to `voter_roll`, `ORDER BY last_name, first_name`.
+- `attendance.csv` — **LEFT** JOIN from `vote_receipt` to `voter_roll`, `ORDER BY last_name, first_name`. Left, because Task 7's purge deletes the roll and an inner join would then return a header and no rows; who voted is still a fact after the names are gone.
 - `ballots.csv` — `SELECT id, preferences, voided FROM ballot WHERE election_id = ? ORDER BY id` (**explicit**), fed through `toBallotsCsv`.
 - `result.json` — the current non-superseded `election_result` plus the seal fields.
 - Every response sets `Content-Type` and `Content-Disposition: attachment; filename=...`.
@@ -835,6 +859,12 @@ describe('roll purge', () => {
 
 **A decision to make deliberately in Step 3, not by accident:** `vote_receipt.usu_id` is an identifier and it survives this purge. That is intentional — it is the mark-off proving who voted, which is half the integrity story and the thing an attendance export is built from. If you disagree, say so rather than quietly deleting it; the tests above pin the current intent.
 
+**DECIDED (2026-09-21): keep it, and fix the spec instead.** Spec §2's retention paragraph says
+`voter_roll` and `check_in` are purged and that "that is all the personal data", which is not true
+while `vote_receipt.usu_id` exists. Deleting the mark-off would destroy integrity evidence to make a
+sentence true; leaving the sentence would be a false claim about data handling. So this task also
+amends spec §2 to name `vote_receipt`, state that it is retained, and say why.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm run -w @election/api test -- purge`
@@ -862,6 +892,46 @@ git commit -m "feat(api): post-AGM roll purge, keeping the anonymous audit recor
 
 ---
 
+### Task 8: The two spec §5 routes both plans missed
+
+Found by the plan-vs-spec check, not by the plans: `PATCH /api/batches/:id/branding` and
+`GET /api/batches/:id/elections/:eid/turnout` appear in spec §5 and in no task of 2a, 2b or 2c. This
+plan's closing line claims `apps/api` is complete against spec §5, so either they are built or that
+claim is withdrawn.
+
+**Turnout is not cosmetic.** Spec §4's officer row for `open` reads "see turnout only". Withholding
+the tally until close is the central control, and turnout is the thing that makes it bearable — an
+officer with no visibility at all during voting has no way to know whether to keep the doors open.
+It must therefore be **exactly** turnout and nothing else: ballots cast and eligible voters, never a
+per-candidate figure, at any status.
+
+**Files:**
+- Create: `apps/api/src/routes/turnout.ts`, `apps/api/src/routes/branding.ts`
+- Modify: `apps/api/src/index.ts`
+- Test: `apps/api/tests/turnout.test.ts`, `apps/api/tests/branding.test.ts`
+
+**Implementation:**
+- `GET .../turnout` behind `requireRole('officer')` → `{ ballots_cast, voters_checked_in, eligible }`.
+  `ballots_cast` counts **non-voided** ballots. **No candidate breakdown, and no tally, ever** — a
+  turnout endpoint that leaks a per-candidate count reopens exactly what spec §4 closes.
+- `PATCH .../branding` behind `requireRole('officer')`, reusing `brandingSchema` from
+  `routes/batches.ts` rather than restating it — one schema, so the provisioning path and the edit
+  path cannot drift on what a valid accent colour or logo URL is. Audit `branding.update` with no
+  detail.
+
+**Tests must include:** turnout refused without an officer session; turnout available while open;
+turnout containing no candidate id or candidate name at any status; branding rejecting a bad accent
+colour and a `javascript:` logo URL through the shared schema; and branding surviving a round trip
+through the public `by-slug` route.
+
+- [ ] Step 1: failing tests · Step 2: watch them fail · Step 3: implement · Step 4: full suite · Step 5: commit
+
+```bash
+git commit -m "feat(api): officer turnout and branding edit, the two spec §5 routes the plans missed"
+```
+
+---
+
 ## Success criteria for Plan 2c
 
 - `npm run -w @election/api test` and `npm run -w @election/core test` both pass; both typecheck clean.
@@ -873,6 +943,8 @@ git commit -m "feat(api): post-AGM roll purge, keeping the anonymous audit recor
 - An override writes a new result row and never deletes the superseded one; the officer's reason appears in the result document.
 - A logo whose bytes are not an image is rejected however it is named, and the upload route cannot be reached without an officer session.
 - After the purge, `voter_roll` and `check_in` are empty while `ballot`, `election_seal`, `election_result` and `vote_receipt` are intact and the result is unchanged.
+- **`vote_receipt.live_receipt_hash` is NULL for every row of a closed election**, so the ballot↔voter join Plan 2b introduced does not outlive the count.
+- Turnout is obtainable while an election is open and contains no candidate id, candidate name or tally at any status.
 
 ## What remains after Plan 2c
 
