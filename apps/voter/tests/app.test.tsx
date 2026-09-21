@@ -31,10 +31,17 @@ const stubRoutes = (elections: unknown[], extra: (url: string) => Response | und
 const atSlug = (slug: string) => window.history.pushState({}, '', `/${slug}`)
 
 describe('App', () => {
-  it('asks for a society when the path has no slug', async () => {
+  it('LISTS SOCIETIES when the path has no slug, rather than dead-ending', async () => {
+    // A voter handed a bare domain has no other way through: the slug is the only
+    // route into an election.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify([{ slug: 's', name: 'Soc', branding: BATCH.branding }]),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )))
     atSlug('')
     render(<App />)
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/link/i))
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Soc' })).toBeTruthy())
+    expect(screen.getByRole('link', { name: 'Soc' }).getAttribute('href')).toBe('/s')
   })
 
   it('applies the society accent colour from the API to the token', async () => {

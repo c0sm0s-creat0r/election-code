@@ -27,6 +27,8 @@ const Exports = lazy(() => import('./screens/Exports.js').then((m) => ({ default
 const Settings = lazy(() => import('./screens/Settings.js').then((m) => ({ default: m.Settings })))
 const Result = lazy(() => import('./screens/Result.js').then((m) => ({ default: m.Result })))
 const Elections = lazy(() => import('./screens/Elections.js').then((m) => ({ default: m.Elections })))
+const SignUp = lazy(() => import('./screens/SignUp.js').then((m) => ({ default: m.SignUp })))
+const Landing = lazy(() => import('./screens/Landing.js').then((m) => ({ default: m.Landing })))
 
 function BatchShell({ children }: { children: (batch: Batch) => React.ReactNode }) {
   const { slug } = useParams()
@@ -56,7 +58,22 @@ export function App() {
     <BrowserRouter>
       <main className="page">
         <Routes>
-          <Route path="/" element={<p>Open the link for your society, e.g. <code>/b/your-society</code>.</p>} />
+          <Route
+            path="/"
+            element={
+              <Suspense fallback={<p className="muted">Loading…</p>}>
+                <Landing />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/new"
+            element={
+              <Suspense fallback={<p className="muted">Loading…</p>}>
+                <SignUp />
+              </Suspense>
+            }
+          />
 
           <Route
             path="/b/:slug/door"

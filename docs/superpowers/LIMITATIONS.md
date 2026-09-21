@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-22, after the cleanup review (12 live entries, 1 closed).
+**Last updated:** 2026-09-22, after self-serve signup (13 live entries, 1 closed).
 
 ---
 
@@ -224,3 +224,28 @@ now — file paths? stdin? a flag for the digest? — would be inventing require
 **What would close it:** a small `packages/core/bin/recount.ts` taking the two CSV paths, the seat
 count, the election id and the sealed digest, printing the round table. Worth doing before an AGM
 where a dispute is likely, not before one where it is not.
+
+## 14. A registered society is unverified, and cannot be verified
+
+**Where:** `apps/api/src/routes/batches.ts`, `apps/admin/src/screens/SignUp.tsx`, spec §5a.
+
+Signup is open: anyone can register a society with any name. Nothing confirms they are who they say
+they are, and nothing can — the system sends no email, so there is no channel to confirm through.
+
+**Why accepted (2026-09-22, at the user's direction):** the alternative, in practice, was that no
+interface existed at all and creating a society meant hand-crafting an HTTP request with a secret
+header. An election tool nobody can start is worse than one that starts unverified.
+
+**What bounds the damage:**
+
+- A new society has an empty roll. It can only enfranchise members it imports, and it can never reach
+  another society's members, elections, ballots or results.
+- Reserved slugs prevent `admin`, `api`, `official` and similar.
+- Both frontends state that the society list is not an endorsement.
+- The audit trail records whether each society was self-registered (`role: 'public'`) or created by
+  the operator with the key (`role: 'super'`).
+
+**What would close it:** a verification channel — an email confirmation, or approval by the operator
+before a society may open its first election. The second is the cheaper one and needs no new
+infrastructure: a flag on `batch`, set by an operator-only route, checked at `POST /elections/:eid/open`.
+Worth doing if impersonation ever actually happens.

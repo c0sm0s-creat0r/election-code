@@ -8,7 +8,10 @@
  * booleans.
  */
 import { useEffect, useState } from 'preact/hooks'
-import { ApiError, getBatchBySlug, getElections, type Batch, type PublicElection } from './api.js'
+import {
+  ApiError, getBatchBySlug, getElections, listSocieties,
+  type Batch, type PublicElection,
+} from './api.js'
 import { SignIn } from './screens/SignIn.js'
 import { Ballot } from './screens/Ballot.js'
 import { Receipt } from './screens/Receipt.js'
@@ -30,12 +33,18 @@ export function App() {
   const [firstName, setFirstName] = useState('')
   const [screen, setScreen] = useState<Screen>({ kind: 'signIn' })
   const [loadError, setLoadError] = useState('')
+  const [societies, setSocieties] = useState<Omit<Batch, 'id'>[]>([])
 
   useEffect(() => {
     const slug = slugFromPath()
     if (slug === '') {
-      setLoadError('Open the link your society gave you — it should end in your society’s name.')
-      return
+      // No slug: offer the list rather than dead-ending on an error. A voter
+      // handed a bare domain has no other way through.
+      let listing = true
+      listSocieties()
+        .then((list) => { if (listing) setSocieties(list) })
+        .catch(() => { if (listing) setLoadError('We could not load the list of societies.') })
+      return () => { listing = false }
     }
     let live = true
     getBatchBySlug(slug)
@@ -67,6 +76,29 @@ export function App() {
       <main class="page">
         <h1>{heading}</h1>
         <p class="error" role="alert">{loadError}</p>
+      </main>
+    )
+  }
+
+  // Reached only with no slug in the path.
+  if (slugFromPath() === '') {
+    return (
+      <main class="page">
+        <h1>Vote</h1>
+        {societies.length === 0 ? (
+          <p class="muted">Loading…</p>
+        ) : (
+          <>
+            <p>Choose your society.</p>
+            <ul class="society-list plain-list">
+              {societies.map((society) => (
+                <li key={society.slug}>
+                  <a href={`/${society.slug}`}>{society.name}</a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </main>
     )
   }

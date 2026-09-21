@@ -48,6 +48,27 @@ const patchJson = (payload: unknown): RequestInit => ({ ...postJson(payload), me
 export type Branding = { title: string; org_name: string; accent_color: string; logo_url: string }
 export type Batch = { id: string; slug: string; name: string; branding: Branding }
 
+/** Slug, name and branding only — never anything about a society's members. */
+export const listSocieties = () => request<Omit<Batch, 'id'>[]>('/api/batches')
+
+export type SignUp = {
+  name: string
+  slug: string
+  officer_password: string
+  door_password: string
+  branding: Branding
+}
+
+/**
+ * A society signing itself up. No key: spec §1's self-serve non-goal was
+ * overridden on 2026-09-22.
+ *
+ * Nothing verifies that a society is who it says it is — the system sends no
+ * email, so it cannot — which is why the signup screen says so rather than
+ * implying the registration was approved.
+ */
+export const signUpSociety = (body: SignUp) => request<Batch>('/api/batches', postJson(body))
+
 export const getBatchBySlug = (slug: string) =>
   request<Batch>(`/api/batches/by-slug/${encodeURIComponent(slug)}`)
 

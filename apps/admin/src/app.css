@@ -79,3 +79,14 @@
 
 .election-list > li + li { margin-top: var(--step); }
 .election-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--step); }
+
+.primary-link {
+  display: inline-block;
+  min-height: var(--touch);
+  line-height: var(--touch);
+  padding: 0 calc(var(--step) * 2);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  text-decoration: none;
+}

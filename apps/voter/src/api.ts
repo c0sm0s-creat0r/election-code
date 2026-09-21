@@ -72,6 +72,9 @@ export type PublicElection = {
   candidates: { id: string; name: string }[]
 }
 
+/** Slug, name and branding only. Used to let a voter pick their society. */
+export const listSocieties = () => request<Omit<Batch, 'id'>[]>('/api/batches')
+
 export const getBatchBySlug = (slug: string) =>
   request<Batch>(`/api/batches/by-slug/${encodeURIComponent(slug)}`)
 

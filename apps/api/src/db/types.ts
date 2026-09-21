@@ -120,7 +120,7 @@ export type ElectionResultRow = {
   supersedes: number | null
 }
 
-export type AuditLogRole = 'super' | 'officer' | 'door' | 'voter'
+export type AuditLogRole = 'super' | 'public' | 'officer' | 'door' | 'voter'
 
 export type AuditLogRow = {
   id: number

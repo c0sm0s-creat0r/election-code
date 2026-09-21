@@ -68,3 +68,6 @@
   background: var(--sunk);
   word-break: break-all;
 }
+
+.society-list > li + li { margin-top: var(--step); }
+.society-list a { display: block; min-height: var(--touch); line-height: var(--touch); }

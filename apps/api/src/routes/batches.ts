@@ -11,11 +11,27 @@ import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 // not survive being one URL path segment (e.g. containing `/` or `..`)
 // rather than silently normalising it into something the officer did not
 // choose and cannot predict.
+/**
+ * Slugs a society may not take. The slug goes in a URL — `vote.<domain>/<slug>`
+ * — so these are the words that would read as part of the system rather than as
+ * a society, plus the paths either app might plausibly add at the top level.
+ *
+ * Note this is not a routing requirement: admin slugs live under `/b/:slug` and
+ * the voter app has no top-level siblings, so nothing here prevents a collision
+ * today. It prevents a society calling itself `admin` or `official`.
+ */
+const RESERVED_SLUGS = new Set([
+  'new', 'api', 'admin', 'vote', 'voter', 'door', 'officer', 'official',
+  'receipt', 'receipts', 'login', 'signin', 'sign-in', 'signup', 'sign-up',
+  'health', 'static', 'assets',
+])
+
 const slugSchema = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'slug must be lowercase alphanumerics and hyphens only')
+  .refine((slug) => !RESERVED_SLUGS.has(slug), { message: 'that name is reserved — please choose another' })
 
 const accentColorSchema = z
   .string()
@@ -51,13 +67,22 @@ const PASSWORD_MIN = 12
 const passwordSchema = (label: string) =>
   z.string().min(PASSWORD_MIN, `${label} must be at least ${PASSWORD_MIN} characters`)
 
-const createBatchSchema = z.object({
-  name: z.string().min(1),
-  slug: slugSchema,
-  officer_password: passwordSchema('officer_password'),
-  door_password: passwordSchema('door_password'),
-  branding: brandingSchema,
-})
+const createBatchSchema = z
+  .object({
+    name: z.string().min(1),
+    slug: slugSchema,
+    officer_password: passwordSchema('officer_password'),
+    door_password: passwordSchema('door_password'),
+    branding: brandingSchema,
+  })
+  // The door password is typed on volunteers' phones and grants check-in only.
+  // Reusing the officer password there hands full control of every election to
+  // anyone at the desk, which is the one privilege boundary this system has.
+  // Enforced here rather than only in the signup form, which curl bypasses.
+  .refine((b) => b.officer_password !== b.door_password, {
+    message: 'the door password must be different from the officer password',
+    path: ['door_password'],
+  })
 
 type PublicBatch = { slug: string; name: string; branding: unknown }
 type PublicBatchWithId = PublicBatch & { id: string }
@@ -87,21 +112,28 @@ export const batches = new Hono<{ Bindings: Env }>()
 // unauthenticated D1 write. The row is entirely attacker-uncontrolled, but it
 // was unbounded.
 batches.post('/api/batches', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
-  // The super-admin key is checked before the body is read at all: an
-  // unauthorised caller should not be able to probe validation behaviour.
+  /**
+   * Societies sign themselves up, so no key is required.
+   *
+   * The key is still honoured when one is *offered*: presenting a wrong one is
+   * somebody probing the operator path, which is worth refusing and recording
+   * even though omitting it entirely would have been allowed. Omitting it is a
+   * signup; getting it wrong is an attempt.
+   *
+   * `detail` records nothing about the supplied key — not the value, not a
+   * prefix, not a length. A near-miss guess in the audit trail is a credential
+   * sitting in a table officers and exports can read.
+   *
+   * With no key, nothing verifies that a society is who it says it is. The
+   * system sends no email, so it cannot. Nothing in either frontend may imply a
+   * self-registered society is vetted.
+   */
   const provided = c.req.header('x-super-admin-key')
-  if (!isSuperAdminKey(provided, c.env.SUPER_ADMIN_KEY)) {
-    // This is the direct descendant of the legacy unauthenticated
-    // tenant-creation endpoint, so a *denied* attempt is worth a row of its
-    // own: batch_id is NULL because no batch exists to attribute it to.
-    //
-    // `detail` deliberately records nothing about the supplied key -- not
-    // the value, not a prefix, not a length. A near-miss guess written into
-    // the audit trail is a credential sitting in a table that officers and
-    // exports can read.
+  if (provided !== undefined && !isSuperAdminKey(provided, c.env.SUPER_ADMIN_KEY)) {
     await recordAudit(c.env.DB, { batchId: null, role: 'super', action: 'batch.create.denied' })
     return c.json({ error: 'unauthorized' }, 401)
   }
+  const byOperator = provided !== undefined
 
   const parsed = createBatchSchema.safeParse(await c.req.json().catch(() => undefined))
   if (!parsed.success) {
@@ -123,7 +155,11 @@ batches.post('/api/batches', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
           `INSERT INTO batch (id, slug, name, officer_hash, door_hash, branding, created_at) VALUES (?,?,?,?,?,?,?)`,
         )
         .bind(id, slug, name, officerHash, doorHash, JSON.stringify(branding), Date.now()),
-      auditLogStatement(c.env.DB, { batchId: id, role: 'super', action: 'batch.create' }),
+      auditLogStatement(c.env.DB, {
+        batchId: id,
+        role: byOperator ? 'super' : 'public',
+        action: 'batch.create',
+      }),
     ])
   } catch (err) {
     if (isUniqueSlugViolation(err)) {

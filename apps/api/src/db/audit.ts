@@ -6,7 +6,12 @@ export type AuditEntry = {
    * foreign key, so an unvalidated path parameter would sail straight in.
    */
   batchId: string | null
-  role: 'super' | 'officer' | 'door' | 'voter'
+  /**
+   * `public` is an unauthenticated caller — currently only a society signing
+   * itself up. 0001's column comment predates it; `role` has no CHECK, so no
+   * migration is needed to add one.
+   */
+  role: 'super' | 'public' | 'officer' | 'door' | 'voter'
   action: string
   detail?: AuditDetail
 }

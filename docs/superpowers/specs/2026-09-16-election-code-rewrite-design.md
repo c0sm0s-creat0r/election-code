@@ -19,7 +19,12 @@ this rewrite exists to solve. Everything else follows from taking the
 
 - Migrating existing data. There is none; it lives in memory and is already
   gone. Only `backend/uploads/BGS_logo_horizontal2.jpg` carries over.
-- Self-serve tenant signup. Batches are provisioned by the operator.
+- ~~Self-serve tenant signup. Batches are provisioned by the operator.~~
+  **Reversed 2026-09-22 at the user's direction: societies sign themselves up.**
+  See §5a. The original reasoning was that the `SUPER_ADMIN_KEY` gate kept
+  tenant creation with the operator; in practice that meant no interface existed
+  at all, and provisioning a society required hand-crafting an HTTP request with
+  a secret header. What replaced it, and what it costs, is recorded in §5a.
 - Email, SMS or any outbound messaging.
 - Remote or postal voting. Voters are physically present and checked in.
 
@@ -567,11 +572,44 @@ accident. `POST /voters` refuses a `usu_id` already on the roll rather than
 upserting it, because a mistyped id matching a real member would otherwise
 overwrite that member's name in the table eligibility is judged from.
 
-**Super admin**
+**Signup — open**
 
 ```
-POST   /api/batches                         (requires SUPER_ADMIN_KEY)
+POST   /api/batches                         (no key; SUPER_ADMIN_KEY optional)
 ```
+
+### 5a. Self-serve signup
+
+Any society may register itself at `admin.<domain>/new`. No key is required.
+
+**The key is still honoured when offered.** Presenting a *wrong* one is somebody
+probing the operator path, so it is refused with 401 and audited; omitting it
+entirely is an ordinary signup. A batch created with a valid key is audited as
+`role: 'super'`, one without as `role: 'public'`, so the provenance of every
+society stays in the record.
+
+**Nothing verifies that a society is who it says it is, and nothing can.** The
+system sends no email (§ non-goals), so there is no channel to confirm anyone.
+The consequences, and the reasons they are tolerable:
+
+- **Impersonation is possible.** Someone can register a plausible-looking
+  society. Reserved slugs stop `admin`, `api`, `official` and similar, and the
+  society list states that it is not an endorsement — but a determined
+  impersonator is not prevented, only unendorsed.
+- **A new society has no electorate.** It starts with an empty roll and can only
+  enfranchise the members it imports from a membership export. Registering does
+  not grant access to anybody else's members, elections, ballots or results;
+  every route is scoped to one batch by the session.
+- **Volume is bounded only by the rate limit** — 10 per hour per IP. Enough for
+  real signups, not a defence against a determined abuser.
+- **The two passwords must differ.** The door password is typed on volunteers'
+  phones and grants check-in only; reusing the officer password there would hand
+  full control to anyone at the desk. Enforced in the API, not just the form.
+- **Neither password is recoverable.** PBKDF2, no reset path, no email. The
+  signup screen says so before and after registration.
+
+`GET /api/batches` (slug, name and branding only) backs the society lists on both
+frontends, which is what removes the need to know a slug by heart.
 
 The voter's `usu_id` is carried by the session cookie and never appears in a
 ballot request body.

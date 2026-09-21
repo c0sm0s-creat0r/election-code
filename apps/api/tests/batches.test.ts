@@ -29,8 +29,12 @@ const valid = {
 }
 
 describe('POST /api/batches', () => {
-  it('refuses without the super admin key', async () => {
-    expect((await create(valid)).status).toBe(401)
+  it('ALLOWS creation with no key — societies sign themselves up', async () => {
+    // Reversed deliberately on 2026-09-22. This endpoint required the
+    // super-admin key until then, and spec §1 listed self-serve signup as a
+    // non-goal; both were overridden. The key is still honoured when offered
+    // (see the next test), so a wrong one is still an operator attempt.
+    expect((await create(valid)).status).toBe(201)
   })
 
   it('refuses a wrong super admin key', async () => {
@@ -79,10 +83,10 @@ describe('POST /api/batches', () => {
     expect(row).toEqual({ batch_id: null, role: 'super', action: 'batch.create.denied', detail: null })
   })
 
-  it('audits a MISSING super-admin-key attempt too', async () => {
-    expect((await create(valid)).status).toBe(401)
+  it('does NOT record a denial when no key was offered, because none is needed', async () => {
+    expect((await create(valid)).status).toBe(201)
     const { results } = await env.DB.prepare(`SELECT id FROM audit_log WHERE action = 'batch.create.denied'`).all()
-    expect(results).toHaveLength(1)
+    expect(results).toHaveLength(0)
   })
 
   it('never records the supplied key, or any prefix of it, in the audit row', async () => {
@@ -266,5 +270,86 @@ describe('public batch listing', () => {
 
   it('404s an unknown slug', async () => {
     expect((await SELF.fetch('https://example.com/api/batches/by-slug/nope')).status).toBe(404)
+  })
+})
+
+describe('self-serve signup', () => {
+  const signUp = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    SELF.fetch('https://example.com/api/batches', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({
+        name: 'New Society', slug: 'new-society',
+        officer_password: 'officer-password-1', door_password: 'door-password-1',
+        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
+        ...body,
+      }),
+    })
+
+  it('CREATES A SOCIETY WITH NO KEY AT ALL', async () => {
+    const res = await signUp({})
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({ slug: 'new-society' })
+  })
+
+  it('records it as self-registered, not as an operator action', async () => {
+    await signUp({})
+    const row = await env.DB.prepare(`SELECT role FROM audit_log WHERE action = 'batch.create'`)
+      .first<{ role: string }>()
+    expect(row!.role).toBe('public')
+  })
+
+  it('still refuses a WRONG key, because presenting one is an operator attempt', async () => {
+    // Omitting the key is a signup; getting it wrong is someone probing the
+    // operator path, which is worth refusing and recording.
+    const res = await signUp({}, { 'x-super-admin-key': 'not-the-key' })
+    expect(res.status).toBe(401)
+    const row = await env.DB.prepare(`SELECT count(*) c FROM audit_log WHERE action = 'batch.create.denied'`)
+      .first<{ c: number }>()
+    expect(row!.c).toBe(1)
+  })
+
+  it('accepts the operator key and records it as an operator action', async () => {
+    const res = await signUp({}, { 'x-super-admin-key': 'super-secret-test-key' })
+    expect(res.status).toBe(201)
+    const row = await env.DB.prepare(`SELECT role FROM audit_log WHERE action = 'batch.create'`)
+      .first<{ role: string }>()
+    expect(row!.role).toBe('super')
+  })
+
+  it('refuses a slug already taken, so one society cannot shadow another', async () => {
+    await signUp({})
+    expect((await signUp({})).status).toBe(409)
+  })
+
+  it('REFUSES RESERVED SLUGS, so no society can call itself admin or official', async () => {
+    for (const slug of ['new', 'api', 'admin', 'official', 'receipt', 'door']) {
+      const res = await signUp({ slug })
+      expect(res.status, slug).toBe(400)
+    }
+  })
+
+  it('still enforces the password floor on a self-serve signup', async () => {
+    expect((await signUp({ officer_password: 'short' })).status).toBe(400)
+  })
+
+  it('still enforces the slug format', async () => {
+    expect((await signUp({ slug: 'Not A Slug' })).status).toBe(400)
+  })
+
+  it('REFUSES the same password for both roles', async () => {
+    // The door password is typed on volunteers' phones and grants check-in only.
+    // Reusing the officer password there hands full control of the election to
+    // anyone standing at the desk, which is the one boundary this system has.
+    const res = await signUp({ officer_password: 'same-password-1', door_password: 'same-password-1' })
+    expect(res.status).toBe(400)
+    const row = await env.DB.prepare('SELECT count(*) c FROM batch').first<{ c: number }>()
+    expect(row!.c).toBe(0)
+  })
+
+  it('never returns either password', async () => {
+    const text = await (await signUp({})).text()
+    expect(text).not.toContain('officer-password-1')
+    expect(text).not.toContain('door-password-1')
   })
 })

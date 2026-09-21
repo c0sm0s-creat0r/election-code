@@ -164,31 +164,31 @@ Post-deploy, verify in this order:
 
 ---
 
-## 6. Provisioning a society
+## 6. Registering a society
 
-Operator only, with the super-admin key:
+**Societies register themselves.** Go to **`admin.dalyell.com.au/new`** and fill in:
 
-```bash
-curl -X POST https://api.dalyell.com.au/api/batches \
-  -H 'content-type: application/json' \
-  -H "x-super-admin-key: $SUPER_ADMIN_KEY" \
-  -d '{
-    "name": "Dalyell Society",
-    "slug": "dalyell",
-    "officer_password": "<generate: 12+ chars>",
-    "door_password": "<generate: 12+ chars>",
-    "branding": { "title": "AGM 2026", "org_name": "Dalyell Society",
-                  "accent_color": "#2563eb", "logo_url": "" }
-  }'
-```
+- the society's name, and the web address derived from it (voters will use `vote.dalyell.com.au/<slug>`)
+- an **officer password** — full control of every election
+- a **door password** — check-in only, and it must be different from the officer password
+- an accent colour
 
-The slug becomes the URL voters use: `vote.dalyell.com.au/<slug>`. The officer works at
-`admin.dalyell.com.au/b/<slug>`; the door desk is `admin.dalyell.com.au/b/<slug>/door`.
+Then write both passwords down. They are hashed with PBKDF2 and **cannot be recovered or reset** —
+there is no email in this system, so there is no reset path. Losing the officer password means losing
+the society.
 
-Both passwords are hashed with PBKDF2 at ~210k iterations and are never recoverable. Write them down
-somewhere the committee can reach on the day.
+Afterwards you get all three URLs: `/b/<slug>` for officers, `/b/<slug>/door` for the door desk, and
+`/<slug>` on the voter site. `admin.dalyell.com.au/` lists every registered society, so nobody needs
+to memorise a slug.
 
----
+**Registration is open and verifies nothing.** Anyone can register, and appearing in the list is not
+an endorsement — the frontends say so. What protects an election is that a new society starts with an
+empty roll: it can only enfranchise the members it imports, and it can never see another society's
+members, ballots or results.
+
+`SUPER_ADMIN_KEY` is no longer needed to create a society, but it is still honoured: a request that
+offers a *wrong* key is refused and audited, and one created with a valid key is recorded as an
+operator action rather than a self-registration.
 
 ## 7. Running an AGM
 
