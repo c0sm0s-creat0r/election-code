@@ -23,6 +23,7 @@ export default defineWorkersConfig(async () => {
               TEST_MIGRATIONS: migrations,
               SUPER_ADMIN_KEY: 'super-secret-test-key',
               SESSION_SECRET: 'test-secret-value',
+              ALLOWED_ORIGINS: 'https://admin.dalyell.com.au,https://vote.dalyell.com.au',
             },
           },
         },
