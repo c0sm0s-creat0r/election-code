@@ -11,6 +11,11 @@
   "kv_namespaces": [
     { "binding": "RATE_LIMIT", "id": "PLACEHOLDER_SET_BY_WRANGLER" }
   ],
+  // Society logos. Objects are keyed by a hash of their content, so they are
+  // immutable and one society can never overwrite another's.
+  "r2_buckets": [
+    { "binding": "LOGOS", "bucket_name": "election-logos" }
+  ],
   // Not a secret — the CORS allow-list is public by definition (a browser is
   // told the answer). Exact origins only, comma-separated: never "*", and
   // never a reflected Origin. See src/index.ts and README.md.

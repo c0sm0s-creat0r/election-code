@@ -12,6 +12,7 @@ import { close } from './routes/close.js'
 import { result } from './routes/result.js'
 import { override } from './routes/override.js'
 import { exports_ } from './routes/exports.js'
+import { logo } from './routes/logo.js'
 
 export type Env = {
   DB: D1Database
@@ -20,6 +21,8 @@ export type Env = {
    * src/middleware/rateLimit.ts for why the numbers are as loose as they are.
    */
   RATE_LIMIT: KVNamespace
+  /** Society logos, keyed by content hash. See routes/logo.ts. */
+  LOGOS: R2Bucket
   SUPER_ADMIN_KEY: string
   SESSION_SECRET: string
   /**
@@ -91,6 +94,7 @@ app.route('/', close)
 app.route('/', result)
 app.route('/', override)
 app.route('/', exports_)
+app.route('/', logo)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 

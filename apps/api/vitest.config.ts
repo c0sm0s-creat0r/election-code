@@ -20,6 +20,7 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             d1Databases: ['DB'],
             kvNamespaces: ['RATE_LIMIT'],
+            r2Buckets: ['LOGOS'],
             bindings: {
               TEST_MIGRATIONS: migrations,
               SUPER_ADMIN_KEY: 'super-secret-test-key',
