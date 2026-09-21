@@ -511,7 +511,7 @@ POST   /api/batches/:id/elections/:eid/open
 POST   /api/batches/:id/elections/:eid/close
 GET    /api/batches/:id/elections/:eid/turnout
 GET    /api/batches/:id/elections/:eid/result
-POST   /api/batches/:id/elections/:eid/result/override  {tie_break_id, winner_id, reason}
+POST   /api/batches/:id/elections/:eid/result/override  {tie_break_id, resolved_id, reason}
 GET    /api/batches/:id/elections/:eid/attendance.csv
 GET    /api/batches/:id/elections/:eid/ballots.csv
 GET    /api/batches/:id/attendance.csv
@@ -525,6 +525,21 @@ POST   /api/batches                         (requires SUPER_ADMIN_KEY)
 
 The voter's `usu_id` is carried by the session cookie and never appears in a
 ballot request body.
+
+**`resolved_id`, not `winner_id`.** The override field was named `winner_id`
+until 2026-09-21, and the name was wrong in a way that would have produced
+confidently incorrect results. It carries whatever `TieBreakRecord.resolved`
+carries, and that is not always the candidate who benefits:
+
+- `kind: 'exclusion'` — the id is the candidate to **exclude**. The tie is over
+  who goes out, so the resolved id is the one who loses.
+- `kind: 'election_order'` — the id is the candidate to elect **first**, whose
+  surplus is distributed first.
+
+A UI labelled "pick the winner" would therefore collect the exact opposite of
+the officer's intent on an exclusion tie, and the result would look right. The
+API echoes each tie's `kind` in the result document so the control can be
+labelled truthfully.
 
 ---
 

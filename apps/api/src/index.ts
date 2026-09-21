@@ -10,6 +10,7 @@ import { ballots } from './routes/ballots.js'
 import { receipts } from './routes/receipts.js'
 import { close } from './routes/close.js'
 import { result } from './routes/result.js'
+import { override } from './routes/override.js'
 
 export type Env = {
   DB: D1Database
@@ -87,6 +88,7 @@ app.route('/', ballots)
 app.route('/', receipts)
 app.route('/', close)
 app.route('/', result)
+app.route('/', override)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
