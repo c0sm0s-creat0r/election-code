@@ -2,3 +2,88 @@
  * Component classes for the voter app. Tokens and element defaults come from
  * @election/styles; nothing here redefines a token.
  */
+
+/* --- the ranked ballot ----------------------------------------------------- */
+
+.ranked-list,
+.add-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ranked-list > li + li,
+.add-list > li + li { margin-top: var(--step); }
+
+.ranked-item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--step) * 1.5);
+  min-height: var(--touch);
+  padding: var(--step);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+/* The fix for the legacy defect: rank is shown, never inferred from tap order. */
+.ordinal {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: calc(var(--step) * 4);
+  height: calc(var(--step) * 4);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.candidate-name { flex: 1 1 auto; min-width: 0; }
+
+.row-controls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: calc(var(--step) / 2);
+}
+
+/* The whole row is the target, not just the label — a thumb aims at the row. */
+.add-row > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+}
+
+.add-mark { font-size: 1.25rem; line-height: 1; }
+
+/*
+ * The primary action sits at the bottom, where a thumb reaches, and inside the
+ * safe area so the iPhone home bar never covers it.
+ */
+.submit-bar {
+  position: sticky;
+  bottom: 0;
+  padding: calc(var(--step) * 1.5) 0;
+  padding-bottom: calc(var(--step) * 1.5 + env(safe-area-inset-bottom));
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+
+.submit-bar > .submit { width: 100%; }
+
+.progress { margin: 0; }
+
+/* Visible to a screen reader, not on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
