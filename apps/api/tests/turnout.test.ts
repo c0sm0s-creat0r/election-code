@@ -26,7 +26,8 @@ describe('turnout', () => {
   it('is available WHILE the election is open — that is the point', async () => {
     const res = await turnout()
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ballots_cast: 1, voters_checked_in: 2, eligible: 4 })
+    expect(await res.json())
+      .toEqual({ ballots_cast: 1, voters_checked_in: 2, eligible: 4, added_at_door: 0 })
   })
 
   it('NEVER leaks a tally, at any status', async () => {
@@ -44,7 +45,8 @@ describe('turnout', () => {
         expect(text, `candidate id leaked while ${stage}`).not.toContain(id)
       }
       expect(text).not.toMatch(/Alex|Bo|quota|winner|round/i)
-      expect(Object.keys(JSON.parse(text) as object).sort()).toEqual(['ballots_cast', 'eligible', 'voters_checked_in'])
+      expect(Object.keys(JSON.parse(text) as object).sort())
+        .toEqual(['added_at_door', 'ballots_cast', 'eligible', 'voters_checked_in'])
     }
   })
 
