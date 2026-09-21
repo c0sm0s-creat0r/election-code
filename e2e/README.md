@@ -22,11 +22,32 @@ npm run e2e                         # from the repo root
 D1 migrations; `seed.ts` then provisions a society, a roll, a checked-in member and an open election
 **through the real API**.
 
-Each run uses a fresh slug, published to the test workers via `E2E_SLUG`. The local D1 persists
-between runs and `batch.slug` is UNIQUE, so a fixed slug fails the second time — and resetting the
-database first is not a reliable fix, because `wrangler dev` and `wrangler d1 execute --local`
-resolve the database differently while `database_id` is a placeholder and end up on two different
-sqlite files.
+## Why the run has its own database
+
+`--persist-to .wrangler-e2e` keeps every byte this run writes out of the database `npm run dev` uses.
+
+That matters because societies are listed publicly: without it, each run registered another `e2e`
+society that then appeared on the landing page. Isolating the state beats deleting rows afterwards or
+filtering them out of a production endpoint — the test data never exists anywhere a developer or a
+voter can see.
+
+It also settles a confusion worth knowing about: on the default path, `wrangler dev` and
+`wrangler d1 execute --local` resolve to two *different* sqlite files, so anything done through one is
+invisible to the other. Naming the path explicitly makes both agree.
+
+That database persists between runs, so `seed.ts` is idempotent: it tolerates the society already
+existing, closes any election a previous run left open, and opens a fresh one. Exactly one society
+and one open election, however many times it runs.
+
+## If a run fails to start
+
+`Error: http://localhost:5173 is already used` means an interrupted run left a server behind.
+`reuseExistingServer` is deliberately `false` — reusing a running dev server would point the test at
+the *dev* database, defeating the isolation above — so clear the ports instead:
+
+```bash
+for p in 5173 8787; do lsof -ti:$p | xargs kill; done
+```
 
 ## Why there is no seeding endpoint
 

@@ -16,10 +16,24 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:5173' },
   webServer: [
     {
-      // `--local` keeps D1 on disk in .wrangler; no Cloudflare account needed.
+      /**
+       * `--persist-to` gives the run its **own** database, separate from the one
+       * `npm run dev` uses.
+       *
+       * Without it the smoke test registers a society in the dev database, and
+       * since societies are now listed publicly, every run left another `e2e`
+       * entry on the landing page. Isolating the state is better than deleting
+       * rows afterwards or filtering them out of a production endpoint: the test
+       * data never exists anywhere a developer or a voter can see.
+       *
+       * It also settles a confusion worth knowing about: with the default path,
+       * `wrangler dev` and `wrangler d1 execute --local` resolve to two different
+       * sqlite files, so anything done through one is invisible to the other.
+       * Naming the path explicitly means both commands below agree.
+       */
       command:
-        'npx wrangler d1 migrations apply election --local'
-        + ' && npx wrangler dev --port 8787'
+        'npx wrangler d1 migrations apply election --local --persist-to .wrangler-e2e'
+        + ' && npx wrangler dev --port 8787 --persist-to .wrangler-e2e'
         + ' --var SUPER_ADMIN_KEY:e2e-super-admin-key'
         + ' --var SESSION_SECRET:e2e-session-secret-0123456789abcdef'
         + ' --var ALLOWED_ORIGINS:http://localhost:5173',

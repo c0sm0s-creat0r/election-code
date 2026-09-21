@@ -6,6 +6,7 @@ node_modules/
 dist/
 build/
 .wrangler/
+.wrangler-e2e/
 *.tsbuildinfo
 
 # Python (legacy backend, removed at cutover)

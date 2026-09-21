@@ -57,13 +57,20 @@ export const brandingSchema = z.object({
   logo_url: logoUrlSchema,
 })
 
-// PBKDF2 at 210k iterations is the only thing standing in front of these,
-// and it slows an attacker down by a constant factor -- it does not rescue a
-// one-character door password. The door password in particular is typed on a
-// volunteer's phone in a public room and is often chosen in a hurry, so the
-// floor belongs at provisioning time where it is set, not at sign-in where it
-// is too late.
-const PASSWORD_MIN = 12
+/**
+ * Lowered from 12 to 6 on 2026-09-22 at the user's direction.
+ *
+ * PBKDF2 at 210k iterations is the only thing in front of these, and it slows an
+ * attacker by a constant factor — it does not rescue a short password. At six
+ * characters a lowercase-and-digits password is about 2 billion combinations,
+ * which is within reach of an offline attack on commodity hardware if a hash is
+ * ever exposed, so the practical defence is now the sign-in rate limit
+ * (30 per 10 minutes per IP) rather than the password itself.
+ *
+ * The floor still lives at provisioning time, where the password is chosen,
+ * rather than at sign-in where it would be too late.
+ */
+const PASSWORD_MIN = 6
 const passwordSchema = (label: string) =>
   z.string().min(PASSWORD_MIN, `${label} must be at least ${PASSWORD_MIN} characters`)
 

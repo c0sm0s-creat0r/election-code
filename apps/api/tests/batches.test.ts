@@ -211,9 +211,11 @@ describe('POST /api/batches validation', () => {
     expect((await withPasswords('x', 'door-password-1')).status).toBe(400)
   })
 
-  it('rejects an 11-character password but accepts 12', async () => {
-    expect((await withPasswords('a'.repeat(11), 'door-password-1')).status).toBe(400)
-    expect((await withPasswords('a'.repeat(12), 'b'.repeat(12))).status).toBe(201)
+  it('rejects a 5-character password but accepts 6', async () => {
+    // The floor was 12 until 2026-09-22, when it was lowered to 6 at the user's
+    // direction. See routes/batches.ts for what that costs.
+    expect((await withPasswords('a'.repeat(5), 'door-password-1')).status).toBe(400)
+    expect((await withPasswords('a'.repeat(6), 'b'.repeat(6))).status).toBe(201)
   })
 
   it('refuses a short password without echoing it back', async () => {

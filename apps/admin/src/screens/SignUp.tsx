@@ -13,7 +13,8 @@ import { useState, type FormEvent } from 'react'
 import { signUpSociety, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
-const PASSWORD_MIN = 12
+/** Matches the API's floor in routes/batches.ts. */
+const PASSWORD_MIN = 6
 
 /** A usable slug from a society's name, so nobody has to guess the rules. */
 const toSlug = (name: string): string =>

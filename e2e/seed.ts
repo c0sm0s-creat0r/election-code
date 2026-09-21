@@ -4,22 +4,18 @@
  * **Deliberately not a seeding endpoint.** A route in `apps/api` that provisions
  * voters would be the single worst thing that could exist in this codebase, and
  * "it's only enabled in dev" is exactly how such a thing reaches production. This
- * uses only the documented endpoints, with the super-admin key the local dev
- * server is configured with — the same path an operator takes.
+ * uses only the documented endpoints.
+ *
+ * **Idempotent, because the database persists.** The run has its own database
+ * (`--persist-to .wrangler-e2e`, see playwright.config.ts) rather than the one
+ * `npm run dev` uses, so its data is never visible on the society list — but that
+ * database survives between runs. So this tolerates the society already existing,
+ * closes any election a previous run left open, and opens a fresh one. One
+ * society, one open election, however many times it runs.
  */
 const API = 'http://localhost:8787'
 
-/**
- * A fresh slug per run, shared with the spec through the environment.
- *
- * `batch.slug` is UNIQUE and the local D1 persists between runs, so a fixed slug
- * fails on the second run. Resetting the database first is not a reliable fix:
- * `wrangler dev` and `wrangler d1 execute --local` resolve the database
- * differently while `database_id` is a placeholder, and end up on two different
- * sqlite files — so the reset empties one while the server serves the other.
- * A unique slug sidesteps the whole problem and leaves nothing to keep in step.
- */
-export const SLUG = process.env['E2E_SLUG'] ?? `e2e-${Date.now()}`
+export const SLUG = 'e2e'
 export const USU_ID = '2400001'
 export const SURNAME = 'Lovelace'
 export const CANDIDATE = 'Alex'
@@ -44,10 +40,26 @@ async function post(path: string, what: string, init: RequestInit): Promise<Resp
 }
 
 export default async function seed(): Promise<void> {
-  // Published so the test workers, which are separate processes, use the same one.
-  process.env['E2E_SLUG'] = SLUG
+  const batchId = await findOrCreateSociety()
+  const officer = { cookie: await signIn(batchId, 'officer', OFFICER_PASSWORD) }
+  const door = { cookie: await signIn(batchId, 'door', DOOR_PASSWORD) }
 
-  const created = await post('/api/batches', 'create batch', {
+  const upload = new FormData()
+  upload.append('file', new File([rollCsv], 'members.csv', { type: 'text/csv' }))
+  await post(`/api/batches/${batchId}/roll`, 'roll import', { headers: officer, body: upload })
+
+  await closeAnyOpenElections(batchId, officer.cookie)
+  await openFreshElection(batchId, officer.cookie)
+
+  // Already checked in returns 200 with `already: true`, so this is repeatable.
+  await post(`/api/batches/${batchId}/check-in`, 'check in',
+    { headers: { ...json, ...door }, body: JSON.stringify({ usu_id: USU_ID }) })
+}
+
+/** A 409 means a previous run created it. That is expected, not a failure. */
+async function findOrCreateSociety(): Promise<string> {
+  const res = await fetch(`${API}/api/batches`, {
+    method: 'POST',
     headers: { ...json, 'x-super-admin-key': SUPER_KEY },
     body: JSON.stringify({
       name: 'E2E Society',
@@ -57,23 +69,42 @@ export default async function seed(): Promise<void> {
       branding: { title: 'E2E AGM', org_name: 'E2E Society', accent_color: '#2563eb', logo_url: '' },
     }),
   })
-  const { id: batchId } = (await created.json()) as { id: string }
+  if (res.ok) return ((await res.json()) as { id: string }).id
+  if (res.status !== 409) {
+    throw new Error(`seed: create batch failed with ${res.status}: ${await res.text()}`)
+  }
 
-  const officerCookie = cookieOf(await post(
-    `/api/batches/${batchId}/officer/session`, 'officer sign-in',
-    { headers: json, body: JSON.stringify({ password: OFFICER_PASSWORD }) }))
-  const doorCookie = cookieOf(await post(
-    `/api/batches/${batchId}/door/session`, 'door sign-in',
-    { headers: json, body: JSON.stringify({ password: DOOR_PASSWORD }) }))
+  const existing = await fetch(`${API}/api/batches/by-slug/${SLUG}`)
+  if (!existing.ok) throw new Error(`seed: ${SLUG} exists but could not be loaded`)
+  return ((await existing.json()) as { id: string }).id
+}
 
-  const upload = new FormData()
-  upload.append('file', new File([rollCsv], 'members.csv', { type: 'text/csv' }))
-  await post(`/api/batches/${batchId}/roll`, 'roll import',
-    { headers: { cookie: officerCookie }, body: upload })
+async function signIn(batchId: string, role: 'officer' | 'door', password: string): Promise<string> {
+  return cookieOf(await post(`/api/batches/${batchId}/${role}/session`, `${role} sign-in`,
+    { headers: json, body: JSON.stringify({ password }) }))
+}
 
-  const election = await post(`/api/batches/${batchId}/elections`, 'create election',
+/**
+ * The voter app offers every open election and the test votes in the first one.
+ * A previous run's election is still open and its voter has already voted there,
+ * so leaving it would make this run submit into it and take a 409.
+ */
+async function closeAnyOpenElections(batchId: string, officerCookie: string): Promise<void> {
+  const res = await fetch(`${API}/api/batches/${batchId}/officer/elections`, {
+    headers: { cookie: officerCookie },
+  })
+  if (!res.ok) return
+  const elections = (await res.json()) as { id: string; status: string }[]
+  for (const election of elections.filter((e) => e.status === 'open')) {
+    await post(`/api/batches/${batchId}/elections/${election.id}/close`, 'close stale election',
+      { headers: { cookie: officerCookie } })
+  }
+}
+
+async function openFreshElection(batchId: string, officerCookie: string): Promise<void> {
+  const created = await post(`/api/batches/${batchId}/elections`, 'create election',
     { headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name: 'President', seats: 1 }) })
-  const { id: electionId } = (await election.json()) as { id: string }
+  const { id: electionId } = (await created.json()) as { id: string }
 
   for (const name of [CANDIDATE, 'Bo']) {
     await post(`/api/batches/${batchId}/elections/${electionId}/candidates`, `add candidate ${name}`,
@@ -82,7 +113,4 @@ export default async function seed(): Promise<void> {
 
   await post(`/api/batches/${batchId}/elections/${electionId}/open`, 'open election',
     { headers: { cookie: officerCookie } })
-
-  await post(`/api/batches/${batchId}/check-in`, 'check in',
-    { headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: USU_ID }) })
 }
