@@ -2,10 +2,15 @@
   "name": "election-code",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "e2e"
+  ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "e2e": "npm run test --workspace @election/e2e"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.21",
