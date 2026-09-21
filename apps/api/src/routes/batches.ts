@@ -26,9 +26,12 @@ const accentColorSchema = z
 // denylist that the next scheme invents its way around.
 const logoUrlSchema = z
   .string()
-  .refine((v) => v === '' || v.startsWith('/') || /^https:\/\//i.test(v), {
-    message: 'logo_url must be empty, an https:// URL, or a root-relative path',
-  })
+  .refine(
+    (v) => v === '' || (v.startsWith('/') && v[1] !== '/' && v[1] !== '\\') || /^https:\/\//i.test(v),
+    {
+      message: 'logo_url must be empty, an https:// URL, or a root-relative path',
+    },
+  )
 
 const brandingSchema = z.object({
   title: z.string(),

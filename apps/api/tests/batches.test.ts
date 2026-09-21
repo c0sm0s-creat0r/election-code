@@ -147,8 +147,45 @@ describe('POST /api/batches validation', () => {
     expect((await withBranding({ logo_url: '/logo.png' })).status).toBe(201)
   })
 
+  it('rejects a protocol-relative logo_url (//evil.com)', async () => {
+    // The root-relative branch must not admit a scheme-relative URL that
+    // browsers resolve off-origin.
+    expect((await withBranding({ logo_url: '//evil.com/logo.png' })).status).toBe(400)
+  })
+
+  it('rejects a backslash-prefixed logo_url (/\\evil.com)', async () => {
+    // Some browsers treat a leading backslash as a path separator too,
+    // making "/\\evil.com" behave like "//evil.com".
+    expect((await withBranding({ logo_url: '/\\evil.com' })).status).toBe(400)
+  })
+
   it('accepts the empty-string logo_url used by the fixture ("no logo")', async () => {
     expect((await withBranding({ logo_url: '' })).status).toBe(201)
+  })
+})
+
+describe('DB.batch() atomicity (carried from Task 5 review)', () => {
+  // Task 5 made the batch insert and its audit write atomic via db.batch(),
+  // but no test exercised the real failure direction: a second statement in
+  // the same batch failing *after* a first statement that would otherwise
+  // have succeeded. This is the primitive spec §2 also relies on for the
+  // ballot/receipt pair, so it is worth pinning directly rather than only
+  // through the HTTP-level duplicate-slug case (which fails *before* either
+  // statement runs).
+  it('rolls back a successful batch insert when a later statement in the same db.batch() fails', async () => {
+    await expect(
+      env.DB.batch([
+        env.DB
+          .prepare(
+            `INSERT INTO batch (id,slug,name,officer_hash,door_hash,branding,created_at)
+             VALUES ('atomicity-1','atomicity-1','n','x','y','{}',1)`,
+          ),
+        env.DB.prepare(`INSERT INTO nonexistent_table (x) VALUES (1)`),
+      ]),
+    ).rejects.toThrow()
+
+    const row = await env.DB.prepare(`SELECT count(*) AS n FROM batch`).first<{ n: number }>()
+    expect(row!.n).toBe(0)
   })
 })
 

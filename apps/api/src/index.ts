@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { batches } from './routes/batches.js'
+import { auth } from './routes/auth.js'
 
 export type Env = {
   DB: D1Database
@@ -12,6 +13,7 @@ const app = new Hono<{ Bindings: Env }>()
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
 app.route('/', batches)
+app.route('/', auth)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
