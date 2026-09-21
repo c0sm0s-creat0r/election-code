@@ -19,9 +19,6 @@ export default defineConfig({
       // `--local` keeps D1 on disk in .wrangler; no Cloudflare account needed.
       command:
         'npx wrangler d1 migrations apply election --local'
-        // The local D1 persists in .wrangler between runs, so the fixed seed slug
-        // would collide on the second run. Reset first.
-        + ' && npx wrangler d1 execute election --local --file ../../e2e/reset.sql'
         + ' && npx wrangler dev --port 8787'
         + ' --var SUPER_ADMIN_KEY:e2e-super-admin-key'
         + ' --var SESSION_SECRET:e2e-session-secret-0123456789abcdef'

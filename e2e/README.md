@@ -18,9 +18,15 @@ npx playwright install chromium     # once, ~95 MB
 npm run e2e                         # from the repo root
 ```
 
-`playwright.config.ts` starts `wrangler dev --local` on 8787 and the voter app on 5173, applies the
-D1 migrations, then `globalSetup.ts` provisions a society, a roll, a checked-in member and an open
-election **through the real API**.
+`playwright.config.ts` starts `wrangler dev --local` on 8787 and the voter app on 5173 and applies the
+D1 migrations; `seed.ts` then provisions a society, a roll, a checked-in member and an open election
+**through the real API**.
+
+Each run uses a fresh slug, published to the test workers via `E2E_SLUG`. The local D1 persists
+between runs and `batch.slug` is UNIQUE, so a fixed slug fails the second time — and resetting the
+database first is not a reliable fix, because `wrangler dev` and `wrangler d1 execute --local`
+resolve the database differently while `database_id` is a placeholder and end up on two different
+sqlite files.
 
 ## Why there is no seeding endpoint
 

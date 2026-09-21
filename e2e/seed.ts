@@ -9,7 +9,17 @@
  */
 const API = 'http://localhost:8787'
 
-export const SLUG = 'e2e'
+/**
+ * A fresh slug per run, shared with the spec through the environment.
+ *
+ * `batch.slug` is UNIQUE and the local D1 persists between runs, so a fixed slug
+ * fails on the second run. Resetting the database first is not a reliable fix:
+ * `wrangler dev` and `wrangler d1 execute --local` resolve the database
+ * differently while `database_id` is a placeholder, and end up on two different
+ * sqlite files — so the reset empties one while the server serves the other.
+ * A unique slug sidesteps the whole problem and leaves nothing to keep in step.
+ */
+export const SLUG = process.env['E2E_SLUG'] ?? `e2e-${Date.now()}`
 export const USU_ID = '2400001'
 export const SURNAME = 'Lovelace'
 export const CANDIDATE = 'Alex'
@@ -34,6 +44,9 @@ async function post(path: string, what: string, init: RequestInit): Promise<Resp
 }
 
 export default async function seed(): Promise<void> {
+  // Published so the test workers, which are separate processes, use the same one.
+  process.env['E2E_SLUG'] = SLUG
+
   const created = await post('/api/batches', 'create batch', {
     headers: { ...json, 'x-super-admin-key': SUPER_KEY },
     body: JSON.stringify({
