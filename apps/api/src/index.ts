@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { batches } from './routes/batches.js'
 import { auth } from './routes/auth.js'
+import { roll } from './routes/roll.js'
 
 export type Env = {
   DB: D1Database
@@ -71,6 +72,7 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
 app.route('/', batches)
 app.route('/', auth)
+app.route('/', roll)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
