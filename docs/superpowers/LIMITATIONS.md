@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-21, after Plan 2d (11 live entries, 1 closed).
+**Last updated:** 2026-09-22, after the cleanup review (12 live entries, 1 closed).
 
 ---
 
@@ -208,3 +208,19 @@ is the rare one, and they are bounded by needing to be in the room with a door s
 **What would narrow it:** requiring an officer session rather than a door session for this one action,
 which trades a volunteer's autonomy at the desk for a stronger claim. Worth revisiting if a real AGM
 shows the door rarely needs it.
+
+## 13. `recount()` has no command-line wrapper
+
+**Where:** `packages/core/src/recount.ts`.
+
+The offline recount is a library function with no caller outside its own tests. "Recompute the count
+in front of whoever is disputing it" therefore means someone writing a few lines of TypeScript on the
+day, against two CSV files.
+
+**Why accepted:** the function, its format and its refusals are the hard part and they are done and
+tested. A wrapper is half an hour's work whenever it is actually wanted, and guessing its interface
+now — file paths? stdin? a flag for the digest? — would be inventing requirements.
+
+**What would close it:** a small `packages/core/bin/recount.ts` taking the two CSV paths, the seat
+count, the election id and the sealed digest, printing the round table. Worth doing before an AGM
+where a dispute is likely, not before one where it is not.

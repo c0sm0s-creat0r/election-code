@@ -120,9 +120,15 @@ cross-origin request until production.
 ## 4. Testing
 
 ```bash
-npm test          # core 142 · admin 65 · api 399 · voter 60
+npm test           # core 138 · admin 78 · api 404 · voter 60
 npm run typecheck  # all four workspaces
 ```
+
+**If the API suite reports "Runner @cloudflare/vitest-pool-workers is not supported"**, the
+`vitest` / `@cloudflare/vitest-pool-workers` pair has drifted — an `npm install` can move them
+independently, and the API's 404 tests then stop running silently. The root `package.json` pins the
+working pair and overrides `@vitest/runner` and `@vitest/snapshot` to `vitest`'s own version; move
+all of them together or not at all.
 
 ```bash
 npx playwright install chromium   # once, ~95 MB
@@ -192,9 +198,10 @@ somewhere the committee can reach on the day.
    *"1,298 eligible, 4 excluded, 0 skipped"*. **Look at `skipped`.** Anything above zero means the
    export dropped rows whose columns did not line up, and those members will not be able to vote —
    fix the export and re-import rather than proceeding.
-2. **Create each election** and set its seats.
-3. **Add every candidate.** This is the last moment. Candidates freeze when voting opens, because
-   anyone added later could not have been ranked by people who already voted.
+2. **Create each election** under *Elections*, and set its seats.
+3. **Add every candidate**, from the election's own screen. This is the last moment: candidates
+   freeze when voting opens, because anyone added later could not have been ranked by people who
+   already voted.
 4. Upload a logo and set the accent colour under *Appearance* if you want them.
 
 Re-importing a corrected export is safe at any point: it updates names and eligibility in place and
@@ -242,8 +249,9 @@ A voter who wants to change their vote uses their receipt to cancel and vote aga
 
 ### After the AGM
 
-1. **Export everything first.** Under *Exports*: ballots CSV, candidates CSV, sealed result JSON,
-   attendance CSV, guests CSV. Keep them with the minutes.
+1. **Export everything first.** The per-election files — ballots CSV, candidates CSV, sealed result
+   JSON, that election's attendance — are on the election's own screen once it is closed. The
+   whole-AGM attendance and the guest list are under *Exports*. Keep them all with the minutes.
 2. **Then purge the roll.** Officer → `DELETE /api/batches/<id>/roll`. It refuses while any election
    is still open or in draft. It deletes the roll, the check-ins and the guest list, and keeps the
    ballots, the seal, the results and the mark-off.
@@ -274,6 +282,7 @@ you: the check belongs to the auditor.
 | Close succeeded but there is no result | Worker died between the status flip and the seal | Click close again. It detects closed-but-unsealed and finishes sealing |
 | A voter says their vote did not go through | Usually it did — a lost response cannot return the receipt | Check the attendance export for their ID. They cannot get the receipt back; `LIMITATIONS.md` §1 |
 | A member is not on the roll | Stale export | Re-import a corrected export, or use **Add member** at the door |
+| An officer cannot find an election they just made | — | Elections are listed under *Elections*, drafts included. If the list is empty after a reload, the session lapsed: sign in again |
 
 ### Session lifetimes
 
