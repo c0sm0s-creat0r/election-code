@@ -1,28 +1,45 @@
 {
-  "name": "election-api",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-03-10",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    { "binding": "DB", "database_name": "election", "database_id": "PLACEHOLDER_SET_BY_WRANGLER" }
-  ],
-  // Rate-limit counters only. Nothing here is durable or authoritative: KV
-  // expiry is eventual, and a lost counter costs at most one extra window.
-  "kv_namespaces": [
-    { "binding": "RATE_LIMIT", "id": "PLACEHOLDER_SET_BY_WRANGLER" }
-  ],
-  // Society logos. Objects are keyed by a hash of their content, so they are
-  // immutable and one society can never overwrite another's.
-  "r2_buckets": [
-    { "binding": "LOGOS", "bucket_name": "election-logos" }
-  ],
-  // Not a secret — the CORS allow-list is public by definition (a browser is
-  // told the answer). Exact origins only, comma-separated: never "*", and
-  // never a reflected Origin. See src/index.ts and README.md.
-  // SESSION_SECRET and SUPER_ADMIN_KEY are secrets and are deliberately
-  // absent here; set them with `wrangler secret put`.
-  "vars": {
-    "ALLOWED_ORIGINS": "https://admin.dalyell.com.au,https://vote.dalyell.com.au"
-  },
-  "observability": { "enabled": true }
+	"name": "election-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-03-10",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "election",
+			"database_id": "61aa6a22-43e4-4682-b5f9-43df060b9258",
+			"remote": true
+		}
+	],
+	// Rate-limit counters only. Nothing here is durable or authoritative: KV
+	// expiry is eventual, and a lost counter costs at most one extra window.
+	"kv_namespaces": [
+		{
+			"binding": "RATE_LIMIT",
+			"id": "e86e54daaa834c8e9f9c20cb00d2491b",
+			"remote": true
+		}
+	],
+	// Society logos. Objects are keyed by a hash of their content, so they are
+	// immutable and one society can never overwrite another's.
+	"r2_buckets": [
+		{
+			"bucket_name": "election-logos",
+			"binding": "LOGOS",
+			"remote": true
+		}
+	],
+	// Not a secret — the CORS allow-list is public by definition (a browser is
+	// told the answer). Exact origins only, comma-separated: never "*", and
+	// never a reflected Origin. See src/index.ts and README.md.
+	// SESSION_SECRET and SUPER_ADMIN_KEY are secrets and are deliberately
+	// absent here; set them with `wrangler secret put`.
+	"vars": {
+		"ALLOWED_ORIGINS": "https://admin.dalyell.com.au,https://vote.dalyell.com.au,http://localhost:5173,http://localhost:5174"
+	},
+	"observability": {
+		"enabled": true
+	}
 }

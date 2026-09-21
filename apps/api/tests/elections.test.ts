@@ -225,3 +225,51 @@ describe('election lifecycle', () => {
   })
 
 })
+
+describe('officer election listing', () => {
+  const officerList = (cookie = officerCookie) =>
+    SELF.fetch(`https://example.com/api/batches/${batchId}/officer/elections`, { headers: { cookie } })
+
+  it('requires an officer session', async () => {
+    expect((await officerList('')).status).toBe(401)
+  })
+
+  it('refuses a door session', async () => {
+    expect((await officerList(doorCookie)).status).toBe(403)
+  })
+
+  it('INCLUDES DRAFTS, which the public listing deliberately hides', async () => {
+    await newElection({ name: 'Draft One' })
+    await openElection()
+    const list = await (await officerList()).json() as Array<{ name: string; status: string }>
+    expect(list.map((e) => e.status).sort()).toEqual(['draft', 'open'])
+    expect(list.map((e) => e.name)).toContain('Draft One')
+  })
+
+  it('carries the candidates, so the officer can see what will be frozen', async () => {
+    const eid = await newElection()
+    await addCandidate(eid, 'Alex')
+    const list = await (await officerList()).json() as Array<{ candidates: { name: string }[] }>
+    expect(list[0]!.candidates.map((c) => c.name)).toEqual(['Alex'])
+  })
+
+  it('does not list another batch\'s elections', async () => {
+    await newElection()
+    const other = await SELF.fetch('https://example.com/api/batches', {
+      method: 'POST',
+      headers: { ...json, 'x-super-admin-key': KEY },
+      body: JSON.stringify({
+        name: 'Other', slug: 'other-list', officer_password: 'officer-password-2', door_password: 'door-password-2',
+        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
+      }),
+    })
+    const otherId = (await other.json() as { id: string }).id
+    const otherCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/session`, {
+      method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-2' }),
+    })).headers.get('set-cookie')) ?? '').split(';')[0]!
+    const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/elections`, {
+      headers: { cookie: otherCookie },
+    })
+    expect(await res.json()).toEqual([])
+  })
+})

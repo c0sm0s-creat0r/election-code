@@ -43,6 +43,8 @@ const postJson = (payload: unknown): RequestInit => ({
   body: JSON.stringify(payload),
 })
 
+const patchJson = (payload: unknown): RequestInit => ({ ...postJson(payload), method: 'PATCH' })
+
 export type Branding = { title: string; org_name: string; accent_color: string; logo_url: string }
 export type Batch = { id: string; slug: string; name: string; branding: Branding }
 
@@ -55,7 +57,7 @@ export const officerSignIn = (batchId: string, password: string) =>
 export const doorSignIn = (batchId: string, password: string) =>
   request<{ ok: true; role: string }>(`/api/batches/${batchId}/door/session`, postJson({ password }))
 
-export { request as apiRequest, postJson as apiPostJson, BASE as API_BASE }
+export { BASE as API_BASE }
 
 // --- roll ------------------------------------------------------------------
 
@@ -80,18 +82,19 @@ export const commitRoll = (batchId: string, file: File) => uploadRoll(batchId, '
 // --- elections -------------------------------------------------------------
 
 export type ElectionStatus = 'draft' | 'open' | 'closed'
-export type Candidate = { id: string; name: string }
+export type { Candidate } from '@election/core'
 
 export type AdminElection = {
   id: string
   name: string
   seats: number
   status: ElectionStatus
-  candidates: Candidate[]
+  candidates: import('@election/core').Candidate[]
 }
 
-export const listPublicElections = (batchId: string) =>
-  request<AdminElection[]>(`/api/batches/${batchId}/elections`)
+/** Drafts included — the public listing hides them by design. */
+export const listElections = (batchId: string) =>
+  request<AdminElection[]>(`/api/batches/${batchId}/officer/elections`)
 
 export const createElection = (batchId: string, name: string, seats: number) =>
   request<{ id: string; name: string; seats: number; status: ElectionStatus }>(
@@ -100,17 +103,16 @@ export const createElection = (batchId: string, name: string, seats: number) =>
   )
 
 export const addCandidate = (batchId: string, electionId: string, name: string) =>
-  request<Candidate>(
+  request<import('@election/core').Candidate>(
     `/api/batches/${batchId}/elections/${electionId}/candidates`,
     postJson({ name }),
   )
 
 export const renameCandidate = (batchId: string, electionId: string, candidateId: string, name: string) =>
-  request<Candidate>(`/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
-  })
+  request<import('@election/core').Candidate>(
+    `/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`,
+    patchJson({ name }),
+  )
 
 export const removeCandidate = (batchId: string, electionId: string, candidateId: string) =>
   request<void>(`/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`, {
@@ -179,11 +181,7 @@ export const overrideTieBreak = (batchId: string, electionId: string, body: Over
 // --- branding and logo ------------------------------------------------------
 
 export const updateBranding = (batchId: string, branding: Branding) =>
-  request<Branding>(`/api/batches/${batchId}/branding`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(branding),
-  })
+  request<Branding>(`/api/batches/${batchId}/branding`, patchJson(branding))
 
 export const uploadLogo = (batchId: string, file: File) => {
   const body = new FormData()

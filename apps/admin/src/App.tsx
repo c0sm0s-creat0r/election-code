@@ -44,6 +44,10 @@ const Result = lazy(async () => {
   const module = await import('./screens/Result.js')
   return { default: module.Result }
 })
+const Elections = lazy(async () => {
+  const module = await import('./screens/Elections.js')
+  return { default: module.Elections }
+})
 
 function BatchShell({ children }: { children: (batch: Batch) => React.ReactNode }) {
   const { slug } = useParams()
@@ -87,6 +91,10 @@ export function App() {
           <Route path="/b/:slug" element={<Officer>{(batch) => <OfficerHome batch={batch} />}</Officer>} />
           <Route path="/b/:slug/roll" element={<Officer>{(batch) => <RollImport batchId={batch.id} />}</Officer>} />
           <Route
+            path="/b/:slug/elections"
+            element={<Officer>{(batch) => <Elections batchId={batch.id} slug={batch.slug} />}</Officer>}
+          />
+          <Route
             path="/b/:slug/elections/:electionId/result"
             element={<Officer>{(batch) => <ResultRoute batchId={batch.id} />}</Officer>}
           />
@@ -128,6 +136,7 @@ function OfficerHome({ batch }: { batch: Batch }) {
       <h2>{batch.branding.title}</h2>
       <ul className="counts">
         <li><a href={`/b/${batch.slug}/roll`}>Member roll</a></li>
+        <li><a href={`/b/${batch.slug}/elections`}>Elections</a></li>
         <li><a href={`/b/${batch.slug}/exports`}>Exports</a></li>
         <li><a href={`/b/${batch.slug}/settings`}>Appearance</a></li>
         <li><a href={`/b/${batch.slug}/door`}>Door desk</a></li>

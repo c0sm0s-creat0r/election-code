@@ -19,7 +19,9 @@ const election = (status: AdminElection['status']): AdminElection => ({
 
 const show = (status: AdminElection['status']) => {
   const onChanged = vi.fn()
-  const view = render(<ElectionDetail batchId="b1" election={election(status)} onChanged={onChanged} />)
+  const view = render(
+    <ElectionDetail batchId="b1" slug="soc" election={election(status)} onChanged={onChanged} />,
+  )
   return { onChanged, ...view }
 }
 
@@ -103,7 +105,17 @@ describe('ElectionDetail', () => {
 
   it('offers the result only once closed', () => {
     show('closed')
-    expect(screen.getByRole('link', { name: /result/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /view the result/i })).toBeTruthy()
+  })
+
+  it('offers the per-election exports once closed, which nothing else could reach', () => {
+    // Exports was only ever rendered with electionId undefined, so the ballot,
+    // candidate and result files -- the whole offline-recount story -- were
+    // unreachable UI.
+    show('closed')
+    expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /candidates \(csv\)/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /sealed result \(json\)/i })).toBeTruthy()
   })
 
   it('offers no result link while open', async () => {

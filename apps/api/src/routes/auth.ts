@@ -131,8 +131,13 @@ auth.post('/api/batches/:id/door/session', staffSignInLimit, (c) => handleSignIn
 auth.delete('/api/batches/:id/officer/session', (c) => handleSignOut(c, 'officer'))
 auth.delete('/api/batches/:id/door/session', (c) => handleSignOut(c, 'door'))
 
-// Test seam only: proves requireRole('officer') end-to-end without reaching
-// forward into Plan 2b's real officer endpoints. Delete once Plan 2b lands
-// a genuine officer-gated route for the tests to exercise instead.
-// TODO(plan-2b): delete this route as the first act of Plan 2b.
+/**
+ * Is this session still valid? A frontend can ask cheaply instead of waiting for
+ * the first real request to 401.
+ *
+ * It was added as a test seam, and the auth suite still uses it as the one gated
+ * route that needs no setup — which is why it stays: every alternative requires a
+ * body or an election, and the auth tests would then be testing two things.
+ * Returns nothing but `ok`.
+ */
 auth.get('/api/batches/:id/officer/ping', requireRole('officer'), (c) => c.json({ ok: true }))

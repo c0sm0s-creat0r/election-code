@@ -48,26 +48,34 @@ export const elections = new Hono<AuthedEnv>()
  */
 const publicElections = new Hono<{ Bindings: Env }>()
 
-publicElections.get('/api/batches/:id/elections', async (c) => {
-  const batchId = c.req.param('id')
-
+/**
+ * Lists a batch's elections with their candidates. `statuses` is what separates
+ * the public listing from the officer's: the public one must never show a draft,
+ * because a draft is not yet a fact about the world.
+ */
+async function listElections(
+  db: D1Database,
+  batchId: string,
+  statuses: readonly ElectionRow['status'][],
+): Promise<PublicElection[]> {
+  const placeholders = statuses.map(() => '?').join(',')
   const [electionRows, candidateRows] = await Promise.all([
-    c.env.DB
+    db
       .prepare(
         `SELECT id, name, seats, status FROM election
-          WHERE batch_id = ? AND status IN ('open','closed')
+          WHERE batch_id = ? AND status IN (${placeholders})
           ORDER BY rowid`,
       )
-      .bind(batchId)
+      .bind(batchId, ...statuses)
       .all<Pick<ElectionRow, 'id' | 'name' | 'seats' | 'status'>>(),
-    c.env.DB
+    db
       .prepare(
         `SELECT c.id, c.name, c.election_id FROM candidate c
            JOIN election e ON e.id = c.election_id
-          WHERE e.batch_id = ? AND e.status IN ('open','closed')
+          WHERE e.batch_id = ? AND e.status IN (${placeholders})
           ORDER BY c.ordinal`,
       )
-      .bind(batchId)
+      .bind(batchId, ...statuses)
       .all<PublicCandidate & { election_id: string }>(),
   ])
 
@@ -78,17 +86,30 @@ publicElections.get('/api/batches/:id/elections', async (c) => {
     byElection.set(row.election_id, list)
   }
 
-  const result: PublicElection[] = electionRows.results.map((e) => ({
+  return electionRows.results.map((e) => ({
     id: e.id,
     name: e.name,
     seats: e.seats,
     status: e.status,
     candidates: byElection.get(e.id) ?? [],
   }))
-  return c.json(result)
-})
+}
+
+publicElections.get('/api/batches/:id/elections', async (c) =>
+  c.json(await listElections(c.env.DB, c.req.param('id') ?? '', ['open', 'closed'])))
 
 elections.route('/', publicElections)
+
+/**
+ * The officer's own listing, drafts included.
+ *
+ * A separate authenticated path rather than a flag on the public route: a public
+ * response whose body changes with a cookie is a caching hazard — a shared cache
+ * can serve a draft-bearing copy to anyone. Without this an officer who reloads
+ * the page cannot find the election they just created.
+ */
+elections.get('/api/batches/:id/officer/elections', requireRole('officer'), async (c) =>
+  c.json(await listElections(c.env.DB, requireSession(c).batchId, ['draft', 'open', 'closed'])))
 
 elections.post('/api/batches/:id/elections', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId

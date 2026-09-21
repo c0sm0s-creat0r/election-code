@@ -23,14 +23,17 @@ import {
   type AdminElection, type Turnout,
 } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
+import { Exports } from './Exports.js'
 
 export type ElectionDetailProps = {
   batchId: string
+  /** The route is `/b/:slug/...`, so the link needs the slug, not the id. */
+  slug: string
   election: AdminElection
   onChanged: () => void
 }
 
-export function ElectionDetail({ batchId, election, onChanged }: ElectionDetailProps) {
+export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionDetailProps) {
   const [turnout, setTurnout] = useState<Turnout | undefined>(undefined)
   const [candidateName, setCandidateName] = useState('')
   const [error, setError] = useState('')
@@ -187,9 +190,12 @@ export function ElectionDetail({ batchId, election, onChanged }: ElectionDetailP
       )}
 
       {election.status === 'closed' && (
-        <p>
-          <a href={`/b/${batchId}/elections/${election.id}/result`}>View the result</a>
-        </p>
+        <>
+          <p>
+            <a href={`/b/${slug}/elections/${election.id}/result`}>View the result</a>
+          </p>
+          <Exports batchId={batchId} electionId={election.id} />
+        </>
       )}
     </section>
   )
