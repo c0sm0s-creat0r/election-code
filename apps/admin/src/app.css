@@ -41,3 +41,37 @@
   border: 1px solid var(--danger);
   border-radius: var(--radius);
 }
+
+/* --- the result ------------------------------------------------------------ */
+
+/* The table is the artifact a scrutineer checks by hand, so it scrolls rather
+   than wrapping: a wrapped figure column cannot be read down. */
+.rounds-scroll { overflow-x: auto; }
+
+.rounds { border-collapse: collapse; width: 100%; }
+.rounds caption { text-align: left; padding-bottom: var(--step); }
+.rounds th, .rounds td {
+  padding: var(--step) calc(var(--step) * 1.5);
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  white-space: nowrap;
+}
+.rounds td { text-align: right; }
+.rounds td[data-status="elected"] { color: var(--ok); font-weight: 600; }
+.rounds td[data-status="excluded"] { color: var(--muted); text-decoration: line-through; }
+.rounds .non-transferable > * { border-top: 2px solid var(--rule); }
+
+.winners { font-size: 1.125rem; }
+.seed { word-break: break-all; }
+
+.tie-break {
+  padding: calc(var(--step) * 1.5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.override {
+  padding: calc(var(--step) * 1.5);
+  border-left: 3px solid var(--accent);
+  background: var(--sunk);
+}

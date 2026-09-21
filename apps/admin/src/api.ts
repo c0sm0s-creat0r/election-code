@@ -144,3 +144,34 @@ export type Turnout = {
 
 export const getTurnout = (batchId: string, electionId: string) =>
   request<Turnout>(`/api/batches/${batchId}/elections/${electionId}/turnout`)
+
+// --- result ----------------------------------------------------------------
+
+/**
+ * The stored result document. `rounds`, `winners` and `tie_breaks` are typed from
+ * `@election/core`'s own exports, so a change to what the count produces is a
+ * compile error here rather than a silently wrong table.
+ */
+export type ResultDocument = {
+  election: { id: string; name: string; seats: number }
+  closed_at: number
+  ballot_count: number
+  ballots_sha256: string
+  computed_at: number
+  overridden: boolean
+  quota: string
+  rounds: import('@election/core').Round[]
+  winners: import('@election/core').Candidate[]
+  tie_breaks: import('@election/core').TieBreakRecord[]
+}
+
+export const getResult = (batchId: string, electionId: string) =>
+  request<ResultDocument>(`/api/batches/${batchId}/elections/${electionId}/result`)
+
+export type OverrideRequest = { tie_break_id: string; resolved_id: string; reason: string }
+
+export const overrideTieBreak = (batchId: string, electionId: string, body: OverrideRequest) =>
+  request<ResultDocument>(
+    `/api/batches/${batchId}/elections/${electionId}/result/override`,
+    postJson(body),
+  )
