@@ -118,6 +118,54 @@ describe('count - properties', () => {
     }
   })
 
+  it('never ends a round with a continuing candidate sitting on a quota', async () => {
+    /*
+     * Commonwealth Electoral Act s273(8) elects a candidate who equals or
+     * exceeds the quota AT THAT COUNT, and s273(1) then stops them being a
+     * "continuing candidate", so a later surplus must skip them.
+     *
+     * There is exactly one lawful way for a round table to show a continuing
+     * candidate at or above quota, and it is worth stating precisely rather
+     * than asserting the blanket "never", which is FALSE on a correct count:
+     * an EXCLUSION's papers can lift somebody to quota, and that candidate is
+     * elected at the NEXT count. (The existing exclusion test is exactly that
+     * shape.) What may never happen is a round in which candidates were
+     * elected and a surplus was distributed, yet somebody is left continuing
+     * on a quota - that is the signature of a surplus poured onto a candidate
+     * an earlier surplus in the same round had already lifted to quota, which
+     * manufactures a surplus and redistributes it by the wrong candidate's
+     * preferences.
+     *
+     * Against the pre-fix code, where statuses were frozen for the whole
+     * distribution loop, this fails.
+     */
+    for (let seed = 1; seed <= 200; seed++) {
+      const r = await count(randomElection(seed))
+      const quota = fx(r.quota)
+
+      for (const [index, round] of r.rounds.entries()) {
+        const stranded = round.counts.filter(
+          (c) => c.status === 'continuing' && fx(c.votes) >= quota,
+        )
+        if (stranded.length === 0) continue
+
+        const where = `seed ${seed}, round ${round.n}: ` +
+          `${stranded.map((c) => `${c.candidateId}=${c.votes}`).join(', ')} >= ${r.quota}`
+
+        // A round that elected anybody ran the elect step after its last
+        // transfer, so nobody can still be standing on a quota.
+        expect(round.elected, where).toEqual([])
+
+        // and the exclusion that put them there elects them at the next count
+        const next = r.rounds[index + 1]
+        expect(next).toBeDefined()
+        for (const c of stranded) {
+          expect(next!.elected.map((e) => e.candidateId)).toContain(c.candidateId)
+        }
+      }
+    }
+  })
+
   it('is deterministic - identical input gives identical output', async () => {
     for (let seed = 1; seed <= 50; seed++) {
       const input = randomElection(seed)

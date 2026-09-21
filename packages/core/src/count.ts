@@ -164,27 +164,31 @@ export async function count(input: CountInput): Promise<CountResult> {
   }
 
   /**
-   * The C1 invariant, enforced rather than remembered: once a round's
-   * elections have been declared, no CONTINUING candidate may still be sitting
+   * The C1 invariant, enforced rather than remembered: at the moment a
+   * surplus is about to be distributed, no CONTINUING candidate may be sitting
    * at or above the quota.
    *
    * Commonwealth Electoral Act s273(8) elects a candidate who equals or
    * exceeds the quota AT THAT COUNT, and s273(1) then stops them being a
    * "continuing candidate". So a surplus distributed afterwards must skip
-   * them. Electing only the leader and leaving a second quota-holder
-   * continuing pours the leader's surplus onto someone who has already been
-   * paid their quota, who re-transfers it by THEIR preferences - and that
-   * moves a seat.
+   * them. Pouring a surplus onto someone who has already been paid their
+   * quota manufactures a surplus that is then redistributed by THEIR
+   * preferences - and that moves a seat.
    *
-   * This is checked here, immediately after the elect step and before a single
-   * paper moves, rather than at the end of `recordRound`. End-of-round is not a
-   * sound place for it: a transfer made DURING a round - an exclusion's papers
-   * or an elected candidate's surplus - can legitimately lift a continuing
+   * FREQUENCY IS THE WHOLE POINT. This used to run once per round, right
+   * after the round's elect step, which is sound but far too coarse: it could
+   * not see a candidate lifted to quota BY THE FIRST SURPLUS of the same
+   * round, which is exactly how the second defect survived. It now runs
+   * immediately before the total of each individual distribution is read, so
+   * every "count" in the Senate sense is checked.
+   *
+   * It is still not checked at the end of `recordRound`, and must not be. A
+   * transfer made during an EXCLUSION round can legitimately lift a continuing
    * candidate to quota, and that candidate is elected at the next count. The
-   * existing exclusion test is exactly that shape (a reaches 6.00000 = quota on
-   * c's exclusion in round 1 and is elected in round 2). Asserting at the end of
-   * the round would throw on a correct count; asserting here catches precisely
-   * the bug, and nothing else.
+   * existing exclusion test is exactly that shape (a reaches 6.00000 = quota
+   * on c's exclusion in round 1 and is elected in round 2). Asserting at the
+   * end of the round would throw on a correct count; asserting here catches
+   * precisely the bug, and nothing else.
    */
   const assertNoContinuingAtQuota = (n: number) => {
     for (const c of continuing()) {
@@ -204,23 +208,48 @@ export async function count(input: CountInput): Promise<CountResult> {
     const cont = continuing()
     if (cont.length === 0) { recordRound(n, [], []); break }
 
-    // Elect EVERY candidate at or above quota this round, highest first, and
-    // do it before a single paper moves. See assertNoContinuingAtQuota above
-    // for why electing only the leader changes who wins.
-    const atQuota = cont
-      .map((c) => ({ id: c.id, votes: totalOf(c.id) }))
-      .filter((x) => x.votes >= quota)
+    /*
+     * A ROUND IS MADE OF COUNTS.
+     *
+     * The Senate rules do not distribute a round's surpluses as one step;
+     * each individual transfer is its own "count", and s273(8) elects at the
+     * count. So this block interleaves two operations until neither has
+     * anything left to do:
+     *
+     *   elect     - every continuing candidate at or above quota, highest
+     *               first, marked elected before a single paper moves, with
+     *               their surplus added to the PENDING set
+     *   distribute - the LARGEST pending surplus, once
+     *
+     * Electing the whole round's quota-holders up front and then distributing
+     * them all against frozen statuses is what let a surplus flow onto a
+     * candidate an EARLIER surplus in the same round had already lifted to
+     * quota, manufacturing a surplus that was then redistributed by the wrong
+     * candidate's preferences. It moved a seat.
+     *
+     * Everything elected in this cascade belongs to round `n` and is reported
+     * in its `elected` list, in election order.
+     */
+    const electedRecords: Round['elected'] = []
+    const pending: { id: string; record: Round['elected'][number] }[] = []
 
-    if (atQuota.length > 0) {
+    const electAtQuota = async (): Promise<void> => {
       const remainingSeats = seats - winners.length
+      if (remainingSeats <= 0) return
+
+      const atQuota = continuing()
+        .map((c) => ({ id: c.id, votes: totalOf(c.id) }))
+        .filter((x) => x.votes >= quota)
+      if (atQuota.length === 0) return
 
       /*
        * Descending by total. Where totals are EQUAL the order is settled by an
        * `election_order` tie-break, because that order is not cosmetic: it is
        * the order the surpluses are distributed in, and distributing A's
-       * surplus before B's can change which papers B's own transfer value is
-       * computed over. The tie-break is recorded like any other, so the result
-       * document explains the ordering it used.
+       * surplus before B's decides which of them lifts a third candidate to
+       * quota - and therefore which of them has to run PAST that candidate to
+       * the next preference on its papers. The tie-break is recorded like any
+       * other, so the result document explains the ordering it used.
        *
        * The cap at `remainingSeats` cannot bite in a conserved count - (k+m)
        * candidates at quota implies (k+m) * quota <= total < (seats+1) * quota
@@ -243,34 +272,64 @@ export async function count(input: CountInput): Promise<CountResult> {
       for (const id of electionOrder) {
         status.set(id, 'elected')
         winners.push(id)
+        // The surplus and transfer value are not known until this candidate's
+        // own count comes round, so the record is filled in then. Pushing it
+        // here keeps `elected` in election order rather than distribution
+        // order, which is what a scrutineer reads it as.
+        const record = {
+          candidateId: id,
+          name: nameOf.get(id)!,
+          surplus: format(ZERO),
+          transferValue: format(ZERO),
+        }
+        electedRecords.push(record)
+        pending.push({ id, record })
       }
-      assertNoContinuingAtQuota(n)
+    }
 
-      /**
-       * Inclusive Gregory Method, as the Australian Senate uses:
-       * transfer value = surplus / NUMBER of papers, and every paper moves
-       * at that value regardless of the value it arrived with.
-       *
-       * One transfer value per distribution is what keeps a printed round
-       * table checkable by hand. The known cost is that a paper which
-       * arrived at a low value can transfer onward at a higher one.
-       *
-       * Each elected candidate's surplus is read after all of them are marked
-       * elected, so an earlier surplus cannot inflate a later one: `place()`
-       * skips anyone who is no longer continuing.
-       */
-      const electedRecords: Round['elected'] = []
-      for (const chosenId of electionOrder) {
-        const surplus = totalOf(chosenId) - quota
-        const pile = piles.get(chosenId) ?? []
+    await electAtQuota()
 
+    if (electedRecords.length > 0) {
+      while (pending.length > 0) {
+        assertNoContinuingAtQuota(n)
+
+        /*
+         * The largest pending surplus goes first, as the Senate rules order
+         * them. Surplus = total - quota and the quota is fixed, so "largest
+         * surplus" and "largest total" are the same ordering. Where two are
+         * EQUAL the earlier position in `pending` wins - and `pending` is in
+         * election order, so an `election_order` tie-break decided by the
+         * returning officer reaches all the way down to here.
+         */
+        let bestIndex = 0
+        let bestTotal = totalOf(pending[0]!.id)
+        for (let i = 1; i < pending.length; i++) {
+          const votes = totalOf(pending[i]!.id)
+          if (votes > bestTotal) {
+            bestTotal = votes
+            bestIndex = i
+          }
+        }
+        const next = pending.splice(bestIndex, 1)[0]!
+        const surplus = bestTotal - quota
+        const pile = piles.get(next.id) ?? []
+
+        /**
+         * Inclusive Gregory Method, as the Australian Senate uses:
+         * transfer value = surplus / NUMBER of papers, and every paper moves
+         * at that value regardless of the value it arrived with.
+         *
+         * One transfer value per distribution is what keeps a printed round
+         * table checkable by hand. The known cost is that a paper which
+         * arrived at a low value can transfer onward at a higher one.
+         */
         let transferValue: Fixed = ZERO
         if (surplus > ZERO && pile.length > 0) {
           transferValue = surplus / BigInt(pile.length)
 
           // The elected candidate retains exactly the quota. Without this the
           // conservation check fails, because totalOf() reads the pile.
-          piles.set(chosenId, [{ id: `${chosenId}-quota`, preferences: [], weight: quota }])
+          piles.set(next.id, [{ id: `${next.id}-quota`, preferences: [], weight: quota }])
           for (const paper of pile) place({ ...paper, weight: transferValue })
 
           // Truncating the transfer value loses a fraction of a vote per paper.
@@ -280,12 +339,13 @@ export async function count(input: CountInput): Promise<CountResult> {
         }
         // surplus of zero: the papers stay put, and the total is already quota
 
-        electedRecords.push({
-          candidateId: chosenId,
-          name: nameOf.get(chosenId)!,
-          surplus: format(surplus),
-          transferValue: format(transferValue),
-        })
+        next.record.surplus = format(surplus)
+        next.record.transferValue = format(transferValue)
+
+        // s273(8): anybody that transfer put at or above the quota is elected
+        // AT THIS COUNT, before the next surplus moves. Their own surplus
+        // joins the pending set.
+        await electAtQuota()
       }
 
       recordRound(n, electedRecords, [])
