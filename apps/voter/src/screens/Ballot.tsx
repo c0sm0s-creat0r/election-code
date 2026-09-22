@@ -13,9 +13,8 @@ import { RankedBallot } from '../components/RankedBallot.js'
 export type BallotProps = {
   batchId: string
   election: PublicElection
-  /** 0-based, shown as "1 of 3" so a voter knows how many are left. */
-  index: number
-  total: number
+  /** Leaving without voting. Without it, tapping into a ballot is a trap. */
+  onBack: () => void
   onCast: (receiptToken: string) => void
   /** Handed the draft ranking, so a lapsed session costs nobody their work. */
   onSessionLost: (draft: string[]) => void
@@ -23,7 +22,7 @@ export type BallotProps = {
 }
 
 export function Ballot({
-  batchId, election, index, total, onCast, onSessionLost, initialRanking,
+  batchId, election, onBack, onCast, onSessionLost, initialRanking,
 }: BallotProps) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -81,8 +80,15 @@ export function Ballot({
 
   return (
     <section class="stack">
-      <p class="muted">
-        Election {index + 1} of {total}
+      {/*
+        No "election 2 of 3": the count is only of what is open right now, and
+        stating it as a total told voters the meeting was nearly over when it was
+        not. The agenda lists what is open; this says which one you are in.
+      */}
+      <p>
+        <button type="button" class="link-button" onClick={onBack}>
+          ← All elections
+        </button>
       </p>
       <h2>{election.name}</h2>
 

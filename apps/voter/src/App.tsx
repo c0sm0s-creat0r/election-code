@@ -1,35 +1,58 @@
 /**
  * The voter app's shell: which society, which screen, which election.
  *
- * No router. There are three screens and the slug comes from the path
- * (`vote.dalyell.com.au/<slug>`), so a router would be a dependency earning
- * nothing (spec §1.2). Screen state is a discriminated union, which is what makes
- * "show sign-in again but keep the draft" expressible rather than a pile of
- * booleans.
+ * No router. The slug comes from the path (`vote.dalyell.com.au/<slug>`), so a
+ * router would be a dependency earning nothing (spec §1.2). Screen state is a
+ * discriminated union, which is what makes "show sign-in again but keep the
+ * draft" expressible rather than a pile of booleans.
+ *
+ * **The open-election list is polled, not snapshotted.** An AGM opens its
+ * elections one at a time, as the agenda reaches them, and only an `open`
+ * election is visible to a voter — a `draft` one must stay hidden (spec §6). So a
+ * list read once at page load is the list for one agenda item, and treating the
+ * end of it as the end of the meeting told voters they were finished while four
+ * elections were still to come. Polling is also what spec §1 chose for live
+ * counts: a room of a few hundred phones asking a cached D1 read every ten
+ * seconds is negligible next to getting this wrong.
+ *
+ * Each screen carries the election it is about, rather than an index into that
+ * list. A list that changes underneath a voter must not change which ballot they
+ * are filling in.
  */
 import { useEffect, useState } from 'preact/hooks'
 import {
   ApiError, getBatchBySlug, getElections, listSocieties,
   type Batch, type PublicElection,
 } from './api.js'
+import { forgetReceipt, readReceipts, rememberReceipt, type HeldReceipts } from './receipts.js'
 import { SignIn } from './screens/SignIn.js'
+import { Agenda } from './screens/Agenda.js'
 import { Ballot } from './screens/Ballot.js'
 import { Receipt } from './screens/Receipt.js'
 
 /** The first path segment: `vote.dalyell.com.au/<slug>`. */
 const slugFromPath = (): string => (window.location.pathname.split('/')[1] ?? '').trim()
 
+/**
+ * Ten seconds. Fast enough that a voter looking at the screen when the chair
+ * opens an election sees it without being told to reload, slow enough to be
+ * nothing against D1's read path.
+ */
+const POLL_MS = 10_000
+
 type Screen =
   // `resume` carries a ballot that was in progress when the session lapsed, so
   // signing in again returns to it with the ranking intact.
-  | { kind: 'signIn'; resume?: { index: number; draft: string[] } }
-  | { kind: 'ballot'; index: number; draft?: string[] }
-  | { kind: 'receipt'; token: string; index: number }
-  | { kind: 'done' }
+  | { kind: 'signIn'; resume?: { election: PublicElection; draft: string[] } }
+  | { kind: 'agenda' }
+  | { kind: 'ballot'; election: PublicElection; draft?: string[] }
+  | { kind: 'receipt'; token: string; election: PublicElection }
 
 export function App() {
   const [batch, setBatch] = useState<Batch | undefined>(undefined)
-  const [elections, setElections] = useState<PublicElection[]>([])
+  const [elections, setElections] = useState<PublicElection[] | undefined>(undefined)
+  const [stale, setStale] = useState(false)
+  const [receipts, setReceipts] = useState<HeldReceipts>({})
   const [firstName, setFirstName] = useState('')
   const [screen, setScreen] = useState<Screen>({ kind: 'signIn' })
   const [loadError, setLoadError] = useState('')
@@ -48,15 +71,14 @@ export function App() {
     }
     let live = true
     getBatchBySlug(slug)
-      .then(async (loaded) => {
+      .then((loaded) => {
         if (!live) return
         setBatch(loaded)
+        setReceipts(readReceipts(loaded.id))
         // The one runtime style mutation in the app, and it is a token rather than
         // a style attribute: per-society colour with no per-society build.
         document.documentElement.style.setProperty('--accent', loaded.branding.accent_color)
         document.title = loaded.branding.title
-        const open = await getElections(loaded.id)
-        if (live) setElections(open.filter((e) => e.status === 'open'))
       })
       .catch((caught: unknown) => {
         if (!live) return
@@ -68,6 +90,26 @@ export function App() {
       })
     return () => { live = false }
   }, [])
+
+  useEffect(() => {
+    if (batch === undefined) return
+    let live = true
+    const poll = async () => {
+      try {
+        const listed = await getElections(batch.id)
+        if (!live) return
+        setElections(listed.filter((e) => e.status === 'open'))
+        setStale(false)
+      } catch {
+        // A failed poll keeps the last good list. Dropping to "nothing is open"
+        // because one request timed out would be a lie a voter acts on.
+        if (live) setStale(true)
+      }
+    }
+    void poll()
+    const timer = setInterval(() => void poll(), POLL_MS)
+    return () => { live = false; clearInterval(timer) }
+  }, [batch])
 
   const heading = batch?.branding.title ?? 'Vote'
 
@@ -103,9 +145,7 @@ export function App() {
     )
   }
 
-  const current = screen.kind === 'ballot' || screen.kind === 'receipt'
-    ? elections[screen.index]
-    : undefined
+  const signedIn = screen.kind !== 'signIn'
 
   return (
     <main class="page">
@@ -114,66 +154,85 @@ export function App() {
 
       {batch === undefined && <p class="muted">Loading…</p>}
 
-      {batch !== undefined && elections.length === 0 && (
-        <p>No voting open just yet. Your society will let you know when it starts.</p>
+      {/*
+        Before sign-in there is nothing to sign in *to* until an election opens,
+        so the wait is here rather than in the agenda. The poll turns this into
+        the sign-in form on its own — the voter is never asked to reload.
+      */}
+      {batch !== undefined && !signedIn && (
+        elections === undefined ? (
+          <p class="muted">Checking for open elections…</p>
+        ) : elections.length === 0 ? (
+          <p aria-live="polite">
+            Nothing is open for voting yet. Leave this page open — signing in appears here as soon
+            as the first election opens.
+          </p>
+        ) : (
+          <SignIn
+            batchId={batch.id}
+            onSignedIn={(name) => {
+              setFirstName(name)
+              // Back to the ballot they were on, with the ranking they had.
+              setScreen(
+                screen.kind === 'signIn' && screen.resume
+                  ? { kind: 'ballot', ...screen.resume }
+                  : { kind: 'agenda' },
+              )
+            }}
+          />
+        )
       )}
 
-      {batch !== undefined && elections.length > 0 && screen.kind === 'signIn' && (
-        <SignIn
-          batchId={batch.id}
-          onSignedIn={(name) => {
-            setFirstName(name)
-            // Back to the ballot they were on, with the ranking they had.
-            setScreen(
-              screen.resume ? { kind: 'ballot', ...screen.resume } : { kind: 'ballot', index: 0 },
-            )
-          }}
+      {batch !== undefined && screen.kind === 'agenda' && (
+        <Agenda
+          elections={elections}
+          receipts={receipts}
+          stale={stale}
+          onVote={(election) => setScreen({ kind: 'ballot', election })}
+          onReceipt={(election, token) => setScreen({ kind: 'receipt', token, election })}
         />
       )}
 
-      {batch !== undefined && screen.kind === 'ballot' && current !== undefined && (
+      {batch !== undefined && screen.kind === 'ballot' && (
         <Ballot
           batchId={batch.id}
-          election={current}
-          index={screen.index}
-          total={elections.length}
-          onCast={(token) => setScreen({ kind: 'receipt', token, index: screen.index })}
+          election={screen.election}
+          onBack={() => setScreen({ kind: 'agenda' })}
+          onCast={(token) => {
+            setReceipts(rememberReceipt(batch.id, screen.election.id, token))
+            setScreen({ kind: 'receipt', token, election: screen.election })
+          }}
           // The draft travels with the lapsed session, so signing in again costs
           // the voter nothing.
           onSessionLost={(draft) => {
             setFirstName('')
-            setScreen({ kind: 'signIn', resume: { index: screen.index, draft } })
+            setScreen({ kind: 'signIn', resume: { election: screen.election, draft } })
           }}
           {...(screen.draft ? { initialRanking: screen.draft } : {})}
         />
       )}
 
-      {batch !== undefined && screen.kind === 'receipt' && current !== undefined && (
+      {batch !== undefined && screen.kind === 'receipt' && (
         <>
           <Receipt
             token={screen.token}
-            onVoided={() => setScreen({ kind: 'ballot', index: screen.index })}
+            onVoided={() => {
+              // The ballot is no longer recorded, so the agenda must offer this
+              // election again — and the stored token now voids nothing.
+              setReceipts(forgetReceipt(batch.id, screen.election.id))
+              setScreen({ kind: 'ballot', election: screen.election })
+            }}
           />
           <div class="submit-bar sticky-bar">
             <button
               type="button"
               class="primary submit"
-              onClick={() =>
-                setScreen(
-                  screen.index + 1 < elections.length
-                    ? { kind: 'ballot', index: screen.index + 1 }
-                    : { kind: 'done' },
-                )
-              }
+              onClick={() => setScreen({ kind: 'agenda' })}
             >
-              {screen.index + 1 < elections.length ? 'Next election' : 'Finish'}
+              Back to elections
             </button>
           </div>
         </>
-      )}
-
-      {screen.kind === 'done' && (
-        <p>That is every election. Thank you for voting.</p>
       )}
     </main>
   )

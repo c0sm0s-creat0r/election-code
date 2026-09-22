@@ -27,6 +27,11 @@ test('the session cookie travels, and a ballot can be cast', async ({ page }) =>
   await page.getByLabel(/surname/i).fill(SURNAME)
   await page.getByRole('button', { name: /continue/i }).click()
 
+  // Sign-in lands on the agenda of what is open, and the voter picks one. The app
+  // deliberately no longer walks the list: an AGM opens its elections one at a
+  // time, so reaching the end of them is not the end of the meeting.
+  await page.getByRole('button', { name: 'Vote' }).click()
+
   // If the cookie did not travel, the run ends here: the ballot never appears
   // because the app is still on sign-in, or every later request 401s.
   await expect(page.getByRole('button', { name: `Add ${CANDIDATE}` })).toBeVisible()

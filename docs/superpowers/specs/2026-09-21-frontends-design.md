@@ -343,11 +343,31 @@ Every API failure is JSON, guaranteed by the API's `app.onError`, so no response
 ### 4.1 Screens
 
 ```
-/<slug>                sign in  ->  ballot, one election at a time  ->  receipt
+/<slug>   sign in  ->  agenda (what is open now)  ->  ballot  ->  receipt
+                            ^________________________|_________|
 /<slug>/receipt        check a receipt token
 ```
 
-No router. Three screens, one `useState` for which is showing.
+No router. One `useState` for which screen is showing, and each screen carries the election it is
+about rather than an index into a list.
+
+**The agenda screen, and the polling behind it, are not cosmetic.** An AGM opens its elections one at
+a time as the meeting reaches them, and only an `open` election is visible to a voter — a `draft` one
+must stay hidden (spec §6). So the list of open elections is the list *for one agenda item*, and an
+app that walks the list it loaded with and then reports completion tells a voter the meeting is over
+when it has barely started. Two rules follow, and both are load-bearing:
+
+1. **The open-election list is polled, every ten seconds, for as long as the page is open.** That is
+   how the next agenda item reaches a voter who is holding their phone, and how the pre-sign-in wait
+   turns into a sign-in form. A failed poll keeps the last good list — dropping to "nothing is open"
+   because one request timed out is a lie a voter acts on by leaving.
+2. **No screen may ever state or imply that voting is finished.** The app cannot know that: the
+   elections still to come are invisible to it. The most it may say is that nothing is open *right
+   now*, and that the page is still watching.
+
+The agenda also shows which elections this voter has already voted in, from the receipt tokens held
+on the device (§4.5). There is deliberately no "have I voted?" endpoint — answering that for anyone
+but the asker would leak who voted.
 
 ### 4.2 Sign-in
 
@@ -414,6 +434,14 @@ reads as a second chance at the receipt. See `docs/superpowers/LIMITATIONS.md` �
 Shows `recorded` or `voided`, and the election name. **Never the preferences** — that is the whole
 design of the receipt (spec §4). Offers "void and vote again" while the election is open, which is
 the recast path.
+
+The token is written to `localStorage` under `election:receipts:<batchId>`, as spec §4 requires: it is
+shown once, is never stored server-side, and a voter who reloads without it has permanently lost the
+ability to verify their own ballot. That store is also what the agenda reads to mark an election
+voted, and voiding removes the entry so the election is offered again. Every access is guarded —
+`localStorage` throws in Safari's private mode and on an exhausted quota, and a voter must never lose
+a *ballot* to browser storage. The token is a bearer capability over one ballot, so holding it on the
+device is a trade: see `docs/superpowers/LIMITATIONS.md` §15.
 
 ---
 

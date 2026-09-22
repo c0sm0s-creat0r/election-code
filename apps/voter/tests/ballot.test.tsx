@@ -19,8 +19,8 @@ const stub = (status: number, body: unknown) =>
 
 const renderBallot = (overrides: Partial<Parameters<typeof Ballot>[0]> = {}) => {
   const props = {
-    batchId: 'b1', election, index: 0, total: 1,
-    onCast: vi.fn(), onSessionLost: vi.fn(),
+    batchId: 'b1', election,
+    onBack: vi.fn(), onCast: vi.fn(), onSessionLost: vi.fn(),
     ...overrides,
   }
   render(<Ballot {...props} />)
@@ -33,9 +33,15 @@ const castFor = (name: string) => {
 }
 
 describe('Ballot', () => {
-  it('shows which election this is, of how many', () => {
-    renderBallot({ index: 0, total: 3 })
-    expect(screen.getByText(/1 of 3/i)).toBeTruthy()
+  it('names the election it is a ballot for', () => {
+    renderBallot()
+    expect(screen.getByRole('heading', { name: 'President' })).toBeTruthy()
+  })
+
+  it('OFFERS A WAY OUT WITHOUT VOTING, so tapping into a ballot is not a trap', () => {
+    const props = renderBallot()
+    fireEvent.click(screen.getByRole('button', { name: /all elections/i }))
+    expect(props.onBack).toHaveBeenCalled()
   })
 
   it('names the election', () => {

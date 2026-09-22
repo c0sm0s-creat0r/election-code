@@ -85,9 +85,9 @@ async function signIn(batchId: string, role: 'officer' | 'door', password: strin
 }
 
 /**
- * The voter app offers every open election and the test votes in the first one.
+ * The voter app lists every open election and the test votes in the one it finds.
  * A previous run's election is still open and its voter has already voted there,
- * so leaving it would make this run submit into it and take a 409.
+ * so leaving it would give the test two `Vote` buttons and a 409 behind one.
  */
 async function closeAnyOpenElections(batchId: string, officerCookie: string): Promise<void> {
   const res = await fetch(`${API}/api/batches/${batchId}/officer/elections`, {

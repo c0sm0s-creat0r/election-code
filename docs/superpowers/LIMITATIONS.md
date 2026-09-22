@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-22, after self-serve signup (13 live entries, 1 closed).
+**Last updated:** 2026-09-22, after the voter agenda rework (15 live entries, 1 closed).
 
 ---
 
@@ -249,3 +249,53 @@ header. An election tool nobody can start is worse than one that starts unverifi
 before a society may open its first election. The second is the cheaper one and needs no new
 infrastructure: a flag on `batch`, set by an operator-only route, checked at `POST /elections/:eid/open`.
 Worth doing if impersonation ever actually happens.
+
+## 15. A held receipt token is a capability to void that ballot
+
+**Where:** `apps/voter/src/receipts.ts`, `apps/api/src/routes/receipts.ts`, spec §4 and §5.
+
+The receipt token is written to `localStorage` under `election:receipts:<batchId>`, and
+`POST /api/receipts/:token/void` is public. So anyone who can read that storage — someone borrowing
+the phone, a shared or kiosk device, an XSS in the voter app — can void that ballot for as long as the
+election is open.
+
+**Why accepted (2026-09-22):** spec §4 requires storing it, and the reason is stronger than the risk.
+The token is shown once and is never stored server-side: a voter who reloads the page without it has
+permanently lost the ability to verify their own ballot, which is limitation 1 arriving by a second
+route. Voting is on a voter's own phone by design, and the same person holding the phone could vote
+again from the receipt on screen anyway.
+
+**What bounds the damage:**
+
+- Voiding does not cast. The recast has to come back through the voter's own session, because the
+  mark-off cleared is always found *through* the hash and so is always the true owner's.
+- It stops working the moment the election closes: both statements in the void transaction carry the
+  open-election test.
+- Every void is written to `audit_log` as `ballot.void`, attributed to the owning batch. A run of them
+  is visible to an officer.
+- The token proves inclusion only. It never reveals preferences, so it is useless to a coercer.
+
+**What would close it:** requiring the voter's session cookie on the void route, and scoping the
+lookup to that voter's own live receipt. That is a real improvement and cheap; it was not done here
+only because the void route being public is spec §5's stated design, and changing it is an API change
+rather than a frontend one.
+
+## 16. The voter app can never tell a voter they are finished
+
+**Where:** `apps/voter/src/screens/Agenda.tsx`, spec §4.1.
+
+A voter is shown what is open now and told to keep the page open. They are never told the voting is
+over, because the app cannot know: a `draft` election is invisible to a voter by design (spec §6), so
+"nothing is open" is indistinguishable from "nothing is open yet". A voter who closes the tab after the
+last item still gets no confirmation that they voted in everything.
+
+**Why accepted (2026-09-22, after the flow was found wrong in use):** the alternative was worse and had
+already shipped. The app used to snapshot the open list at page load and, on reaching the end of it,
+say "That is every election. Thank you for voting." — during an AGM that opens its elections one at a
+time, that told voters the meeting was finished after the first item. A screen that under-claims costs
+a voter a little uncertainty; one that over-claims costs them the rest of their votes.
+
+**What would close it:** the officer telling the app the agenda is done — a batch-level "voting
+complete" flag, set explicitly, which the voter app could show as a genuine end. It has to be an
+officer action rather than anything inferred, because "no election is currently open" is the normal
+state between two agenda items.

@@ -71,3 +71,31 @@
 
 .society-list > li + li { margin-top: var(--step); }
 .society-list a { display: block; min-height: var(--touch); line-height: var(--touch); }
+
+/* --- the agenda ------------------------------------------------------------ */
+
+.agenda-list > li + li { margin-top: var(--step); }
+
+/* Name above, seats below, so a long office name wraps without shoving the
+   button off a narrow screen. */
+.agenda-name {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agenda-seats { font-size: 0.875rem; }
+
+/* A button that reads as a link: going back is navigation, but there is no
+   router here, so it cannot be an anchor. 44px tall for the same reason every
+   other target is. */
+.link-button {
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+}

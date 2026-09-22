@@ -244,13 +244,25 @@ never added together, because quorum is a proportion of eligible members.
 
 ### Opening and voting
 
+**Open each election when the agenda reaches it. Do not open them all at the start.** Only an `open`
+election is visible to a voter, and nothing prevents opening several at once — but a voter holding
+their phone can see every open ballot, so opening the lot turns a sequence of agenda items into one
+long form.
+
 1. Officer opens the election. It refuses to open with fewer candidates than seats.
-2. Voters go to `vote.dalyell.com.au/<slug>`, sign in with **USU ID and surname**, rank candidates and
-   submit. They are shown a receipt code once.
+2. Voters go to `vote.dalyell.com.au/<slug>`, sign in with **USU ID and surname**, then pick the
+   election from the list of what is open, rank candidates and submit. They are shown a receipt code
+   once.
 3. The officer sees turnout only — ballots cast, checked in, eligible. **There is no way to see a
    count while voting is open, and that is the point.**
 
-A voter who wants to change their vote uses their receipt to cancel and vote again.
+**Tell the room to leave the page open.** The voter app checks for newly opened elections every ten
+seconds, so the next one appears on its own — nobody needs to reload or sign in again. Voters who
+already voted in everything open see "keep this page open", never "you are finished": the app has no
+way to know the meeting is over, so it never claims it (`LIMITATIONS.md` §16).
+
+A voter who wants to change their vote uses their receipt to cancel and vote again. Their receipt
+codes are kept on their own device, so the elections they have voted in stay marked across a reload.
 
 ### Closing and the result
 

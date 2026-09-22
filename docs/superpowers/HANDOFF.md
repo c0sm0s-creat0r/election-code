@@ -1,9 +1,10 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-21 (**ALL PLANS COMPLETE** — api, core, voter, admin, e2e. 666 unit tests + 1 browser smoke)
+**Last updated:** 2026-09-22 (**ALL PLANS COMPLETE** — api, core, voter, admin, e2e. 747 unit tests + 1 browser smoke)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
-**Next action:** nothing is planned. The rewrite is feature-complete against the spec. Before a real
+**Next action:** nothing is planned. The rewrite is feature-complete against the spec. The most recent
+work was not a plan: the voter app's flow was found wrong *in use* and reworked (§13). Before a real
 AGM runs on it, the two things that matter are in §5 (**the missing known-answer corpus for multi-seat
 counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `backend/`,
 `admin-frontend/` and `voter-frontend/` directories are still present and can be retired once
@@ -29,7 +30,7 @@ counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `b
 
 **Verify state on resume:**
 ```bash
-npm test                                  # core 142, admin 65, api 399, voter 60
+npm test                                  # core 138, admin 119, api 417, voter 73
 npm run typecheck                         # all four clean
 npm run e2e                               # 1 Playwright smoke (needs: npx playwright install chromium)
 ```
@@ -103,7 +104,10 @@ Two door actions that must stay separate (`docs/superpowers/specs/2026-09-21-fro
 5. **Reordering a ballot is arrows, never drag**, and the boundary arrows are disabled rather than
    hidden so a row does not reflow under a moving thumb.
 6. **The door roll is never written to browser storage**, and a test asserts no storage write happens
-   at all rather than inspecting `localStorage` (which in the test environment is a locked proxy).
+   at all rather than inspecting `localStorage` (which in the test environment is a stub with no
+   methods). This rule is about the *door*: 1,300 members' names on a volunteer's personal device,
+   outside the reach of the purge. It is not a blanket ban, and the voter app does store one thing —
+   its own receipt tokens, which spec §4 requires (see §13).
 7. **There is no seeding endpoint in `apps/api` and there must never be one.** `e2e/seed.ts` provisions
    through documented endpoints with the dev super-admin key.
 
@@ -384,3 +388,56 @@ reports ambiguity there, believe them and tighten the brief rather than pushing 
   not do what it claimed, and two rule violations only a whole-repo run exposed
 
 All six are gitignored. This file is the committed summary; the ledgers hold the detail.
+
+---
+
+## 13. The voter flow was wrong in use — reworked 2026-09-22 (not from a plan)
+
+Reported by the user after running the system, not caught by any test: *"elections dont show up on the
+voting page unless voting is open, which means that voters are then asked to finish the session prior
+to the full agm being completed."*
+
+**The defect.** An AGM opens its elections one at a time, as the chair reaches each agenda item, and
+only an `open` election is visible to a voter — a `draft` one must stay hidden, which is the legacy
+hole spec §6 closes. The voter app read the open list **once, at page load**, walked it by index, and
+on reaching the end rendered *"That is every election. Thank you for voting."* So a voter who voted for
+President during item 4 of 8 was told the meeting was over, and had every reason to close the tab.
+
+Nothing was wrong with the API. The hidden `draft` is correct and stays.
+
+**What changed** (`apps/voter/src/App.tsx`, new `screens/Agenda.tsx`, new `receipts.ts`):
+
+1. **The open list is polled every ten seconds**, for as long as the page is open, instead of being
+   snapshotted. That is how the next agenda item reaches a phone already in a voter's hand, and how the
+   pre-sign-in wait turns itself into a sign-in form. A failed poll keeps the last good list — dropping
+   to "nothing is open" on one timeout is a lie a voter acts on by leaving.
+2. **An agenda screen** lists what is open with a `Vote` or `Voted ✓` control each, replacing the
+   index walk. Each screen now carries its `PublicElection` object, so a list that changes underneath a
+   voter cannot change which ballot they are filling in.
+3. **No screen may claim voting is finished.** The app cannot know that — see `LIMITATIONS.md` §16 for
+   the wording rule and what would close it. `apps/voter/tests/app.test.tsx` asserts the old sentences
+   are absent, which is the one test that would have caught this.
+4. **Receipt tokens are stored per society** in `localStorage` under `election:receipts:<batchId>`,
+   which spec §4 always required and Plan 3a did not implement. It doubles as the only way the app can
+   know which elections this voter has voted in: there is deliberately no "have I voted?" endpoint.
+   Every access is guarded, because storage throws in private mode — losing the token costs a receipt,
+   an exception would cost a ballot. Voiding forgets the entry so the election is offered again. The
+   trade-off is `LIMITATIONS.md` §15: the token is a capability to void that one ballot.
+5. **The ballot has a back control** ("← All elections") and no longer shows "election 2 of 3". The
+   count was only ever of what happened to be open, which is exactly the misleading claim.
+
+**The process lesson, which is §6's again from a new direction.** Every layer was individually correct
+and fully tested — the API hid drafts correctly, the app rendered the list it was given correctly, 60
+voter tests passed. The defect lived in the *sequence over time*, which no test described because no
+test ran the clock. The tests added here do: three of them advance a fake clock across a poll and
+assert what the voter sees afterwards. **When reviewing a screen that reads a list the operator changes
+during an event, ask what it shows ten minutes later, not just what it shows on load.**
+
+**One adjacent gap this surfaced, and deliberately did not close.** Spec §4.1 has always listed a
+`/<slug>/receipt` screen for checking a token, and Plan 3a never built it — an omission, not a
+decision, so it is not in `LIMITATIONS.md`. It matters slightly more now that the agenda is where a
+voter reaches their receipt: the agenda lists only *open* elections, so once an election closes the
+token is still on the device but has no screen to reach it from. This is not a regression — before
+this rework the receipt was unreachable the moment you left it — and the cheapest fix is not a new
+route: `GET /api/batches/:id/elections` already returns `closed` elections, so an "earlier receipts"
+list on the agenda would close it with no new screen.
