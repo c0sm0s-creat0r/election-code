@@ -27,9 +27,9 @@ import {
   cookieName,
   cookieOptions,
   isUsableSecret,
-  MIN_SECRET_LENGTH,
 } from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
+import { notConfigured } from '../http/notConfigured.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
 import type { AuthedEnv } from '../middleware/requireRole.js'
@@ -53,9 +53,7 @@ voter.post(
   '/api/batches/:id/voter/session',
   rateLimit(RATE_LIMITS.voting),
   async (c) => {
-    if (!isUsableSecret(c.env.SESSION_SECRET)) {
-      throw new Error(`SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`)
-    }
+    if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
 
     const batchId = pathParam(c, 'id')
     const parsed = voterSignInSchema.safeParse(await c.req.json().catch(() => undefined))

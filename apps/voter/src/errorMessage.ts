@@ -23,5 +23,6 @@ export function signInMessage(error: unknown): string {
     return 'Our records show your membership has ended. Please see the door desk.'
   }
   if (error.status === 429) return 'Too many attempts. Please try again in a few minutes.'
+  if (error.status === 503) return 'Voting is not available right now. Please tell an officer.'
   return 'Something went wrong. Please try again.'
 }

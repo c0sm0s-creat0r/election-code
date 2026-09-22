@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
+import {
+  SELF, env, applyD1Migrations, createExecutionContext, waitOnExecutionContext,
+} from 'cloudflare:test'
+import worker from '../src/index.js'
 import { signSession } from '../src/auth/session.js'
 
 const KEY = 'super-secret-test-key'
@@ -287,3 +290,48 @@ describe('the other-role lookup verifies what the cookie name claims', () => {
   })
 })
 
+
+describe('a misconfigured deployment', () => {
+  /**
+   * A missing or short SESSION_SECRET is refused deliberately — it is the whole
+   * door → officer boundary. What matters here is that it is refused *legibly*:
+   * until 2026-09-22 this threw into app.onError and came back as an opaque 500
+   * `{error:'internal'}`, so the only clue was a line in the Worker's log, while
+   * the comment beside it claimed the response said "this server is not
+   * configured".
+   *
+   * Invoked through the worker directly rather than `SELF`, because that is the
+   * only way to hand it a different env: `SELF` always uses the configured
+   * bindings, and mutating the imported `env` does not reach it.
+   */
+  const withShortSecret = async (path: string, body: unknown): Promise<Response> => {
+    const request = new Request(`https://example.com${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const ctx = createExecutionContext()
+    const res = await worker.fetch(request, { ...env, SESSION_SECRET: 'too-short' }, ctx)
+    await waitOnExecutionContext(ctx)
+    return res
+  }
+
+  it('answers 503 server_not_configured rather than an opaque 500', async () => {
+    const res = await withShortSecret(
+      `/api/batches/${batchId}/officer/session`, { password: 'officer-password-1' })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ error: 'server_not_configured' })
+  })
+
+  it('never names the secret or its value', async () => {
+    const res = await withShortSecret(
+      `/api/batches/${batchId}/door/session`, { password: 'door-password-1' })
+    expect(await res.text()).not.toMatch(/SESSION_SECRET|too-short/)
+  })
+
+  it('refuses a voter sign-in the same way', async () => {
+    const res = await withShortSecret(
+      `/api/batches/${batchId}/voter/session`, { usu_id: '2400001', surname: 'Lovelace' })
+    expect(res.status).toBe(503)
+  })
+})

@@ -12,8 +12,13 @@ except `ALLOWED_ORIGINS`, which is not a secret.
 ### `SESSION_SECRET` — the HMAC key for every session cookie
 
 ```sh
-openssl rand -base64 32 | wrangler secret put SESSION_SECRET
+openssl rand -base64 32 | wrangler secret put SESSION_SECRET   # deployed
+cp .dev.vars.example .dev.vars                                  # local dev
 ```
+
+A missing or short one is not a silent degradation: every sign-in answers
+`503 server_not_configured`, naming nothing, and the reason appears in the
+Worker's log.
 
 **This one value is the entire door → officer boundary, and it is the only
 thing standing in its way.** A session token is a base64url payload beside

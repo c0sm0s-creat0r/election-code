@@ -92,7 +92,19 @@ later schema change goes in a new numbered file.
 
 ## 3. Local development
 
-Three terminals:
+**First, the local secrets.** `wrangler dev` does not read the production secrets, so it needs its
+own file — without it every sign-in answers `503 server_not_configured`:
+
+```bash
+cd apps/api
+cp .dev.vars.example .dev.vars
+openssl rand -base64 32        # paste as SESSION_SECRET in .dev.vars
+```
+
+`.dev.vars` is gitignored. `SESSION_SECRET` must be at least 32 characters; a short or missing one is
+refused deliberately, because it is the whole door → officer boundary.
+
+Then three terminals:
 
 ```bash
 cd apps/api    && npx wrangler d1 migrations apply election --local && npm run dev   # :8787
@@ -276,6 +288,7 @@ you: the check belongs to the auditor.
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
+| Every sign-in returns 503 `server_not_configured` | `SESSION_SECRET` is missing or under 32 characters | Locally: create `apps/api/.dev.vars` (§3). Deployed: `wrangler secret put SESSION_SECRET` |
 | Sign-in works, everything after fails | The three hosts are not on one apex, so the cookie is never sent | Fix the hostnames. **Do not** set `origin: '*'` |
 | A door tablet shows a permission error mid-queue | The door session lapsed (see lifetimes below) | Sign in again. The 401/403 split exists so this reads as "sign in", not "not allowed" |
 | "Too many attempts" | Rate limit. 30/10min on staff sign-in, 300/10min on voting | Wait. The window is ten minutes, not an hour |
@@ -314,6 +327,9 @@ Each of these was a real decision, and each has a short reason.
   not anywhere.
 - **Never edit an applied migration.** New numbered file.
 - **Never relax CORS to `*` or to a reflected origin.**
+- **Never lower or remove the 32-character `SESSION_SECRET` floor** to make a deployment start. A
+  short secret is brute-forceable offline with no rate limit and no trace, and recovering it mints an
+  officer session for every society. Failing loudly at setup is the point.
 - **Never weaken the `guest` table by giving it a `usu_id`.** A guest cannot vote because the
   eligibility query has nothing to match — not because a check says so.
 - **Never leave `vote_receipt.live_receipt_hash` set after an election closes.** While set it links a

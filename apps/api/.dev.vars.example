@@ -1,0 +1,19 @@
+# Local development only. Copy to `.dev.vars` (gitignored) and fill in.
+#
+#   cp .dev.vars.example .dev.vars
+#   openssl rand -base64 32     # paste as SESSION_SECRET
+#
+# Without SESSION_SECRET, every sign-in returns 503 server_not_configured:
+# a short or missing secret is refused deliberately, because it is the whole
+# door -> officer boundary. See README.md.
+
+# At least 32 characters. Generate it; never type one.
+SESSION_SECRET=
+
+# Optional. Societies sign themselves up, so no key is needed to create one --
+# but a request that offers a WRONG key is still refused and audited, so if you
+# set this, set it to something you will actually send.
+SUPER_ADMIN_KEY=
+
+# The dev origins of the two frontends. Exact origins, comma-separated.
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174

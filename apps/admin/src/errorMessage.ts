@@ -12,6 +12,10 @@ export function staffMessage(error: unknown): string {
   if (error.status === 401) return 'That password was not recognised. Check it and try again.'
   if (error.status === 403) return 'That session does not have permission to do this.'
   if (error.status === 429) return 'Too many attempts. Please try again in a few minutes.'
+  // Configuration, not something the officer can fix by retrying.
+  if (error.status === 503) {
+    return 'This server is not fully set up yet. Contact whoever deployed it.'
+  }
   // A 409 is a rule, not a failure, and the API's wording states the rule.
   if (error.status === 409 || error.status === 400) return error.message
   return 'Something went wrong. Please try again.'

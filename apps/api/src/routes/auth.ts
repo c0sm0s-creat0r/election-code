@@ -19,9 +19,9 @@ import {
   cookieName,
   cookieOptions,
   isUsableSecret,
-  MIN_SECRET_LENGTH,
 } from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
+import { notConfigured } from '../http/notConfigured.js'
 import type { BatchRow } from '../db/types.js'
 import { requireRole, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
@@ -43,14 +43,10 @@ type SignInRole = keyof typeof TTL_SECONDS
 const DUMMY_HASH = 'pbkdf2-sha256$210000$BwcHBwcHBwcHBwcHBwcHBw==$wyu1lWWAh+nnX8b+mM2RXS+x6AYfbSoM8AAskjgywzs='
 
 async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
-  // Checked before any password work, and before the batch lookup, so a
-  // misconfigured deployment fails on the very first sign-in attempt rather
-  // than issuing tokens signed with a secret a laptop can crack overnight.
-  // The response says nothing about the secret beyond "this server is not
-  // configured" — the operator finds the detail in the Worker's logs.
-  if (!isUsableSecret(c.env.SESSION_SECRET)) {
-    throw new Error(`SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`)
-  }
+  // Before any password work or batch lookup: a misconfigured deployment must
+  // fail on the first attempt rather than issue tokens signed with a secret a
+  // laptop can crack overnight.
+  if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
 
   const batchId = c.req.param('id')
   const parsed = signInSchema.safeParse(await c.req.json().catch(() => undefined))
