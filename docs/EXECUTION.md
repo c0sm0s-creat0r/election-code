@@ -221,8 +221,13 @@ never deletes anyone.
 
 ### On the door
 
-The volunteer signs in at `/b/<slug>/door` on their own phone with the **door** password. The roll
-loads once, then search filters instantly with no network — it keeps working if the venue wifi drops.
+The volunteer signs in at `/b/<slug>/door` on their own phone with the **door** password. **It asks
+every time**, deliberately: this is the one device that gets handed round a desk, and the officer's
+own browser holds an officer session that is not a door session. If the session ends mid-shift the
+password form comes back with a reason rather than leaving the screen stuck.
+
+The roll loads once, then search filters instantly with no network — it keeps working if the venue wifi
+drops.
 
 - Search matches surname, first name **or USU ID**, so a member can just hand over their card.
 - Tap *Check in*. Tap again to undo if it was the wrong person.
@@ -290,7 +295,7 @@ you: the check belongs to the auditor.
 | --- | --- | --- |
 | Every sign-in returns 503 `server_not_configured` | `SESSION_SECRET` is missing or under 32 characters | Locally: create `apps/api/.dev.vars` (§3). Deployed: `wrangler secret put SESSION_SECRET` |
 | Sign-in works, everything after fails | The three hosts are not on one apex, so the cookie is never sent | Fix the hostnames. **Do not** set `origin: '*'` |
-| A door tablet shows a permission error mid-queue | The door session lapsed (see lifetimes below) | Sign in again. The 401/403 split exists so this reads as "sign in", not "not allowed" |
+| A door tablet shows a permission error mid-queue | The door session lapsed (see lifetimes below) | The password form returns by itself with a reason. Just re-enter the door password |
 | "Too many attempts" | Rate limit. 30/10min on staff sign-in, 300/10min on voting | Wait. The window is ten minutes, not an hour |
 | Close succeeded but there is no result | Worker died between the status flip and the seal | Click close again. It detects closed-but-unsealed and finishes sealing |
 | A voter says their vote did not go through | Usually it did — a lost response cannot return the receipt | Check the attendance export for their ID. They cannot get the receipt back; `LIMITATIONS.md` §1 |

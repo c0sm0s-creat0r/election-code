@@ -4,7 +4,7 @@
  */
 import { useState, type FormEvent } from 'react'
 import { doorSignIn } from '../api.js'
-import { staffMessage } from '../errorMessage.js'
+import { signInMessage } from '../errorMessage.js'
 
 export function DoorSignIn({ batchId, onSignedIn }: { batchId: string; onSignedIn: () => void }) {
   const [password, setPassword] = useState('')
@@ -21,7 +21,7 @@ export function DoorSignIn({ batchId, onSignedIn }: { batchId: string; onSignedI
       setPassword('')
       onSignedIn()
     } catch (caught) {
-      setError(staffMessage(caught))
+      setError(signInMessage(caught))
     } finally {
       setBusy(false)
     }

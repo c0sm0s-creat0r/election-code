@@ -7,7 +7,7 @@
  */
 import { useState, type FormEvent } from 'react'
 import { officerSignIn } from '../api.js'
-import { staffMessage } from '../errorMessage.js'
+import { signInMessage } from '../errorMessage.js'
 
 export type OfficerSignInProps = {
   batchId: string
@@ -31,7 +31,7 @@ export function OfficerSignIn({ batchId, onSignedIn }: OfficerSignInProps) {
       setPassword('')
       onSignedIn()
     } catch (caught) {
-      setError(staffMessage(caught))
+      setError(signInMessage(caught))
     } finally {
       setBusy(false)
     }

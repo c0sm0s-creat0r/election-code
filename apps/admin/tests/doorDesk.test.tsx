@@ -54,8 +54,11 @@ afterEach(() => vi.unstubAllGlobals())
 const search = (value: string) =>
   fireEvent.change(screen.getByLabelText(/search/i), { target: { value } })
 
+let onSessionLost: ReturnType<typeof vi.fn>
+
 const show = async () => {
-  render(<DoorDesk batchId="b1" />)
+  onSessionLost = vi.fn()
+  render(<DoorDesk batchId="b1" onSessionLost={onSessionLost} />)
   await waitFor(() => expect(screen.getByText(/Lovelace/)).toBeTruthy())
 }
 
@@ -120,6 +123,29 @@ describe('DoorDesk', () => {
     fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /undo check-in for Ada Lovelace/i })).toBeTruthy())
+  })
+
+  it('HANDS BACK to the sign-in form on a 403, instead of stranding the volunteer', async () => {
+    // requireRole answers 403 for a valid session of the wrong role — an officer
+    // opening the door desk. The desk used to render and then fail every request
+    // with "that session does not have permission to do this", with nothing to
+    // click. Now it returns to the password form.
+    stubApi((url) => (url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined))
+    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
+  })
+
+  it('hands back on a 401 too, so a lapsed shift is recoverable', async () => {
+    stubApi((url) => (url.endsWith('/roll') ? { status: 401, body: { error: 'unauthenticated' } } : undefined))
+    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
+  })
+
+  it('does NOT hand back on an ordinary failure, which is not a session problem', async () => {
+    stubApi((url) => (url.endsWith('/roll') ? { status: 500, body: { error: 'internal' } } : undefined))
+    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(onSessionLost).not.toHaveBeenCalled()
   })
 
   it('shows an already-checked-in member as checked, with an undo', async () => {

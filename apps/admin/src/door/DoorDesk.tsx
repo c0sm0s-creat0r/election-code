@@ -25,9 +25,22 @@ import {
   addDoorVoter, addGuest, checkIn, getQuorum, getRoll, listGuests, removeGuest, undoCheckIn,
   type Guest, type Quorum, type RollEntry,
 } from '../api.js'
+import { ApiError } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
-export type DoorDeskProps = { batchId: string }
+/** 401: no session. 403: a valid session of the wrong role. Both need the form. */
+const isSessionFailure = (caught: unknown): boolean =>
+  caught instanceof ApiError && (caught.status === 401 || caught.status === 403)
+
+export type DoorDeskProps = {
+  batchId: string
+  /**
+   * Called when the API says this session is no longer a door session — a lapsed
+   * cookie, or an officer cookie on a door route, which `requireRole` answers 403.
+   * Without this the desk showed a permission error and offered nothing to click.
+   */
+  onSessionLost: () => void
+}
 
 /** A roll row with its search text precomputed, so a keystroke allocates nothing. */
 type Searchable = RollEntry & { haystack: string }
@@ -39,7 +52,7 @@ const searchable = (entry: RollEntry): Searchable => ({
   haystack: `${entry.first_name} ${entry.last_name} ${entry.usu_id}`.toLowerCase(),
 })
 
-export function DoorDesk({ batchId }: DoorDeskProps) {
+export function DoorDesk({ batchId, onSessionLost }: DoorDeskProps) {
   const [roll, setRoll] = useState<Searchable[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
   const [quorum, setQuorum] = useState<Quorum | undefined>(undefined)
@@ -57,9 +70,10 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
       setGuests(guestRows)
       setQuorum(counts)
     } catch (caught) {
+      if (isSessionFailure(caught)) return onSessionLost()
       setError(staffMessage(caught))
     }
-  }, [batchId])
+  }, [batchId, onSessionLost])
 
   useEffect(() => { void loadAll() }, [loadAll])
 
@@ -84,6 +98,7 @@ export function DoorDesk({ batchId }: DoorDeskProps) {
       await action()
       setQuorum(await getQuorum(batchId))
     } catch (caught) {
+      if (isSessionFailure(caught)) return onSessionLost()
       setError(staffMessage(caught))
     }
   }

@@ -28,10 +28,20 @@ export function useStaffSession(batchId: string | undefined, probe: (batchId: st
       .then(() => { if (live) setState('signed-in') })
       .catch((caught: unknown) => {
         if (!live) return
-        // Only a 401 means "not signed in". A network failure or a 503 is not a
-        // reason to ask for a password — that would train someone to retype it
-        // at a broken server.
-        setState(caught instanceof ApiError && caught.status === 401 ? 'signed-out' : 'signed-in')
+        /**
+         * 401 *and* 403 both mean "not signed in as this role".
+         *
+         * `requireRole` answers 403 when you hold a valid session for a different
+         * role on the same batch — an officer opening the door desk, say. Treating
+         * that as signed-in was a real defect: the desk rendered, every request it
+         * made came back 403, and the screen showed "that session does not have
+         * permission to do this" with no way to sign in.
+         *
+         * A network failure or a 503 still is not a reason to ask for a password;
+         * that would train someone to retype it at a broken server.
+         */
+        const status = caught instanceof ApiError ? caught.status : 0
+        setState(status === 401 || status === 403 ? 'signed-out' : 'signed-in')
       })
     return () => { live = false }
   }, [batchId, probe])
