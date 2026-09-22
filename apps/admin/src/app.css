@@ -134,3 +134,18 @@
   color: var(--muted);
   margin-left: auto;
 }
+
+/* A link that is the main thing to do on the screen, so it looks like one. */
+.centred { text-align: center; }
+
+.button-link {
+  display: inline-block;
+  min-height: var(--touch);
+  line-height: var(--touch);
+  padding: 0 calc(var(--step) * 3);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}

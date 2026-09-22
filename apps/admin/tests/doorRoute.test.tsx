@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { DoorRoute } from '../src/door/index.js'
-import { testBatch } from './renderOfficer.js'
+import { renderRouted, testBatch } from './renderOfficer.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -28,7 +28,7 @@ describe('DoorRoute', () => {
   it('ASKS FOR THE PASSWORD EVERY TIME, without probing for a session first', async () => {
     const spy = vi.fn(async () => new Response('[]', { status: 200, headers: json }))
     vi.stubGlobal('fetch', spy)
-    render(<DoorRoute batch={testBatch} />)
+    renderRouted(<DoorRoute batch={testBatch} />)
     expect(screen.getByLabelText(/door password/i)).toBeTruthy()
     // No probe: the door does not ask the server whether it is already signed in.
     expect(spy).not.toHaveBeenCalled()
@@ -36,7 +36,7 @@ describe('DoorRoute', () => {
 
   it('opens the desk once the password is accepted', async () => {
     stub()
-    render(<DoorRoute batch={testBatch} />)
+    renderRouted(<DoorRoute batch={testBatch} />)
     fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'door-password-1' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByLabelText(/search/i)).toBeTruthy())
@@ -51,7 +51,7 @@ describe('DoorRoute', () => {
       if (!signedIn) return undefined
       return url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined
     })
-    render(<DoorRoute batch={testBatch} />)
+    renderRouted(<DoorRoute batch={testBatch} />)
     fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'door-password-1' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByText(/door session ended/i)).toBeTruthy())
@@ -60,7 +60,7 @@ describe('DoorRoute', () => {
 
   it('a wrong password reads as a wrong password, not as an ended session', async () => {
     stub((url) => (url.includes('/door/session') ? { status: 401, body: { error: 'unauthorized' } } : undefined))
-    render(<DoorRoute batch={testBatch} />)
+    renderRouted(<DoorRoute batch={testBatch} />)
     fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'wrong' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/not recognised/i))

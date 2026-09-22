@@ -109,15 +109,6 @@ describe('ElectionDetail', () => {
     expect(screen.getByRole('link', { name: /view the result/i })).toBeTruthy()
   })
 
-  it('offers the per-election exports once closed, which nothing else could reach', () => {
-    // Exports was only ever rendered with electionId undefined, so the ballot,
-    // candidate and result files -- the whole offline-recount story -- were
-    // unreachable UI.
-    show('closed')
-    expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /candidates \(csv\)/i })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /sealed result \(json\)/i })).toBeTruthy()
-  })
 
   it('offers no result link while open', async () => {
     stub(200, turnout)

@@ -17,7 +17,7 @@ export function Exports({ batchId, electionId }: ExportsProps) {
   const base = `${API_BASE}/api/batches/${batchId}`
   return (
     <section className="stack">
-      <h2>Exports</h2>
+      <h3>{electionId === undefined ? 'Exports' : 'Download this election'}</h3>
 
       {electionId !== undefined && (
         <ul className="export-list plain-list">
@@ -51,19 +51,24 @@ export function Exports({ batchId, electionId }: ExportsProps) {
         </ul>
       )}
 
-      <ul className="export-list plain-list">
-        <li>
-          <a href={`${base}/attendance.csv`}>Attendance across the AGM (CSV)</a>
-          <span className="muted">Every election's mark-off in one file, for the minutes.</span>
-        </li>
-        <li>
-          <a href={`${base}/guests.csv`}>Guests (CSV)</a>
-          <span className="muted">
-            People who attended and could not vote. Separate from attendance on purpose — attendance
-            is about voting.
-          </span>
-        </li>
-      </ul>
+      {/* Only when no election was named. The whole-AGM files have their own
+          screen; repeating them under every election's result would suggest they
+          were about that election. */}
+      {electionId === undefined && (
+        <ul className="export-list plain-list">
+          <li>
+            <a href={`${base}/attendance.csv`}>Attendance across the AGM (CSV)</a>
+            <span className="muted">Every election's mark-off in one file, for the minutes.</span>
+          </li>
+          <li>
+            <a href={`${base}/guests.csv`}>Guests (CSV)</a>
+            <span className="muted">
+              People who attended and could not vote. Separate from attendance on purpose —
+              attendance is about voting.
+            </span>
+          </li>
+        </ul>
+      )}
     </section>
   )
 }

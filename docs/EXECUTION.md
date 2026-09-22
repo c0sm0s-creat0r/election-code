@@ -230,7 +230,7 @@ The roll loads once, then search filters instantly with no network — it keeps 
 drops.
 
 - Search matches surname, first name **or USU ID**, so a member can just hand over their card.
-- Tap *Check in*. Tap again to undo if it was the wrong person.
+- Tap *Check in*. If it was the wrong person, *Check out* reverses it.
 - An ineligible member appears but cannot be checked in, with the reason shown. That is a membership
   question, not a typo.
 - **Add guest** — someone attending who is not a member. They are counted in the head-count and
@@ -267,7 +267,7 @@ A voter who wants to change their vote uses their receipt to cancel and vote aga
 ### After the AGM
 
 1. **Export everything first.** The per-election files — ballots CSV, candidates CSV, sealed result
-   JSON, that election's attendance — are on the election's own screen once it is closed. The
+   JSON, that election's attendance — are **on the result page**, beside the digest they describe. The
    whole-AGM attendance and the guest list are under *Exports*. Keep them all with the minutes.
 2. **Then purge the roll.** Officer → `DELETE /api/batches/<id>/roll`. It refuses while any election
    is still open or in draft. It deletes the roll, the check-ins and the guest list, and keeps the

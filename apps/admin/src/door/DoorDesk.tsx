@@ -21,6 +21,7 @@
  * stranger gets a ballot.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import {
   addDoorVoter, addGuest, checkIn, getQuorum, getRoll, listGuests, removeGuest, undoCheckIn,
   type Guest, type Quorum, type RollEntry,
@@ -34,6 +35,8 @@ const isSessionFailure = (caught: unknown): boolean =>
 
 export type DoorDeskProps = {
   batchId: string
+  /** For the back link. The door sits outside the officer layout, so it is passed in. */
+  slug: string
   /**
    * Called when the API says this session is no longer a door session — a lapsed
    * cookie, or an officer cookie on a door route, which `requireRole` answers 403.
@@ -52,7 +55,7 @@ const searchable = (entry: RollEntry): Searchable => ({
   haystack: `${entry.first_name} ${entry.last_name} ${entry.usu_id}`.toLowerCase(),
 })
 
-export function DoorDesk({ batchId, onSessionLost }: DoorDeskProps) {
+export function DoorDesk({ batchId, slug, onSessionLost }: DoorDeskProps) {
   const [roll, setRoll] = useState<Searchable[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
   const [quorum, setQuorum] = useState<Quorum | undefined>(undefined)
@@ -105,6 +108,9 @@ export function DoorDesk({ batchId, onSessionLost }: DoorDeskProps) {
 
   return (
     <section className="stack">
+      <p>
+        <Link to={`/b/${slug}`}>← Back to admin</Link>
+      </p>
       <h2>Door check-in</h2>
 
       <div className="field">
@@ -132,13 +138,13 @@ export function DoorDesk({ batchId, onSessionLost }: DoorDeskProps) {
             ) : entry.checked_in_at !== null ? (
               <button
                 type="button"
-                aria-label={`Undo check-in for ${entry.first_name} ${entry.last_name}`}
+                aria-label={`Check out ${entry.first_name} ${entry.last_name}`}
                 onClick={() => void act(async () => {
                   await undoCheckIn(batchId, entry.usu_id)
                   checkedInAt(entry.usu_id, null)
                 })}
               >
-                Checked in — undo
+                Check out
               </button>
             ) : (
               <button

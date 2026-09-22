@@ -36,6 +36,7 @@ export function DoorRoute({ batch }: { batch: Batch }) {
   return (
     <DoorDesk
       batchId={batch.id}
+      slug={batch.slug}
       onSessionLost={() => {
         setSignedIn(false)
         setNote('Your door session ended. Please enter the door password again to carry on.')

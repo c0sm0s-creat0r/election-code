@@ -79,6 +79,24 @@ describe('Result', () => {
     await waitFor(() => expect(screen.getByText(document_.ballots_sha256)).toBeTruthy())
   })
 
+  it('OFFERS THE EXPORTS FOR THIS ELECTION, where the files are about this count', async () => {
+    // They used to sit on the election screen, one step away from the result they
+    // describe; the ballot CSV and the digest belong beside each other.
+    stub(200, document_)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
+    await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())
+    expect(screen.getByRole('link', { name: /candidates \(csv\)/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /sealed result \(json\)/i })).toBeTruthy()
+  })
+
+  it('does NOT repeat the whole-AGM exports, which have their own screen', async () => {
+    stub(200, document_)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
+    await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())
+    expect(screen.queryByRole('link', { name: /across the AGM/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /guests \(csv\)/i })).toBeNull()
+  })
+
   it('says when a result supersedes an earlier one', async () => {
     stub(200, { ...document_, overridden: true })
     renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)

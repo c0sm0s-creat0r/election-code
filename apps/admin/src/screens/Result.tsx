@@ -12,6 +12,7 @@ import { ApiError, getResult, overrideTieBreak, type OverrideRequest, type Resul
 import { staffMessage } from '../errorMessage.js'
 import { Link } from 'react-router'
 import { RoundsTable } from '../components/RoundsTable.js'
+import { Exports } from './Exports.js'
 import { TieBreaks } from '../components/TieBreaks.js'
 
 export type ResultProps = { batchId: string; electionId: string; slug: string }
@@ -86,6 +87,8 @@ export function Result({ batchId, electionId, slug }: ResultProps) {
       <RoundsTable rounds={result.rounds} quota={result.quota} />
 
       <TieBreaks tieBreaks={result.tie_breaks} candidates={candidates} onOverride={applyOverride} />
+
+      <Exports batchId={batchId} electionId={electionId} />
 
       <h3>The seal</h3>
       <p className="muted">

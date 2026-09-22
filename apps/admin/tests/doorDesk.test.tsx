@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { DoorDesk } from '../src/door/DoorDesk.js'
+import { renderRouted } from './renderOfficer.js'
 
 const roll = [
   { usu_id: '2400001', first_name: 'Ada', last_name: 'Lovelace', eligible: 1, checked_in_at: null },
@@ -58,7 +59,7 @@ let onSessionLost: ReturnType<typeof vi.fn>
 
 const show = async () => {
   onSessionLost = vi.fn()
-  render(<DoorDesk batchId="b1" onSessionLost={onSessionLost} />)
+  renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={onSessionLost} />)
   await waitFor(() => expect(screen.getByText(/Lovelace/)).toBeTruthy())
 }
 
@@ -114,7 +115,7 @@ describe('DoorDesk', () => {
     const before = rollFetches()
     fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /undo check-in for Ada Lovelace/i })).toBeTruthy())
+      expect(screen.getByRole('button', { name: /check out Ada Lovelace/i })).toBeTruthy())
     expect(rollFetches()).toBe(before)
   })
 
@@ -122,7 +123,7 @@ describe('DoorDesk', () => {
     stubApi(); await show()
     fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /undo check-in for Ada Lovelace/i })).toBeTruthy())
+      expect(screen.getByRole('button', { name: /check out Ada Lovelace/i })).toBeTruthy())
   })
 
   it('HANDS BACK to the sign-in form on a 403, instead of stranding the volunteer', async () => {
@@ -131,26 +132,31 @@ describe('DoorDesk', () => {
     // with "that session does not have permission to do this", with nothing to
     // click. Now it returns to the password form.
     stubApi((url) => (url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined))
-    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
     await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
   })
 
   it('hands back on a 401 too, so a lapsed shift is recoverable', async () => {
     stubApi((url) => (url.endsWith('/roll') ? { status: 401, body: { error: 'unauthenticated' } } : undefined))
-    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
     await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
   })
 
   it('does NOT hand back on an ordinary failure, which is not a session problem', async () => {
     stubApi((url) => (url.endsWith('/roll') ? { status: 500, body: { error: 'internal' } } : undefined))
-    render(<DoorDesk batchId="b1" onSessionLost={(onSessionLost = vi.fn())} />)
+    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
     expect(onSessionLost).not.toHaveBeenCalled()
   })
 
-  it('shows an already-checked-in member as checked, with an undo', async () => {
+  it('offers CHECK OUT for someone already checked in', async () => {
     stubApi(); await show()
-    expect(screen.getByRole('button', { name: /undo check-in for Alan Turing/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /check out Alan Turing/i })).toBeTruthy()
+  })
+
+  it('offers a way back to the officer area', async () => {
+    stubApi(); await show()
+    expect(screen.getByRole('link', { name: /back to admin/i }).getAttribute('href')).toBe('/b/soc')
   })
 
   it('CANNOT check in an ineligible member, and says why', async () => {

@@ -24,7 +24,6 @@ import {
   type AdminElection, type Turnout,
 } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
-import { Exports } from './Exports.js'
 
 export type ElectionDetailProps = {
   batchId: string
@@ -191,12 +190,11 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
       )}
 
       {election.status === 'closed' && (
-        <>
-          <p>
-            <Link to={`/b/${slug}/elections/${election.id}/result`}>View the result</Link>
-          </p>
-          <Exports batchId={batchId} electionId={election.id} />
-        </>
+        <p className="centred">
+          <Link className="button-link" to={`/b/${slug}/elections/${election.id}/result`}>
+            View the result
+          </Link>
+        </p>
       )}
     </section>
   )
