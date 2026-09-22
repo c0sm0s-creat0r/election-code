@@ -199,3 +199,15 @@
 }
 
 .danger:disabled { border-color: var(--rule); background: var(--rule); color: var(--muted); }
+
+/* A screen's title with its one primary action beside it, rather than a form
+   sitting open below the thing it acts on. */
+.screen-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--step);
+}
+
+.screen-head h2 { margin: 0; }

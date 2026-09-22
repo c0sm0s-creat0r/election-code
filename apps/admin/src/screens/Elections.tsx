@@ -23,6 +23,9 @@ export function Elections() {
   const [seats, setSeats] = useState('1')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // The form is a disclosure, not a permanent fixture. Creating an election is a
+  // once-per-office act; the list is what an officer comes back to.
+  const [creating, setCreating] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -43,6 +46,7 @@ export function Elections() {
       const made = await createElection(batchId, name.trim(), parsedSeats)
       setName('')
       setSeats('1')
+      setCreating(false)
       await reload()
       setSelected(made.id)
     } catch (caught) {
@@ -54,11 +58,51 @@ export function Elections() {
 
   const current = elections.find((e) => e.id === selected)
 
+  const closeForm = () => {
+    setCreating(false)
+    setName('')
+    setSeats('1')
+  }
+
   return (
     <section className="stack">
-      <h2>Elections</h2>
+      <div className="screen-head">
+        <h2>Elections</h2>
+        <button type="button" aria-expanded={creating} onClick={() => (creating ? closeForm() : setCreating(true))}>
+          New election
+        </button>
+      </div>
 
       {error !== '' && <p className="error" role="alert">{error}</p>}
+
+      {creating && (
+        <div className="adder stack">
+          <div className="field">
+            <label htmlFor="election-name">Name</label>
+            <input id="election-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="election-seats">Seats</label>
+            <input
+              id="election-seats"
+              inputMode="numeric"
+              value={seats}
+              onChange={(e) => setSeats(e.target.value)}
+            />
+          </div>
+          <div className="add-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={name.trim() === '' || busy}
+              onClick={() => void create()}
+            >
+              Create election
+            </button>
+            <button type="button" onClick={closeForm}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {elections.length === 0 ? (
         <p className="muted">No elections yet.</p>
@@ -77,24 +121,6 @@ export function Elections() {
           ))}
         </ul>
       )}
-
-      <h3>New election</h3>
-      <div className="field">
-        <label htmlFor="election-name">Name</label>
-        <input id="election-name" value={name} onChange={(e) => setName(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="election-seats">Seats</label>
-        <input
-          id="election-seats"
-          inputMode="numeric"
-          value={seats}
-          onChange={(e) => setSeats(e.target.value)}
-        />
-      </div>
-      <button type="button" className="primary" disabled={name.trim() === '' || busy} onClick={() => void create()}>
-        Create election
-      </button>
 
       {current && (
         <ElectionDetail

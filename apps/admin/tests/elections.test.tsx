@@ -10,6 +10,9 @@ const draft = {
   candidates: [{ id: 'a', name: 'Alex' }],
 }
 
+/** The form is a disclosure now, so every creation test opens it first. */
+const openTheForm = () => fireEvent.click(screen.getByRole('button', { name: /new election/i }))
+
 const stubList = (list: unknown[], extra: (url: string) => unknown = () => undefined) =>
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const custom = extra(url)
@@ -58,15 +61,61 @@ describe('Elections', () => {
     }))
     renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
+    openTheForm()
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Secretary' } })
     fireEvent.click(screen.getByRole('button', { name: /create election/i }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Secretary' })).toBeTruthy())
+  })
+
+  it('keeps the form out of the way until it is asked for', async () => {
+    stubList([draft])
+    renderOfficerScreen(<Elections />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'President' })).toBeTruthy())
+    expect(screen.queryByLabelText(/name/i)).toBeNull()
+
+    openTheForm()
+    expect(screen.getByLabelText(/name/i)).toBeTruthy()
+    expect(screen.getByLabelText(/seats/i)).toBeTruthy()
+  })
+
+  it('closes the form again, discarding what was typed', async () => {
+    stubList([])
+    renderOfficerScreen(<Elections />)
+    await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
+    openTheForm()
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Secretary' } })
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    expect(screen.queryByLabelText(/name/i)).toBeNull()
+
+    openTheForm()
+    expect(screen.getByLabelText(/name/i)).toHaveProperty('value', '')
+  })
+
+  it('closes the form once the election exists', async () => {
+    const made = { id: 'e9', name: 'Secretary', seats: 1, status: 'draft' as const, candidates: [] }
+    let created = false
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = url.endsWith('/batches/b1/elections')
+        ? ((created = true), made)
+        : created ? [made] : []
+      return new Response(JSON.stringify(body), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }))
+    renderOfficerScreen(<Elections />)
+    await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
+    openTheForm()
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Secretary' } })
+    fireEvent.click(screen.getByRole('button', { name: /create election/i }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Secretary' })).toBeTruthy())
+    expect(screen.queryByLabelText(/^name$/i)).toBeNull()
   })
 
   it('will not create an election with no name', async () => {
     stubList([])
     renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
+    openTheForm()
     expect(screen.getByRole('button', { name: /create election/i })).toHaveProperty('disabled', true)
   })
 
@@ -74,6 +123,7 @@ describe('Elections', () => {
     stubList([])
     renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
+    openTheForm()
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'x' } })
     fireEvent.change(screen.getByLabelText(/seats/i), { target: { value: '0' } })
     const spyBefore = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length
