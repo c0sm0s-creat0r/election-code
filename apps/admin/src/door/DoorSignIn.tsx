@@ -29,9 +29,9 @@ export function DoorSignIn({ batchId, onSignedIn }: { batchId: string; onSignedI
 
   return (
     <form className="stack" onSubmit={submit}>
-      <h2>Door sign in</h2>
+      <h2>Check-in desk</h2>
       <div className="field">
-        <label htmlFor="door-password">Door password</label>
+        <label htmlFor="door-password">Check-in desk password</label>
         <input
           id="door-password"
           type="password"

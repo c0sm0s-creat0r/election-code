@@ -66,9 +66,24 @@ export function OfficerLayout() {
   return (
     <>
       <header className="officer-header">
-        <h1>
-          <Link to={base}>{batch.branding.title}</Link>
-        </h1>
+        {/*
+          Sign out sits with the society's name rather than in the nav. It is not a
+          destination, and a row of places to go with one way out on the end of it
+          invites the tap that ends the session by accident — on a phone the nav
+          wraps, so which row it lands on is not predictable.
+        */}
+        <div className="officer-title">
+          <h1>
+            <Link to={base}>{batch.branding.title}</Link>
+          </h1>
+          <button
+            type="button"
+            className="sign-out"
+            onClick={() => { void officerSignOut(batch.id).finally(forget) }}
+          >
+            Sign out
+          </button>
+        </div>
         <nav aria-label="Officer">
           <ul className="officer-nav plain-list">
             {NAV.map((item) => {
@@ -82,18 +97,9 @@ export function OfficerLayout() {
               )
             })}
             <li>
-              {/* A full navigation on purpose: the door is a separate chunk and a
-                  separate password, so it is a departure rather than a tab. */}
-              <a href={`${base}/door`}>Door desk</a>
-            </li>
-            <li>
-              <button
-                type="button"
-                className="sign-out"
-                onClick={() => { void officerSignOut(batch.id).finally(forget) }}
-              >
-                Sign out
-              </button>
+              {/* A full navigation on purpose: the check-in desk is a separate chunk
+                  and a separate password, so it is a departure rather than a tab. */}
+              <a href={`${base}/door`}>Check-in desk</a>
             </li>
           </ul>
         </nav>

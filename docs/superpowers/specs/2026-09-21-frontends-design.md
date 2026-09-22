@@ -328,7 +328,7 @@ It maps the API's error contract to actions rather than to messages:
 | Response | What the UI does |
 | --- | --- |
 | `401` | Re-show sign-in. **Never a dead end** — the door cookie's TTL is an hour and an AGM runs longer. |
-| `403` + `code` | The specific remedy. `not_checked_in` → "see the door desk"; `ineligible` → "membership problem". |
+| `403` + `code` | The specific remedy. `not_checked_in` → "see the check-in desk"; `ineligible` → "membership problem". |
 | `409` | State the rule, not the failure: "voting has closed", "candidates are frozen once voting opens". |
 | `429` + `retry_after` | "Too many attempts — try again in N minutes." |
 | `5xx` | "Something went wrong at our end." Never the server's message. |
@@ -375,8 +375,8 @@ USU id and surname, both matching the roll (spec §4). The API's distinction bet
 surfaced as intended:
 
 - **401** — wrong surname or unknown id. Deliberately vague, identically for both.
-- **403 `not_checked_in`** — "You're not checked in yet. See the door desk." Actionable.
-- **403 `ineligible`** — "Our records show your membership has ended. See the door desk."
+- **403 `not_checked_in`** — "You're not checked in yet. See the check-in desk." Actionable.
+- **403 `ineligible`** — "Our records show your membership has ended. See the check-in desk."
 
 ### 4.3 The ballot
 
@@ -418,7 +418,7 @@ equivalent built anyway — which is arrows. Building both doubles the work on t
 | --- | --- |
 | `201` | Receipt screen: token shown once, copy button, written to `localStorage` (spec §4). |
 | `400` | The reason string from `validateBallot`, which is written to be read by a voter mid-ballot. |
-| `403` | "You are no longer checked in — see the door desk." (An officer un-checked them in after sign-in; the API re-verifies inside the transaction.) |
+| `403` | "You are no longer checked in — see the check-in desk." (An officer un-checked them in after sign-in; the API re-verifies inside the transaction.) |
 | `409` | "Your ballot is already recorded." Offers the receipt-check screen. |
 | `401` | Re-show sign-in **with the draft ranking preserved**, so a lapsed session does not cost a voter their work. |
 | network error | See below. |

@@ -59,7 +59,7 @@ export function Ballot({
         return
       }
       if (caught.status === 403) {
-        setError('You are no longer checked in. Please see the door desk.')
+        setError('You are no longer checked in. Please see the check-in desk.')
         return
       }
       if (caught.status === 409) {

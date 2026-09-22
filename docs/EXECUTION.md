@@ -16,10 +16,15 @@ For *why* it is built this way, read
 | `packages/styles` | Design tokens and element defaults, shared by both frontends. | nothing — imported |
 | `apps/api` | Hono on Workers. Bindings: D1, KV, R2. | `api.dalyell.com.au` |
 | `apps/voter` | Preact. The ballot. | `vote.dalyell.com.au` |
-| `apps/admin` | React 19. Officer screens + the door desk at `/b/:slug/door`. | `admin.dalyell.com.au` |
+| `apps/admin` | React 19. Officer screens + the check-in desk at `/b/:slug/door`. | `admin.dalyell.com.au` |
 | `e2e` | One Playwright smoke test. | nothing — run locally |
 
-Three deploys. The door desk is a route of the admin app, not a fourth deployment.
+Three deploys. The check-in desk is a route of the admin app, not a fourth deployment.
+
+**One naming note.** The desk is called the **check-in desk** everywhere a person can see it. Its URL is
+still `/door`, its session role is still `door`, and the API field is still `door_password` — renaming
+those would invalidate every live session and rewrite the audit trail for a label. Do not "fix" the
+mismatch by renaming the API.
 
 ### The precondition that breaks everything if you get it wrong
 
@@ -182,14 +187,14 @@ Post-deploy, verify in this order:
 
 - the society's name, and the web address derived from it (voters will use `vote.dalyell.com.au/<slug>`)
 - an **officer password** — full control of every election
-- a **door password** — check-in only, and it must be different from the officer password
+- a **check-in desk password** — check-in only, and it must be different from the officer password
 - an accent colour
 
 Then write both passwords down. They are hashed with PBKDF2 and **cannot be recovered or reset** —
 there is no email in this system, so there is no reset path. Losing the officer password means losing
 the society.
 
-Afterwards you get all three URLs: `/b/<slug>` for officers, `/b/<slug>/door` for the door desk, and
+Afterwards you get all three URLs: `/b/<slug>` for officers, `/b/<slug>/door` for the check-in desk, and
 `/<slug>` on the voter site. `admin.dalyell.com.au/` lists every registered society, so nobody needs
 to memorise a slug.
 
@@ -352,7 +357,7 @@ you: the check belongs to the auditor.
 | --- | --- | --- |
 | Every sign-in returns 503 `server_not_configured` | `SESSION_SECRET` is missing or under 32 characters | Locally: create `apps/api/.dev.vars` (§3). Deployed: `wrangler secret put SESSION_SECRET` |
 | Sign-in works, everything after fails | The three hosts are not on one apex, so the cookie is never sent | Fix the hostnames. **Do not** set `origin: '*'` |
-| A door tablet shows a permission error mid-queue | The door session lapsed (see lifetimes below) | The password form returns by itself with a reason. Just re-enter the door password |
+| A check-in tablet shows a permission error mid-queue | The desk session lapsed (see lifetimes below) | The password form returns by itself with a reason. Just re-enter the check-in desk password |
 | "Too many attempts" | Rate limit. 30/10min on staff sign-in, 300/10min on voting | Wait. The window is ten minutes, not an hour |
 | Close succeeded but there is no result | Worker died between the status flip and the seal | Click close again. It detects closed-but-unsealed and finishes sealing |
 | A voter says their vote did not go through | Usually it did — a lost response cannot return the receipt | Check the attendance export for their ID. They cannot get the receipt back; `LIMITATIONS.md` §1 |

@@ -56,11 +56,11 @@ describe('Ballot', () => {
     await waitFor(() => expect(onCast).toHaveBeenCalledWith('tok-1'))
   })
 
-  it('tells an un-checked-in voter to see the door desk', async () => {
+  it('tells an un-checked-in voter to see the check-in desk', async () => {
     stub(403, { error: 'not eligible', code: 'not_eligible' })
     renderBallot()
     castFor('Alex')
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/door desk/i))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/check-in desk/i))
   })
 
   it('reports an already-recorded ballot without implying failure', async () => {

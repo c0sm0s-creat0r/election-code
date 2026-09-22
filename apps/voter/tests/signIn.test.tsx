@@ -36,11 +36,11 @@ describe('SignIn', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/check your usu id and surname/i))
   })
 
-  it('tells a not-checked-in voter to see the door desk', async () => {
+  it('tells a not-checked-in voter to see the check-in desk', async () => {
     stub(403, { error: 'not checked in', code: 'not_checked_in' })
     render(<SignIn batchId="b1" onSignedIn={vi.fn()} />)
     fill('2400001', 'Lovelace')
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/door desk/i))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/check-in desk/i))
   })
 
   it('tells an ineligible member what the problem is', async () => {

@@ -128,7 +128,7 @@ describe('DoorDesk', () => {
 
   it('HANDS BACK to the sign-in form on a 403, instead of stranding the volunteer', async () => {
     // requireRole answers 403 for a valid session of the wrong role — an officer
-    // opening the door desk. The desk used to render and then fail every request
+    // opening the check-in desk. The desk used to render and then fail every request
     // with "that session does not have permission to do this", with nothing to
     // click. Now it returns to the password form.
     stubApi((url) => (url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined))

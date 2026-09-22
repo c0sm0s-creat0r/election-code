@@ -29,7 +29,7 @@ describe('DoorRoute', () => {
     const spy = vi.fn(async () => new Response('[]', { status: 200, headers: json }))
     vi.stubGlobal('fetch', spy)
     renderRouted(<DoorRoute batch={testBatch} />)
-    expect(screen.getByLabelText(/door password/i)).toBeTruthy()
+    expect(screen.getByLabelText(/check-in desk password/i)).toBeTruthy()
     // No probe: the door does not ask the server whether it is already signed in.
     expect(spy).not.toHaveBeenCalled()
   })
@@ -37,7 +37,7 @@ describe('DoorRoute', () => {
   it('opens the desk once the password is accepted', async () => {
     stub()
     renderRouted(<DoorRoute batch={testBatch} />)
-    fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'door-password-1' } })
+    fireEvent.change(screen.getByLabelText(/check-in desk password/i), { target: { value: 'door-password-1' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByLabelText(/search/i)).toBeTruthy())
   })
@@ -52,16 +52,16 @@ describe('DoorRoute', () => {
       return url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined
     })
     renderRouted(<DoorRoute batch={testBatch} />)
-    fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'door-password-1' } })
+    fireEvent.change(screen.getByLabelText(/check-in desk password/i), { target: { value: 'door-password-1' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByText(/door session ended/i)).toBeTruthy())
-    expect(screen.getByLabelText(/door password/i)).toBeTruthy()
+    expect(screen.getByLabelText(/check-in desk password/i)).toBeTruthy()
   })
 
   it('a wrong password reads as a wrong password, not as an ended session', async () => {
     stub((url) => (url.includes('/door/session') ? { status: 401, body: { error: 'unauthorized' } } : undefined))
     renderRouted(<DoorRoute batch={testBatch} />)
-    fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: 'wrong' } })
+    fireEvent.change(screen.getByLabelText(/check-in desk password/i), { target: { value: 'wrong' } })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/not recognised/i))
   })

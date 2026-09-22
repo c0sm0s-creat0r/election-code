@@ -81,7 +81,7 @@ export function SignUp() {
             Officers: <code>/b/{created.slug}</code>
           </li>
           <li>
-            Door volunteers: <code>/b/{created.slug}/door</code>
+            Check-in volunteers: <code>/b/{created.slug}/door</code>
           </li>
           <li>
             Voters: the voter site, at <code>/{created.slug}</code>
@@ -140,7 +140,7 @@ export function SignUp() {
       </div>
 
       <div className="field">
-        <label htmlFor="door-pw">Door password</label>
+        <label htmlFor="door-pw">Check-in desk password</label>
         <input
           id="door-pw"
           type="password"

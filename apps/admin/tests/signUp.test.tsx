@@ -16,7 +16,7 @@ const fill = (over: Partial<Record<'name' | 'officer' | 'door' | 'slug', string>
     fireEvent.change(screen.getByLabelText(/web address/i), { target: { value: over.slug } })
   }
   fireEvent.change(screen.getByLabelText(/officer password/i), { target: { value: over.officer ?? 'officer-password-1' } })
-  fireEvent.change(screen.getByLabelText(/door password/i), { target: { value: over.door ?? 'door-password-1' } })
+  fireEvent.change(screen.getByLabelText(/check-in desk password/i), { target: { value: over.door ?? 'door-password-1' } })
 }
 
 const submit = () => fireEvent.click(screen.getByRole('button', { name: /register society/i }))

@@ -111,7 +111,7 @@ export function DoorDesk({ batchId, slug, onSessionLost }: DoorDeskProps) {
       <p>
         <Link to={`/b/${slug}`}>← Back to admin</Link>
       </p>
-      <h2>Door check-in</h2>
+      <h2>Check-in desk</h2>
 
       <div className="field">
         <label htmlFor="door-search">Search by name or USU ID</label>

@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 /**
  * A source-level guard on the code split.
  *
- * The door desk and the officer screens are lazy so that a volunteer's phone
+ * The check-in desk and the officer screens are lazy so that a volunteer's phone
  * fetches the door chunk and not the rounds table, and the officer's laptop does
  * not fetch the door. That split is invisible at runtime and silently undone by a
  * single static import — someone adds `import { Result } from './screens/Result'`

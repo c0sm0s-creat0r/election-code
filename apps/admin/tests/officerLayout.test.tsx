@@ -88,9 +88,21 @@ describe('OfficerLayout', () => {
     stub(200)
     show()
     await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-    for (const label of [/elections/i, /member roll/i, /exports/i, /appearance/i, /door desk/i]) {
+    for (const label of [/elections/i, /member roll/i, /exports/i, /appearance/i, /check-in desk/i]) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy()
     }
+  })
+
+  it('KEEPS SIGN OUT OUT OF THE NAV, beside the society name instead', async () => {
+    // It is not a destination, and a row of places to go with one way out on the
+    // end invites the tap that ends the session by accident — the nav wraps on a
+    // phone, so which row it lands on is not predictable.
+    stub(200)
+    show()
+    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
+    const signOut = screen.getByRole('button', { name: /sign out/i })
+    expect(signOut.closest('nav')).toBeNull()
+    expect(signOut.closest('.officer-title')).not.toBeNull()
   })
 
   it('marks the current section, so the nav says where you are', async () => {

@@ -54,7 +54,7 @@
 }
 
 
-/* --- the door desk (a phone, in a queue) ----------------------------------- */
+/* --- the check-in desk (a phone, in a queue) -------------------------------- */
 
 .roll-list > li + li { margin-top: var(--step); }
 
@@ -100,6 +100,15 @@
   border-bottom: 1px solid var(--rule);
 }
 
+/* The society's name and the one way out, on one line. */
+.officer-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--step);
+}
+
 .officer-header h1 { margin: calc(var(--step) * 2) 0 var(--step); font-size: 1.25rem; }
 .officer-header h1 a { color: inherit; text-decoration: none; }
 
@@ -110,8 +119,7 @@
   gap: calc(var(--step) / 2);
 }
 
-.officer-nav a,
-.officer-nav .sign-out {
+.officer-nav a {
   display: inline-flex;
   align-items: center;
   min-height: var(--touch);
@@ -128,11 +136,15 @@
   color: var(--accent-ink);
 }
 
-.officer-nav .sign-out {
+/* Deliberately quiet: it is the one control here that loses work, so it does not
+   compete with the places an officer actually wants to go. */
+.sign-out {
+  min-height: var(--touch);
+  padding: 0 calc(var(--step) * 1.5);
   border: 0;
+  border-radius: var(--radius);
   background: none;
   color: var(--muted);
-  margin-left: auto;
 }
 
 /* A link that is the main thing to do on the screen, so it looks like one. */
