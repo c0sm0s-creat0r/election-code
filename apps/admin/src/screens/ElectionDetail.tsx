@@ -226,7 +226,9 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setConfirmingDelete(true)}>Delete this election</button>
+        <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
+          Delete this election
+        </button>
       )}
     </section>
   )
