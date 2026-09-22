@@ -57,8 +57,9 @@ wrangler kv namespace create RATE_LIMIT     # paste the id into wrangler.jsonc -
 wrangler r2 bucket create election-logos    # name already matches wrangler.jsonc
 ```
 
-`wrangler.jsonc` ships with `"PLACEHOLDER_SET_BY_WRANGLER"` for the D1 and KV ids. Replace both
-before the first deploy.
+**Already done, as of 2026-09-22.** All three exist, the real ids are in `wrangler.jsonc`, and
+migrations `0001`–`0004` are applied to the remote database. `wrangler d1 migrations list election
+--remote` confirms it.
 
 ### Set the two secrets
 
@@ -112,10 +113,42 @@ refused deliberately, because it is the whole door → officer boundary.
 Then three terminals:
 
 ```bash
-cd apps/api    && npx wrangler d1 migrations apply election --local && npm run dev   # :8787
+cd apps/api    && npm run dev                                                        # :8787
 cd apps/voter  && npm run dev                                                        # :5173
 cd apps/admin  && npm run dev                                                        # :5174
 ```
+
+### `npm run dev` uses the PRODUCTION database — read this before experimenting
+
+All three bindings in `wrangler.jsonc` carry `"remote": true`, so `wrangler dev` runs the Worker
+locally and sends every D1 query, KV write and R2 upload to the **real** resources. Wrangler says so
+on startup:
+
+```
+env.DB (election)          D1 Database    remote
+env.RATE_LIMIT (…)         KV Namespace   remote
+env.LOGOS (election-logos) R2 Bucket      remote
+```
+
+So a society you register while poking around locally is a society on the live list, and deleting an
+election locally deletes it for real. `--local` migrations and `wrangler d1 execute --local` are
+operating on a sqlite file that nothing is reading.
+
+`"remote": true` only affects `wrangler dev`; a deployed Worker always uses the real resources
+regardless. **Removing those three lines is therefore free in production and gives local dev its own
+database back** — do it if you want to experiment without touching live data. The e2e suite is
+unaffected either way: `--persist-to .wrangler-e2e` forces local mode for the run, which is why no
+`e2e` society appears in the live list.
+
+**One failure mode that comes with remote bindings:** an occasional
+
+```
+D1_ERROR: Failed to parse body as JSON, got: error code: 1031
+```
+
+on any query, and a `500` from the route that made it. That is a Cloudflare edge error, not a D1 or
+SQL error — the proxy between `wrangler dev` and D1 answered with an error page where JSON belonged.
+The database is fine; restart `wrangler dev`. It cannot happen with local bindings.
 
 Add both dev origins to `ALLOWED_ORIGINS` for local work:
 `http://localhost:5173,http://localhost:5174`.

@@ -83,13 +83,21 @@ failure looks identical to a CORS failure, and "fixing" it here with
 `origin: '*'` or by reflecting the request's `Origin` rebuilds the exact hole
 spec §6 exists to close.
 
-### Not yet set
+### The bindings are real, and `wrangler dev` uses them
 
-`wrangler.jsonc` still carries `"database_id": "PLACEHOLDER_SET_BY_WRANGLER"`
-for the `DB` binding. Nothing is deployed yet; create the database with
-`wrangler d1 create election` and paste the real id in before the first
-deploy. Note also that once `migrations/0001_initial.sql` has been applied to
-a production D1 it is immutable — every later schema change goes in a new
+D1, KV and R2 all exist, their ids are in `wrangler.jsonc`, and migrations
+`0001`–`0004` are applied to the remote database.
+
+All three bindings carry `"remote": true`, so **`npm run dev` reads and writes
+production data.** Wrangler prints `remote` beside each one at startup. A society
+registered while experimenting locally is on the live list; `--local` migrations
+and `wrangler d1 execute --local` touch a sqlite file nothing reads. The flag
+only affects `wrangler dev` — a deployed Worker always uses the real resources —
+so deleting those three lines is free in production and hands local dev its own
+database back.
+
+Note also that `migrations/0001_initial.sql` has now been applied to the
+production D1 and is immutable — every later schema change goes in a new
 numbered migration.
 
 ## Version pinning
