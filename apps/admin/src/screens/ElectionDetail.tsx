@@ -18,6 +18,7 @@
  * develop and choose when to stop makes every other control decorative.
  */
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import {
   addCandidate, closeElection, getTurnout, openElection, removeCandidate,
   type AdminElection, type Turnout,
@@ -192,7 +193,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
       {election.status === 'closed' && (
         <>
           <p>
-            <a href={`/b/${slug}/elections/${election.id}/result`}>View the result</a>
+            <Link to={`/b/${slug}/elections/${election.id}/result`}>View the result</Link>
           </p>
           <Exports batchId={batchId} electionId={election.id} />
         </>

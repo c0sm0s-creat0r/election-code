@@ -6,13 +6,17 @@
  * had just created.
  */
 import { useCallback, useEffect, useState } from 'react'
+import { useOutletContext } from 'react-router'
 import { createElection, listElections, type AdminElection } from '../api.js'
+import type { OfficerContext } from '../OfficerLayout.js'
 import { staffMessage } from '../errorMessage.js'
 import { ElectionDetail } from './ElectionDetail.js'
 
-export type ElectionsProps = { batchId: string; slug: string }
+export function Elections() {
+  const { batch } = useOutletContext<OfficerContext>()
+  const batchId = batch.id
+  const slug = batch.slug
 
-export function Elections({ batchId, slug }: ElectionsProps) {
   const [elections, setElections] = useState<AdminElection[]>([])
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const [name, setName] = useState('')

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
+import { renderRouted } from './renderOfficer.js'
 import { SignUp } from '../src/screens/SignUp.js'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -22,18 +23,18 @@ const submit = () => fireEvent.click(screen.getByRole('button', { name: /registe
 
 describe('SignUp', () => {
   it('SAYS PLAINLY that nothing verifies who you are', () => {
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     expect(screen.getByText(/nothing here checks who you are/i)).toBeTruthy()
   })
 
   it('suggests a slug from the name, so nobody has to guess the rules', () => {
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society!' } })
     expect((screen.getByLabelText(/web address/i) as HTMLInputElement).value).toBe('science-society')
   })
 
   it('lets the slug be overridden and then stops tracking the name', () => {
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society' } })
     fireEvent.change(screen.getByLabelText(/web address/i), { target: { value: 'scisoc' } })
     fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society 2026' } })
@@ -46,7 +47,7 @@ describe('SignUp', () => {
         status: 201, headers: { 'content-type': 'application/json' },
       }))
     vi.stubGlobal('fetch', spy)
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill()
     submit()
     await waitFor(() => expect(screen.getByText(/is registered/i)).toBeTruthy())
@@ -56,7 +57,7 @@ describe('SignUp', () => {
 
   it('TELLS THEM THE PASSWORDS CANNOT BE RECOVERED', async () => {
     stub(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} })
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill()
     submit()
     await waitFor(() => expect(screen.getByText(/cannot be recovered/i)).toBeTruthy())
@@ -64,7 +65,7 @@ describe('SignUp', () => {
 
   it('shows all three URLs afterwards', async () => {
     stub(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} })
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill()
     submit()
     await waitFor(() => expect(screen.getByText('/b/science-society')).toBeTruthy())
@@ -75,7 +76,7 @@ describe('SignUp', () => {
   it('will not submit a password under the floor', () => {
     const spy = vi.fn()
     vi.stubGlobal('fetch', spy)
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill({ officer: 'short' })
     submit()
     expect(spy).not.toHaveBeenCalled()
@@ -86,7 +87,7 @@ describe('SignUp', () => {
     // password there hands full control to anyone at the desk.
     const spy = vi.fn()
     vi.stubGlobal('fetch', spy)
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill({ officer: 'same-password-1', door: 'same-password-1' })
     submit()
     expect(spy).not.toHaveBeenCalled()
@@ -95,7 +96,7 @@ describe('SignUp', () => {
   it('will not submit a malformed slug', () => {
     const spy = vi.fn()
     vi.stubGlobal('fetch', spy)
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill({ slug: 'Not A Slug' })
     submit()
     expect(spy).not.toHaveBeenCalled()
@@ -103,7 +104,7 @@ describe('SignUp', () => {
 
   it('reports a taken slug from the server', async () => {
     stub(409, { error: 'slug already exists' })
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill()
     submit()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/already exists/i))
@@ -111,7 +112,7 @@ describe('SignUp', () => {
 
   it('reports a reserved slug from the server', async () => {
     stub(400, { error: 'that name is reserved — please choose another' })
-    render(<SignUp />)
+    renderRouted(<SignUp />)
     fill({ slug: 'admin' })
     submit()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/reserved/i))

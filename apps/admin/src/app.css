@@ -90,3 +90,47 @@
   color: var(--accent-ink);
   text-decoration: none;
 }
+
+/* --- the officer shell ----------------------------------------------------- */
+
+/* Always on screen, so browser back is never the way to get around. */
+.officer-header {
+  padding-bottom: var(--step);
+  margin-bottom: calc(var(--step) * 2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.officer-header h1 { margin: calc(var(--step) * 2) 0 var(--step); font-size: 1.25rem; }
+.officer-header h1 a { color: inherit; text-decoration: none; }
+
+.officer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--step) / 2);
+}
+
+.officer-nav a,
+.officer-nav .sign-out {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 calc(var(--step) * 1.5);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--ink);
+}
+
+/* Where you are, marked from aria-current so the styling cannot drift from what
+   a screen reader is told. */
+.officer-nav a[aria-current='page'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.officer-nav .sign-out {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  margin-left: auto;
+}

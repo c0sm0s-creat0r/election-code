@@ -10,6 +10,7 @@
  * unrecoverable and losing the officer one means losing the society.
  */
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { signUpSociety, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
@@ -88,7 +89,7 @@ export function SignUp() {
         </ul>
 
         <p>
-          <a href={`/b/${created.slug}`}>Sign in as an officer</a>
+          <Link to={`/b/${created.slug}`}>Sign in as an officer</Link>
         </p>
       </section>
     )

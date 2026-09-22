@@ -72,6 +72,28 @@ export const signUpSociety = (body: SignUp) => request<Batch>('/api/batches', po
 export const getBatchBySlug = (slug: string) =>
   request<Batch>(`/api/batches/by-slug/${encodeURIComponent(slug)}`)
 
+/**
+ * Is this session still live?
+ *
+ * The answer belongs to the server, not to React state: a reload, a browser back
+ * or a new tab all discard component state while the cookie is still perfectly
+ * valid. Asking is what stops the app demanding a password it does not need.
+ *
+ * The officer probe is a dedicated no-op route. The door has none, so it uses
+ * `/quorum` — door-gated, four integers, and cheap enough to spend on a probe.
+ */
+export const probeOfficer = (batchId: string) =>
+  request<{ ok: true }>(`/api/batches/${batchId}/officer/ping`)
+
+export const probeDoor = (batchId: string) =>
+  request<Quorum>(`/api/batches/${batchId}/quorum`)
+
+export const officerSignOut = (batchId: string) =>
+  request<void>(`/api/batches/${batchId}/officer/session`, { method: 'DELETE' })
+
+export const doorSignOut = (batchId: string) =>
+  request<void>(`/api/batches/${batchId}/door/session`, { method: 'DELETE' })
+
 export const officerSignIn = (batchId: string, password: string) =>
   request<{ ok: true; role: string }>(`/api/batches/${batchId}/officer/session`, postJson({ password }))
 

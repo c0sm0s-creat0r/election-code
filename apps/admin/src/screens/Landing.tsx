@@ -7,6 +7,7 @@
  * to know a slug by heart.
  */
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { listSocieties, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
@@ -29,7 +30,7 @@ export function Landing() {
       {error !== '' && <p className="error" role="alert">{error}</p>}
 
       <p>
-        <a className="primary-link" href="/new">Register a society</a>
+        <Link className="primary-link" to="/new">Register a society</Link>
       </p>
 
       {societies.length > 0 && (
@@ -38,7 +39,7 @@ export function Landing() {
           <ul className="election-list plain-list">
             {societies.map((society) => (
               <li key={society.slug}>
-                <a href={`/b/${society.slug}`}>{society.name}</a>{' '}
+                <Link to={`/b/${society.slug}`}>{society.name}</Link>{' '}
                 <span className="muted">/{society.slug}</span>
               </li>
             ))}

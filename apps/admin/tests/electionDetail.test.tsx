@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
+import { renderRouted } from './renderOfficer.js'
 import { ElectionDetail } from '../src/screens/ElectionDetail.js'
 import type { AdminElection } from '../src/api.js'
 
@@ -19,7 +20,7 @@ const election = (status: AdminElection['status']): AdminElection => ({
 
 const show = (status: AdminElection['status']) => {
   const onChanged = vi.fn()
-  const view = render(
+  const view = renderRouted(
     <ElectionDetail batchId="b1" slug="soc" election={election(status)} onChanged={onChanged} />,
   )
   return { onChanged, ...view }

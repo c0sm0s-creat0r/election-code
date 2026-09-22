@@ -10,12 +10,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getResult, overrideTieBreak, type OverrideRequest, type ResultDocument } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
+import { Link } from 'react-router'
 import { RoundsTable } from '../components/RoundsTable.js'
 import { TieBreaks } from '../components/TieBreaks.js'
 
-export type ResultProps = { batchId: string; electionId: string }
+export type ResultProps = { batchId: string; electionId: string; slug: string }
 
-export function Result({ batchId, electionId }: ResultProps) {
+export function Result({ batchId, electionId, slug }: ResultProps) {
   const [result, setResult] = useState<ResultDocument | undefined>(undefined)
   const [error, setError] = useState('')
 
@@ -42,9 +43,13 @@ export function Result({ batchId, electionId }: ResultProps) {
     }
   }
 
+  // The only screen deep enough to need one; everywhere else the nav is enough.
+  const back = <p><Link to={`/b/${slug}/elections`}>← All elections</Link></p>
+
   if (error !== '') {
     return (
       <section className="stack">
+        {back}
         <h2>Result</h2>
         <p className="error" role="alert">{error}</p>
       </section>
@@ -62,6 +67,7 @@ export function Result({ batchId, electionId }: ResultProps) {
 
   return (
     <section className="stack">
+      {back}
       <h2>{result.election.name}</h2>
 
       {result.overridden && (

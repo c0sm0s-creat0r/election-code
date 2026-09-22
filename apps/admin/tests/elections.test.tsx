@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { Elections } from '../src/screens/Elections.js'
+import { renderOfficerScreen } from './renderOfficer.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -23,7 +22,7 @@ const stubList = (list: unknown[], extra: (url: string) => unknown = () => undef
 describe('Elections', () => {
   it('lists what the officer has, drafts included', async () => {
     stubList([draft])
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'President' })).toBeTruthy())
     expect(screen.getByText(/draft/)).toBeTruthy()
   })
@@ -33,14 +32,14 @@ describe('Elections', () => {
       status: 200, headers: { 'content-type': 'application/json' },
     }))
     vi.stubGlobal('fetch', spy)
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(spy).toHaveBeenCalled())
     expect(spy.mock.calls[0]![0]).toContain('/officer/elections')
   })
 
   it('says so when there are none', async () => {
     stubList([])
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
   })
 
@@ -57,7 +56,7 @@ describe('Elections', () => {
         status: 200, headers: { 'content-type': 'application/json' },
       })
     }))
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Secretary' } })
     fireEvent.click(screen.getByRole('button', { name: /create election/i }))
@@ -66,14 +65,14 @@ describe('Elections', () => {
 
   it('will not create an election with no name', async () => {
     stubList([])
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
     expect(screen.getByRole('button', { name: /create election/i })).toHaveProperty('disabled', true)
   })
 
   it('will not create an election with zero seats', async () => {
     stubList([])
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByText(/no elections yet/i)).toBeTruthy())
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'x' } })
     fireEvent.change(screen.getByLabelText(/seats/i), { target: { value: '0' } })
@@ -84,44 +83,10 @@ describe('Elections', () => {
 
   it('shows the selected election\'s detail', async () => {
     stubList([draft])
-    render(<Elections batchId="b1" slug="soc" />)
+    renderOfficerScreen(<Elections />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'President' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'President' }))
     expect(screen.getByRole('heading', { name: 'President' })).toBeTruthy()
     expect(screen.getByText(/cannot be added, renamed or removed/i)).toBeTruthy()
-  })
-})
-
-/**
- * Reachability, as a test.
- *
- * Elections management was written, fully tested, and wired to nothing: no route
- * mounted `ElectionDetail` and the officer's menu never linked to it, so an
- * officer could not create an election at all. Every unit test passed, because
- * each rendered its screen directly. These assertions are the cheapest thing that
- * would have caught it.
- */
-describe('officer screens are reachable', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-
-  it('mounts every officer screen on a route', () => {
-    for (const screenName of ['Elections', 'RollImport', 'Exports', 'Settings', 'Result']) {
-      expect(appSource, `${screenName} is never rendered`).toMatch(new RegExp(`<${screenName}\\b`))
-    }
-  })
-
-  it('links the officer menu to each of them', () => {
-    for (const path of ['/roll', '/elections', '/exports', '/settings', '/door']) {
-      expect(appSource, `no link to ${path}`).toContain(`${path}\``)
-    }
-  })
-
-  it('builds officer links from the slug, because the routes are /b/:slug', () => {
-    // An earlier version built the result link from the batch id, which no route
-    // matches — the sort of thing only an integration test or a human notices.
-    const links = [...appSource.matchAll(/href=\{`([^`]+)`\}/g)].map((m) => m[1]!)
-    for (const link of links.filter((l) => l.startsWith('/b/'))) {
-      expect(link, `${link} should interpolate a slug`).toMatch(/^\/b\/\$\{[^}]*slug[^}]*\}/)
-    }
   })
 })

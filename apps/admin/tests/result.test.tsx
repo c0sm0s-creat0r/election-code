@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
+import { renderRouted } from './renderOfficer.js'
 import { Result } from '../src/screens/Result.js'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -32,13 +33,13 @@ const document_ = {
 describe('Result', () => {
   it('REFUSES to show a result before the ballots are sealed', async () => {
     stub(409, { error: 'no result exists until voting is closed', code: 'not_sealed' })
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/until voting is closed/i))
   })
 
   it('lists the winners', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     // Alex appears in the winners list AND as a row header in the table, which
     // is correct; this asserts the winners list specifically.
     await waitFor(() => expect(screen.getByRole('heading', { name: /^elected$/i })).toBeTruthy())
@@ -49,7 +50,7 @@ describe('Result', () => {
 
   it('renders a column per round and a row per candidate', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: /round 1/i })).toBeTruthy()
     expect(screen.getByRole('rowheader', { name: 'Bo' })).toBeTruthy()
@@ -57,7 +58,7 @@ describe('Result', () => {
 
   it('shows the quota on the table itself', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     // The value also appears as Alex's round-1 total, which is the point of a
     // quota — so this asserts the caption, where it is labelled.
     await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
@@ -68,25 +69,25 @@ describe('Result', () => {
 
   it('keeps the non-transferable total in view', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByRole('rowheader', { name: /non-transferable/i })).toBeTruthy())
   })
 
   it('shows the digest, so it can be checked against the export', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByText(document_.ballots_sha256)).toBeTruthy())
   })
 
   it('says when a result supersedes an earlier one', async () => {
     stub(200, { ...document_, overridden: true })
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByText(/supersedes an earlier one/i)).toBeTruthy())
   })
 
   it('says so when there were no ties', async () => {
     stub(200, document_)
-    render(<Result batchId="b1" electionId="e1" />)
+    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByText(/no ties to resolve/i)).toBeTruthy())
   })
 })
