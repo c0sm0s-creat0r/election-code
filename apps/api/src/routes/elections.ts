@@ -275,3 +275,76 @@ elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), a
 
   return c.json({ id: electionId, status: 'open' satisfies ElectionRow['status'] })
 })
+
+/**
+ * Delete an election — **only while no ballot has ever been cast in it.**
+ *
+ * The rule is one line and that is the point of it: an officer password can
+ * remove a mistake, and can never remove a vote. A misnamed draft, an election
+ * opened against the wrong roll, a test run before the meeting — all of those
+ * have no ballots and are junk that the officer is currently stuck with. The
+ * moment one person has voted, the election is a record of what they did, and
+ * deleting it is not an officer's decision to make. A voided ballot still counts
+ * here: the row stays in the table precisely so the seal covers it.
+ *
+ * `election_seal` and `election_result` are the two tables spec §2 deliberately
+ * gave no `ON DELETE CASCADE`, so they are deleted explicitly and each carries
+ * the no-ballot guard itself. That absence is a guard rail, not an oversight:
+ * without these two statements a sealed election could not be deleted at all,
+ * and nothing here removes that protection for an election that has ballots.
+ */
+elections.delete('/api/batches/:id/elections/:eid', requireRole('officer'), async (c) => {
+  const batchId = requireSession(c).batchId
+  const electionId = pathParam(c, 'eid')
+
+  // Read for the audit detail before the delete, since afterwards there is
+  // nothing left to read. Not a precondition — every statement below carries
+  // its own — so a status that changes underneath this is harmless.
+  const before = await c.env.DB
+    .prepare(`SELECT status FROM election WHERE id = ? AND batch_id = ?`)
+    .bind(electionId, batchId)
+    .first<Pick<ElectionRow, 'status'>>()
+  if (!before) return c.json({ error: 'not found' }, 404)
+
+  const NO_BALLOTS = `NOT EXISTS (SELECT 1 FROM ballot WHERE election_id = ?1)`
+
+  const [, , deleted] = await c.env.DB.batch([
+    c.env.DB
+      .prepare(`DELETE FROM election_result WHERE election_id = ?1 AND ${NO_BALLOTS}`)
+      .bind(electionId),
+    c.env.DB
+      .prepare(`DELETE FROM election_seal WHERE election_id = ?1 AND ${NO_BALLOTS}`)
+      .bind(electionId),
+    // Candidates, ballots and receipts cascade from this one. There are no
+    // ballots to cascade — that is what the guard means — and no receipts
+    // either, because a receipt is only ever written beside a ballot.
+    c.env.DB
+      .prepare(`DELETE FROM election WHERE id = ?1 AND batch_id = ?2 AND ${NO_BALLOTS}`)
+      .bind(electionId, batchId),
+  ])
+
+  if ((deleted?.meta.changes ?? 0) === 0) {
+    const ballots = await c.env.DB
+      .prepare(`SELECT count(*) AS n FROM ballot WHERE election_id = ?`)
+      .bind(electionId)
+      .first<{ n: number }>()
+    return c.json(
+      {
+        error:
+          `this election has ${ballots?.n ?? 0} ballot(s) in it and cannot be deleted. `
+          + 'A ballot that has been cast is never deleted.',
+        code: 'has_ballots',
+      },
+      409,
+    )
+  }
+
+  await recordAudit(c.env.DB, {
+    batchId,
+    role: 'officer',
+    action: 'election.delete',
+    detail: { kind: 'election_delete', status: before.status },
+  })
+
+  return c.body(null, 204)
+})

@@ -1,10 +1,11 @@
 # election-code rewrite — session handoff
 
-**Last updated:** 2026-09-22 (**ALL PLANS COMPLETE** — api, core, voter, admin, e2e. 747 unit tests + 1 browser smoke)
+**Last updated:** 2026-09-22 (**ALL PLANS COMPLETE** — api, core, voter, admin, e2e. 788 unit tests + 1 browser smoke)
 **Branch:** `rewrite/core-counting` (not merged; no open Critical)
 **Resume from:** this file, then the spec, then the plans. This conversation is not needed.
 **Next action:** nothing is planned. The rewrite is feature-complete against the spec. The most recent
-work was not a plan: the voter app's flow was found wrong *in use* and reworked (§13). Before a real
+work was not a plan: the voter app's flow was found wrong *in use* and reworked (§13), then deletion
+and logos were added (§14). Before a real
 AGM runs on it, the two things that matter are in §5 (**the missing known-answer corpus for multi-seat
 counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `backend/`,
 `admin-frontend/` and `voter-frontend/` directories are still present and can be retired once
@@ -20,7 +21,7 @@ counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `b
 | Plan 1 — `packages/core` | **Executed.** 12 tasks, 14 fix rounds, 1 fix wave. 118/118 tests, typecheck clean, zero deps |
 | Plan 2a — `apps/api` foundation | **COMPLETE.** 6 tasks, 5 fix rounds + 1 fix wave. api 105/105, typecheck clean, whole-branch review passed |
 | Plan 2b — voting path | **COMPLETE.** 7 tasks, amended once before execution (see §2 below). api 245/245, typecheck clean |
-| Plan 2c — result path | **COMPLETE.** 7 tasks + 1 added (§2 below). api 359/359, typecheck clean. `apps/api` is complete against spec §5 — all 33 routes |
+| Plan 2c — result path | **COMPLETE.** 7 tasks + 1 added (§2 below). api 359/359, typecheck clean. `apps/api` is complete against spec §5 — all 33 routes (35 since §14) |
 | Plan 2d — guests + door additions | **COMPLETE.** 4 tasks. api 399/399, typecheck clean. Migration `0004` |
 | Frontends design | `docs/superpowers/specs/2026-09-21-frontends-design.md` — approved. Mobile-first, plain-CSS tokens, door as a lazy admin route |
 | Plan 3a — `apps/voter` | **COMPLETE.** 6 tasks. voter 60/60 + 1 Playwright smoke. Preact, mobile-first |
@@ -30,7 +31,7 @@ counts** — do this first) and `docs/superpowers/LIMITATIONS.md`. The legacy `b
 
 **Verify state on resume:**
 ```bash
-npm test                                  # core 138, admin 119, api 417, voter 73
+npm test                                  # core 138, admin 138, api 437, voter 75
 npm run typecheck                         # all four clean
 npm run e2e                               # 1 Playwright smoke (needs: npx playwright install chromium)
 ```
@@ -100,7 +101,7 @@ Two door actions that must stay separate (`docs/superpowers/specs/2026-09-21-fro
    `apps/admin/tests/codeSplit.test.ts` guards this, because a single static import undoes it with
    nothing failing.
 4. **The API clients are duplicated between the two apps, deliberately.** They overlap on one endpoint
-   out of thirty-three; sharing would couple two release cycles to save thirty lines.
+   out of thirty-five; sharing would couple two release cycles to save thirty lines.
 5. **Reordering a ballot is arrows, never drag**, and the boundary arrows are disabled rather than
    hidden so a row does not reflow under a moving thumb.
 6. **The door roll is never written to browser storage**, and a test asserts no storage write happens
@@ -441,3 +442,54 @@ token is still on the device but has no screen to reach it from. This is not a r
 this rework the receipt was unreachable the moment you left it — and the cheapest fix is not a new
 route: `GET /api/batches/:id/elections` already returns `closed` elections, so an "earlier receipts"
 list on the agenda would close it with no new screen.
+
+---
+
+## 14. Deletion, and logos that never rendered — 2026-09-22 (not from a plan)
+
+Four things the user asked for after running the system. None came from a plan; all four are done.
+
+### 14.1 `DELETE /api/batches/:id` — the operator's key, and the only irreversible route
+
+Deletes every row a society owns in ten explicit statements in one transaction, then its R2 logo
+objects. **It is the only route that can destroy an `election_seal` or an `election_result`**, which is
+a real change to what spec §2's missing `ON DELETE CASCADE` was protecting — see `LIMITATIONS.md` §17,
+and the amended comment on `AuditDetail`, which used to say a batch could never be removed.
+
+Gates, in order: the rate limit, then `SUPER_ADMIN_KEY` in constant time (a failure recorded as
+`batch.delete.denied` against a NULL batch), then `confirm_slug` in the body matching the society's own
+slug. The id is a UUID nobody proofreads; the slug is the part a human checks.
+
+`audit_log` survives on purpose — it is the one table with no foreign key to `batch` — and the deletion
+is recorded there as counts, never a name or a slug. **Do not add a foreign key to `audit_log`**: it
+would make the audit trail cascade away with its subject, which is the one thing it exists not to do.
+
+### 14.2 `DELETE /api/batches/:id/elections/:eid` — one rule
+
+**Only while no ballot exists in it.** Any status; a voided ballot still counts, because the row stays
+in the table so the seal covers it. `409 has_ballots` with the count otherwise. The test is in the SQL,
+on every one of the three statements, so an officer password removes a mistake and never a vote.
+`election_result` and `election_seal` are deleted explicitly because neither cascades — without those
+two statements a closed election could not be deleted at all.
+
+### 14.3 The operator screen is deliberately unreachable
+
+`/operator` in the admin app, mounted on a route, lazy, and **linked from nowhere**. The path is not the
+control — the API checks the key on every request — but the most destructive screen in the system has
+no business on an officer's nav, and adding a link would read as a tidy-up. `tests/codeSplit.test.ts`
+asserts the route exists, is dynamic, and that no file under `src/` links to it. The key lives in
+component state for one visit: never `localStorage`, never `sessionStorage`, never a URL, password
+input, and a test asserts no storage write happens.
+
+### 14.4 Logos never rendered anywhere, and the reason is worth remembering
+
+`POST /logo` stores `logo_url` as **root-relative** (`/api/logos/batches/<id>/<hash>.png`). Put that
+straight into an `<img src>` and the browser resolves it against *the frontend's* origin — a different
+host from the API in production — so the image 404s with nothing in the console pointing at the cause.
+Both apps now have a `logoSrc()` that prefixes the API base for a root-relative value and leaves an
+`https://` one alone. This is the same class of failure as the shared-apex cookie trap in §8 of the
+spec: correct-looking code, a silent 404, and no error that names the real problem.
+
+The voter app also had no logo at all — it read `branding.accent_color` and `branding.title` and
+ignored `logo_url`. There is now one masthead (logo + title) on every voter screen, and both apps'
+society lists are whole-card links with the logo, the name and the slug.

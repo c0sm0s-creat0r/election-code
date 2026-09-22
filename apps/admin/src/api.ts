@@ -2,7 +2,7 @@
  * The admin app's API client.
  *
  * Deliberately not shared with the voter app. The two overlap on one endpoint out
- * of thirty-three (spec §1.1), so a common package would couple their release
+ * of thirty-five (spec §1.1), so a common package would couple their release
  * cycles to save thirty lines. The `ApiError`/`request` pair below is duplicated
  * on purpose, and that duplication is the cheaper of the two costs.
  */
@@ -159,6 +159,13 @@ export const removeCandidate = (batchId: string, electionId: string, candidateId
     method: 'DELETE',
   })
 
+/**
+ * Delete an election. The API refuses the moment one ballot exists in it
+ * (`409 has_ballots`), so this removes a mistake and never a vote.
+ */
+export const deleteElection = (batchId: string, electionId: string) =>
+  request<void>(`/api/batches/${batchId}/elections/${electionId}`, { method: 'DELETE' })
+
 export const openElection = (batchId: string, electionId: string) =>
   request<{ id: string; status: ElectionStatus }>(
     `/api/batches/${batchId}/elections/${electionId}/open`,
@@ -228,6 +235,34 @@ export const uploadLogo = (batchId: string, file: File) => {
   body.append('file', file)
   return request<{ logo_url: string }>(`/api/batches/${batchId}/logo`, { method: 'POST', body })
 }
+
+/**
+ * Where to point an `<img>` at a society's logo.
+ *
+ * **A stored `logo_url` is root-relative** (`/api/logos/batches/<id>/<hash>.png`)
+ * because that is what the upload route returns. Putting it straight in a `src`
+ * resolves it against *this app's* origin, which in production is a different
+ * host from the API — so the image silently 404s, and nothing in the console says
+ * why. Absolute `https://` values (a society hosting its own logo) are left
+ * alone. Empty means no logo, and the caller renders nothing.
+ */
+export const logoSrc = (logoUrl: string): string =>
+  logoUrl === '' || /^https:\/\//i.test(logoUrl) ? logoUrl : `${BASE}${logoUrl}`
+
+// --- operator ---------------------------------------------------------------
+
+/**
+ * Delete a society and everything in it. Irreversible, operator-key only, and
+ * the slug has to be typed back — see `apps/api/src/routes/batches.ts`.
+ *
+ * The key is passed in per call and is never stored anywhere by this client.
+ */
+export const deleteSociety = (batchId: string, slug: string, superAdminKey: string) =>
+  request<void>(`/api/batches/${batchId}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json', 'x-super-admin-key': superAdminKey },
+    body: JSON.stringify({ confirm_slug: slug }),
+  })
 
 // --- door -------------------------------------------------------------------
 

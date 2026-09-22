@@ -287,6 +287,51 @@ codes are kept on their own device, so the elections they have voted in stay mar
 
 Order matters: the attendance export reads names from the roll, so take it before the purge.
 
+### Deleting an election
+
+An officer can delete an election **only while nobody has voted in it**. Open it on the elections
+screen, then *Delete this election* → *Yes, delete this election*.
+
+That covers the cases that are always mistakes: a misnamed draft, an election opened against the
+wrong roll, a rehearsal before the meeting. Once a single ballot is in the box the delete refuses and
+tells you how many there are — including a ballot that was cancelled, because the row stays in the
+table so the seal still covers it. There is no way to override this, and that is the point: an
+officer password can remove a mistake and can never remove a vote.
+
+If you need a *closed* election with real ballots gone — a whole rehearsal AGM, say — delete the
+society instead.
+
+### Deleting a society (operator only)
+
+**This is the one irreversible action in the system, and the only thing that can destroy a sealed
+result.** It removes the society's roll, check-ins, guests, elections, candidates, ballots, receipts,
+seals, results and logo. There is no backup inside the system; D1 Time Travel is the only recovery
+and it is outside this app.
+
+Two ways, both needing `SUPER_ADMIN_KEY`:
+
+```sh
+# The screen: not linked from anywhere, by design.
+open https://admin.dalyell.com.au/operator
+
+# Or directly. Both the key and the slug are required.
+curl -X DELETE https://api.dalyell.com.au/api/batches/<batch-id> \
+  -H 'content-type: application/json' \
+  -H "x-super-admin-key: $SUPER_ADMIN_KEY" \
+  -d '{"confirm_slug":"<the-society-slug>"}'
+```
+
+The slug has to be typed back because the id is a UUID nobody proofreads. A wrong key gives `401`
+and is recorded; a slug that does not match gives `409` and changes nothing.
+
+**What survives:** the audit log. It is the one table with no foreign key to the society, so it does
+not disappear with it, and the deletion is recorded there as counts — how many elections, ballots and
+roll entries went — never a name, a slug or a USU id. Deleting a society also frees its slug, so the
+name can be registered again.
+
+Before doing it on a society that has actually run an election, take the exports first. Afterwards
+there is nothing left to export from.
+
 ---
 
 ## 8. If a disputed result has to be re-counted
@@ -355,6 +400,13 @@ Each of these was a real decision, and each has a short reason.
   device, outside the purge.
 - **Never add a `style` attribute or a utility class to a `.tsx` file.** Semantic classes only — that
   one rule is what lets the styling be replaced later without touching a component.
+- **Never link to `/operator` from anywhere in the admin app.** It deletes societies, sealed results
+  included. The key is the control, but putting the screen in an officer's nav is how someone reaches
+  for it by accident. A test asserts no link exists.
+- **Never let `SUPER_ADMIN_KEY` be stored by a frontend** — not in `localStorage`, not in a
+  `sessionStorage` entry, not in a URL, and never in a `VITE_` variable. It is typed when it is used.
+- **Never give the officer role a way to delete an election with ballots in it.** The no-ballot test
+  is in the SQL, on every statement, not in the screen.
 
 ---
 

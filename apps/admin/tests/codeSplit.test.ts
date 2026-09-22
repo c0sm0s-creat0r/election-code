@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
@@ -85,5 +85,36 @@ describe('officer screens are reachable', () => {
         expect(link, `${link} should interpolate a slug`).toMatch(/^\/b\/\$\{[^}]*slug[^}]*\}/)
       }
     }
+  })
+})
+
+/**
+ * The inverse of reachability, for the one screen that must stay unreachable.
+ *
+ * `/operator` deletes societies, including their sealed results. The API gate is
+ * `SUPER_ADMIN_KEY` and that is the real control — but a link on the landing page
+ * or in the officer nav would put the most destructive screen in the system in
+ * front of every officer, and adding one would look like a tidy-up rather than a
+ * regression. So it is asserted: the route exists, and nothing navigates to it.
+ */
+describe('the operator screen is deliberately unlinked', () => {
+  const sourceFiles = readdirSync(resolve(process.cwd(), 'src'), { recursive: true })
+    .filter((entry): entry is string => typeof entry === 'string' && /\.tsx?$/.test(entry))
+
+  it('is mounted on a route', () => {
+    expect(appSource).toMatch(/path="\/operator"/)
+    expect(appSource).toMatch(/<Operator\b/)
+  })
+
+  it('is loaded dynamically, like every other screen', () => {
+    expect(appSource).toMatch(/import\(['"]\.\/screens\/Operator\.js['"]\)/)
+  })
+
+  it('is linked from nowhere', () => {
+    const offenders = sourceFiles.filter((file) => {
+      const source = readFileSync(resolve(process.cwd(), 'src', file), 'utf8')
+      return /(?:to|href)=\{?["'`]\/operator/.test(source)
+    })
+    expect(offenders, `these link to the operator screen: ${offenders.join(', ')}`).toEqual([])
   })
 })

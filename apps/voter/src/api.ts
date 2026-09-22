@@ -81,6 +81,18 @@ export const getBatchBySlug = (slug: string) =>
 export const getElections = (batchId: string) =>
   request<PublicElection[]>(`/api/batches/${batchId}/elections`)
 
+/**
+ * Where to point an `<img>` at a society's logo.
+ *
+ * **A stored `logo_url` is root-relative** (`/api/logos/batches/<id>/<hash>.png`)
+ * because that is what the upload route returns. Putting it straight in a `src`
+ * resolves it against *this app's* origin, which in production is a different
+ * host from the API — so the image silently 404s, and nothing in the console says
+ * why. Absolute `https://` values are left alone; empty means no logo.
+ */
+export const logoSrc = (logoUrl: string): string =>
+  logoUrl === '' || /^https:\/\//i.test(logoUrl) ? logoUrl : `${BASE}${logoUrl}`
+
 export const voterSignIn = (batchId: string, usuId: string, surname: string) =>
   request<{ first_name: string }>(
     `/api/batches/${batchId}/voter/session`,

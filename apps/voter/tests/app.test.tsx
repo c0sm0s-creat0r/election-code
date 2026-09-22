@@ -19,11 +19,15 @@ const election = (id: string, name: string) => ({
 })
 
 /** Routes stubbed responses by URL, the way the app actually calls them. */
-const stubRoutes = (elections: unknown[], extra: (url: string) => Response | undefined = () => undefined) =>
+const stubRoutes = (
+  elections: unknown[],
+  extra: (url: string) => Response | undefined = () => undefined,
+  branding: typeof BATCH.branding = BATCH.branding,
+) =>
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const custom = extra(url)
     if (custom) return custom
-    const body = url.includes('by-slug') ? BATCH : elections
+    const body = url.includes('by-slug') ? { ...BATCH, branding } : elections
     return new Response(JSON.stringify(body), {
       status: 200, headers: { 'content-type': 'application/json' },
     })
@@ -82,8 +86,48 @@ describe('App', () => {
     )))
     atSlug('')
     render(<App />)
+    // The whole card is one link, not just the name: a bare name is a small
+    // target inside a much larger row that does nothing.
     await waitFor(() => expect(screen.getByRole('link', { name: 'Soc' })).toBeTruthy())
     expect(screen.getByRole('link', { name: 'Soc' }).getAttribute('href')).toBe('/s')
+  })
+
+  it('does not repeat the society name as its own subtitle', async () => {
+    // org_name is usually the same string as name; printing both reads as a bug,
+    // and a screen reader says it twice.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify([
+        { slug: 's', name: 'Soc', branding: BATCH.branding },
+        { slug: 't', name: 'Other', branding: { ...BATCH.branding, org_name: 'Other Inc' } },
+      ]),
+      json,
+    )))
+    atSlug('')
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Soc' })).toBeTruthy())
+    expect(screen.getByRole('link', { name: 'Other Other Inc' })).toBeTruthy()
+  })
+
+  it('SHOWS THE SOCIETY LOGO, resolved against the API and not this app', async () => {
+    // A stored logo_url is root-relative to the *API*. Rendering it as-is points
+    // the browser at the voter app's own origin, which in production is a
+    // different host, and the image 404s with nothing in the console to say why.
+    stubRoutes([], () => undefined, {
+      ...BATCH.branding, logo_url: '/api/logos/batches/b1/abc.png',
+    })
+    atSlug('s')
+    render(<App />)
+    await waitFor(() => expect(document.querySelector('img.society-logo')).toBeTruthy())
+    expect(document.querySelector('img.society-logo')!.getAttribute('src'))
+      .toBe('http://localhost:8787/api/logos/batches/b1/abc.png')
+  })
+
+  it('renders no image at all when a society has no logo', async () => {
+    stubRoutes([])
+    atSlug('s')
+    render(<App />)
+    await waitFor(() => expect(screen.getByText(/nothing is open for voting yet/i)).toBeTruthy())
+    expect(document.querySelector('img.society-logo')).toBeNull()
   })
 
   it('applies the society accent colour from the API to the token', async () => {

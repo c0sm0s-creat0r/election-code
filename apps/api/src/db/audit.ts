@@ -20,10 +20,15 @@ export type AuditEntry = {
  * What an audit row is allowed to record.
  *
  * This is an allow-list, and deliberately so. `audit_log` is undeletable by
- * construction — spec §2 gives `election_seal` and `election_result` no
- * `ON DELETE CASCADE`, so a sealed election cannot be removed and neither can
- * its batch — while the retention rule purges `voter_roll` and `check_in`
+ * construction — it is the one table with no foreign key to `batch`, so it does
+ * not cascade away with its subject and the operator's own delete route leaves
+ * it standing — while the retention rule purges `voter_roll` and `check_in`
  * after the AGM and claims *that is all the personal data held*.
+ *
+ * (Until 2026-09-22 this comment said a batch could never be removed at all,
+ * which `DELETE /api/batches/:id` makes untrue. What it was protecting is
+ * unchanged: the audit rows survive the society they describe, and so they must
+ * never have held anything personal in the first place.)
  *
  * Typing this `unknown` quietly broke two guarantees at once:
  *
@@ -46,6 +51,11 @@ export type AuditDetail =
   | { kind: 'election_close'; ballotCount: number }
   | { kind: 'count'; rounds: number; winners: number }
   | { kind: 'tie_override'; tieBreakId: string; reason: string }
+  // Counts, not identities — and no slug or society name either. An audit row
+  // outlives the society it describes, so it says what was destroyed and how
+  // much of it, never who was in it.
+  | { kind: 'election_delete'; status: 'draft' | 'open' | 'closed' }
+  | { kind: 'batch_delete'; elections: number; ballots: number; voters: number }
 
 /**
  * Builds (but does not run) the audit insert. Exposed so callers that need

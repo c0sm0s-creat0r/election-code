@@ -552,6 +552,7 @@ POST   /api/batches/:id/elections           {name, seats}
 POST   /api/batches/:id/elections/:eid/candidates      (draft only)
 PATCH  /api/batches/:id/elections/:eid/candidates/:cid (draft only)
 DELETE /api/batches/:id/elections/:eid/candidates/:cid (draft only)
+DELETE /api/batches/:id/elections/:eid            (only while no ballot exists)
 POST   /api/batches/:id/elections/:eid/open
 POST   /api/batches/:id/elections/:eid/close
 GET    /api/batches/:id/elections/:eid/turnout
@@ -572,11 +573,38 @@ accident. `POST /voters` refuses a `usu_id` already on the roll rather than
 upserting it, because a mistyped id matching a real member would otherwise
 overwrite that member's name in the table eligibility is judged from.
 
+**An election is deletable only while no ballot exists in it.** `draft`, `open`
+with an empty box, or `closed` with an empty box — any of those is a mistake an
+officer should be able to remove, and being stuck with a misnamed draft forever
+is why the route exists. The moment one person has voted, the election is a
+record of what they did: the delete refuses with `409 has_ballots` and names the
+count. A *voided* ballot still counts, because the row stays in the table so the
+seal covers it. The statement deletes `election_result` and `election_seal`
+explicitly, since neither cascades; each carries the no-ballot test itself.
+
 **Signup — open**
 
 ```
 POST   /api/batches                         (no key; SUPER_ADMIN_KEY optional)
 ```
+
+**Operator — `SUPER_ADMIN_KEY`**
+
+```
+DELETE /api/batches/:id                     {confirm_slug} -> 204
+```
+
+**This is the only route that can destroy a sealed result,** and the only one
+whose effect cannot be undone from inside the system. It deletes every row the
+society owns, in ten explicit statements in one transaction, and its logo objects
+from R2 afterwards. Three things gate it: the key (compared in constant time, a
+failure recorded as `batch.delete.denied` against a NULL batch), `confirm_slug`
+matching the society's own slug in the body, and the rate limit in front of both.
+
+`audit_log` survives, deliberately — it is the one table with no foreign key to
+`batch`, so it does not cascade away with its subject. The deletion is recorded
+there as counts (elections, ballots, roll entries) and never as a name or a slug,
+which is what keeps §2's retention claim true after the society is gone.
 
 ### 5a. Self-serve signup
 

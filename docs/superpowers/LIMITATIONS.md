@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-22, after the voter agenda rework (15 live entries, 1 closed).
+**Last updated:** 2026-09-22, after the operator delete capability (16 live entries, 1 closed).
 
 ---
 
@@ -299,3 +299,41 @@ a voter a little uncertainty; one that over-claims costs them the rest of their 
 complete" flag, set explicitly, which the voter app could show as a genuine end. It has to be an
 officer action rather than anything inferred, because "no election is currently open" is the normal
 state between two agenda items.
+
+## 17. Deleting a society destroys evidence, and one key is all it takes
+
+**Where:** `DELETE /api/batches/:id` in `apps/api/src/routes/batches.ts`, `apps/admin/src/screens/Operator.tsx`.
+
+The operator can delete a society outright, including closed elections, their ballots, their
+`election_seal` rows and their `election_result` rows. Nothing inside the system can undo it, and
+nothing inside the system keeps a copy. `SUPER_ADMIN_KEY` plus the society's slug is the whole
+authorisation: there is no second operator, no approval step and no delay.
+
+Note what this changes: spec §2 gave `election_seal` and `election_result` no `ON DELETE CASCADE` so
+that a sealed result could never be removed *incidentally*, and until 2026-09-22 the comment on
+`AuditDetail` said a batch could not be removed at all. That protection against accident is intact —
+nothing cascades into those tables, and the officer-facing delete refuses the moment a ballot exists —
+but deliberate destruction by the operator is now possible where before it was not.
+
+**Why accepted (2026-09-22, at the user's direction):** a service that cannot remove a tenant is a
+service that accumulates other people's personal data with no way to honour a request to delete it,
+and in practice the operator already holds the database. The realistic failure was never a malicious
+operator; it was a pile of abandoned test societies on the public list, which is what prompted this.
+
+**What bounds the damage:**
+
+- The key is compared in constant time, the route is rate-limited before the check, and a denied
+  attempt is recorded as `batch.delete.denied` against a NULL batch.
+- `confirm_slug` must match, so deleting the wrong society takes more than a mis-pasted id.
+- `audit_log` survives — it is the one table with no foreign key to `batch` — and records the deletion
+  as counts of what was destroyed. A society whose records are gone still has the trail saying they
+  existed and when they went.
+- The admin screen is not linked from anywhere, and the key it takes is never stored.
+- The officer role cannot reach any of this. An officer password can delete an election only while no
+  ballot exists in it.
+
+**What would close it:** a soft delete — a `deleted_at` column, hidden everywhere, purged by a
+scheduled job after a grace period — which would turn an irreversible action into a recoverable one
+and still take abandoned societies off the list. That is the right shape if this is ever used on a
+society that has really run an election. A second operator approval, or an export-before-delete
+requirement, would cost more than it buys at this scale.

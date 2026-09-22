@@ -31,6 +31,8 @@ const Result = lazy(() => import('./screens/Result.js').then((m) => ({ default: 
 const Elections = lazy(() => import('./screens/Elections.js').then((m) => ({ default: m.Elections })))
 const SignUp = lazy(() => import('./screens/SignUp.js').then((m) => ({ default: m.SignUp })))
 const Landing = lazy(() => import('./screens/Landing.js').then((m) => ({ default: m.Landing })))
+// Deliberately unlinked. See the note on the route below.
+const Operator = lazy(() => import('./screens/Operator.js').then((m) => ({ default: m.Operator })))
 
 const useBatch = () => useOutletContext<OfficerContext>().batch
 
@@ -41,6 +43,16 @@ export function App() {
         <Routes>
           <Route path="/" element={<Lazily><Landing /></Lazily>} />
           <Route path="/new" element={<Lazily><SignUp /></Lazily>} />
+
+          {/*
+            The operator's own screen: deleting a society. **Nothing links to it**,
+            on purpose — it is the one capability that can destroy a sealed result,
+            and it has no business on an officer's screen. The path is not the
+            control: every request it makes carries SUPER_ADMIN_KEY, which the API
+            checks in constant time. A test asserts that no link to it exists,
+            because adding one to the nav would otherwise look like a tidy-up.
+          */}
+          <Route path="/operator" element={<Lazily><Operator /></Lazily>} />
 
           {/*
             Outside the officer layout on purpose: a different password, a

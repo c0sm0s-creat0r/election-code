@@ -194,3 +194,123 @@ batches.get('/api/batches/by-slug/:slug', async (c) => {
   const result: PublicBatchWithId = { id: row.id, ...toPublic(row) }
   return c.json(result)
 })
+
+/**
+ * Delete a society and everything in it. **Operator only, and irreversible.**
+ *
+ * This is the most destructive route in the system, and the only one that can
+ * remove a sealed election. `election_seal` and `election_result` were given no
+ * `ON DELETE CASCADE` (spec §2) so that nothing *incidental* could ever take a
+ * sealed result with it; deleting them here is deliberate and explicit, which is
+ * the distinction that matters. An officer password cannot reach this — see
+ * `DELETE /elections/:eid`, which refuses the moment a ballot exists.
+ *
+ * Three things stand in front of it:
+ *
+ * 1. `SUPER_ADMIN_KEY`, compared in constant time. A wrong or missing key is
+ *    recorded as `batch.delete.denied` with a NULL `batch_id`, the same way a
+ *    denied create is — this is the one route where a *successful* guess is
+ *    unrecoverable, so an attempt is worth seeing. The key itself is never
+ *    recorded, not even a length.
+ * 2. `confirm_slug` in the body must equal the society's own slug. The id is a
+ *    UUID nobody types from memory, so without this the difference between
+ *    deleting the right society and the wrong one is a copy-paste.
+ * 3. The rate limit runs before either, so an unauthenticated caller cannot use
+ *    the audit write as an amplifier.
+ *
+ * What survives: `audit_log`. It has no foreign key to `batch` precisely so that
+ * it does not cascade away with its subject, and the deletion is recorded there
+ * as counts — how many elections, ballots and roll entries were destroyed —
+ * never a name, a slug or a usu_id.
+ */
+batches.delete('/api/batches/:id', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
+  const provided = c.req.header('x-super-admin-key')
+  if (!isSuperAdminKey(provided, c.env.SUPER_ADMIN_KEY)) {
+    await recordAudit(c.env.DB, { batchId: null, role: 'super', action: 'batch.delete.denied' })
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+
+  const id = c.req.param('id') ?? ''
+  const row = await c.env.DB
+    .prepare(`SELECT id, slug FROM batch WHERE id = ?`)
+    .bind(id)
+    .first<Pick<BatchRow, 'id' | 'slug'>>()
+  if (!row) return c.json({ error: 'not found' }, 404)
+
+  const body = (await c.req.json().catch(() => undefined)) as { confirm_slug?: unknown } | undefined
+  if (body?.confirm_slug !== row.slug) {
+    return c.json(
+      {
+        error: 'confirm_slug must match the slug of the society being deleted',
+        code: 'confirm_required',
+      },
+      409,
+    )
+  }
+
+  const counts = await c.env.DB
+    .prepare(
+      `SELECT
+         (SELECT count(*) FROM election WHERE batch_id = ?1) AS elections,
+         (SELECT count(*) FROM ballot b JOIN election e ON e.id = b.election_id
+           WHERE e.batch_id = ?1) AS ballots,
+         (SELECT count(*) FROM voter_roll WHERE batch_id = ?1) AS voters`,
+    )
+    .bind(id)
+    .first<{ elections: number; ballots: number; voters: number }>()
+
+  // Every table is named explicitly, in dependency order, rather than leaning on
+  // `ON DELETE CASCADE`. Two reasons: the cascade does not cover `election_seal`
+  // or `election_result` at all, and a destructive operation should say what it
+  // destroys where a reader can check the list against the schema. One
+  // transaction, so a failure half way leaves the society intact.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM election_result WHERE election_id IN (SELECT id FROM election WHERE batch_id = ?)`).bind(id),
+    c.env.DB.prepare(`DELETE FROM election_seal WHERE election_id IN (SELECT id FROM election WHERE batch_id = ?)`).bind(id),
+    c.env.DB.prepare(`DELETE FROM ballot WHERE election_id IN (SELECT id FROM election WHERE batch_id = ?)`).bind(id),
+    c.env.DB.prepare(`DELETE FROM vote_receipt WHERE election_id IN (SELECT id FROM election WHERE batch_id = ?)`).bind(id),
+    c.env.DB.prepare(`DELETE FROM candidate WHERE election_id IN (SELECT id FROM election WHERE batch_id = ?)`).bind(id),
+    c.env.DB.prepare(`DELETE FROM election WHERE batch_id = ?`).bind(id),
+    c.env.DB.prepare(`DELETE FROM check_in WHERE batch_id = ?`).bind(id),
+    c.env.DB.prepare(`DELETE FROM voter_roll WHERE batch_id = ?`).bind(id),
+    c.env.DB.prepare(`DELETE FROM guest WHERE batch_id = ?`).bind(id),
+    c.env.DB.prepare(`DELETE FROM batch WHERE id = ?`).bind(id),
+    auditLogStatement(c.env.DB, {
+      batchId: id,
+      role: 'super',
+      action: 'batch.delete',
+      detail: {
+        kind: 'batch_delete',
+        elections: counts?.elections ?? 0,
+        ballots: counts?.ballots ?? 0,
+        voters: counts?.voters ?? 0,
+      },
+    }),
+  ])
+
+  await deleteLogos(c.env.LOGOS, id)
+
+  return c.body(null, 204)
+})
+
+/**
+ * The society's logo objects, after its rows are gone.
+ *
+ * Deliberately after, and deliberately not fatal. R2 is a separate store with no
+ * transaction shared with D1, so one of the two has to go second; leaving an
+ * orphaned image in a bucket is a far better failure than a half-deleted society
+ * whose rows are gone and whose delete reported an error. Keys are content
+ * hashes under `batches/<id>/`, so nothing outside this society is in the prefix.
+ */
+async function deleteLogos(bucket: R2Bucket, batchId: string): Promise<void> {
+  try {
+    let cursor: string | undefined
+    do {
+      const listed = await bucket.list({ prefix: `batches/${batchId}/`, ...(cursor ? { cursor } : {}) })
+      if (listed.objects.length > 0) await bucket.delete(listed.objects.map((o) => o.key))
+      cursor = listed.truncated ? listed.cursor : undefined
+    } while (cursor !== undefined)
+  } catch {
+    // The rows are already gone; the society is deleted either way.
+  }
+}

@@ -20,7 +20,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  addCandidate, closeElection, getTurnout, openElection, removeCandidate,
+  addCandidate, closeElection, deleteElection, getTurnout, openElection, removeCandidate,
   type AdminElection, type Turnout,
 } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
@@ -39,6 +39,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirmingClose, setConfirmingClose] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   useEffect(() => {
     if (election.status !== 'open') return
@@ -195,6 +196,37 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
             View the result
           </Link>
         </p>
+      )}
+
+      {/*
+        Offered at every status, with the rule stated, rather than hidden by a
+        guess at whether it would work. The API is the authority — it refuses the
+        moment one ballot exists and says how many there are — and this screen's
+        job is to make sure the officer already knows that before clicking.
+      */}
+      {confirmingDelete ? (
+        <div className="confirm stack">
+          <p>
+            Deleting removes <strong>{election.name}</strong>, its candidates and anything counted
+            from it. It <strong>cannot be undone</strong>.
+          </p>
+          <p>
+            An election that anyone has voted in cannot be deleted at all — close it and keep it.
+          </p>
+          <div className="add-actions">
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={() => void run(() => deleteElection(batchId, election.id))}
+            >
+              Yes, delete this election
+            </button>
+            <button type="button" onClick={() => setConfirmingDelete(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirmingDelete(true)}>Delete this election</button>
       )}
     </section>
   )

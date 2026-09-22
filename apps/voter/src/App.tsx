@@ -21,14 +21,34 @@
  */
 import { useEffect, useState } from 'preact/hooks'
 import {
-  ApiError, getBatchBySlug, getElections, listSocieties,
-  type Batch, type PublicElection,
+  ApiError, getBatchBySlug, getElections, listSocieties, logoSrc,
+  type Batch, type Branding, type PublicElection,
 } from './api.js'
 import { forgetReceipt, readReceipts, rememberReceipt, type HeldReceipts } from './receipts.js'
 import { SignIn } from './screens/SignIn.js'
 import { Agenda } from './screens/Agenda.js'
 import { Ballot } from './screens/Ballot.js'
 import { Receipt } from './screens/Receipt.js'
+
+/**
+ * A society's own logo, or nothing at all — never a placeholder. `alt=""` because
+ * the name is always beside it, and a screen reader should not read it twice.
+ */
+function Logo({ branding }: { branding: Branding | undefined }) {
+  const src = branding === undefined ? '' : logoSrc(branding.logo_url)
+  if (src === '') return null
+  return <img class="society-logo" src={src} alt="" />
+}
+
+/** The society's logo and the title it chose, on every screen of the app. */
+function Masthead({ title, branding }: { title: string; branding: Branding | undefined }) {
+  return (
+    <div class="masthead">
+      <Logo branding={branding} />
+      <h1>{title}</h1>
+    </div>
+  )
+}
 
 /** The first path segment: `vote.dalyell.com.au/<slug>`. */
 const slugFromPath = (): string => (window.location.pathname.split('/')[1] ?? '').trim()
@@ -112,11 +132,14 @@ export function App() {
   }, [batch])
 
   const heading = batch?.branding.title ?? 'Vote'
+  // One masthead for every screen, so the society's own logo is on the page a
+  // voter is looking at when they rank a ballot — not only on the way in.
+  const masthead = <Masthead title={heading} branding={batch?.branding} />
 
   if (loadError !== '') {
     return (
       <main class="page">
-        <h1>{heading}</h1>
+        {masthead}
         <p class="error" role="alert">{loadError}</p>
       </main>
     )
@@ -134,8 +157,23 @@ export function App() {
             <p>Choose your society.</p>
             <ul class="society-list plain-list">
               {societies.map((society) => (
+                // The whole card is the link: on a phone, a bare name is a small
+                // target inside a much larger row that does nothing.
                 <li key={society.slug}>
-                  <a href={`/${society.slug}`}>{society.name}</a>
+                  <a class="society-card" href={`/${society.slug}`}>
+                    <Logo branding={society.branding} />
+                    <span class="society-text">
+                      <span class="society-title">{society.name}</span>
+                      {/*
+                        Only when it says something the name does not. Most
+                        societies set both to the same string, and rendering it
+                        twice reads as a mistake — and is read out twice.
+                      */}
+                      {society.branding.org_name !== society.name && (
+                        <span class="muted society-slug">{society.branding.org_name}</span>
+                      )}
+                    </span>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -149,7 +187,7 @@ export function App() {
 
   return (
     <main class="page">
-      <h1>{heading}</h1>
+      {masthead}
       {firstName !== '' && <p class="muted">Signed in as {firstName}</p>}
 
       {batch === undefined && <p class="muted">Loading…</p>}

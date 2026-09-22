@@ -459,6 +459,31 @@ device is a trade: see `docs/superpowers/LIMITATIONS.md` §15.
 /door                   lazy() — own chunk: door sign-in + check-in
 ```
 
+Plus two paths outside the society prefix: `/` (register, or pick a society you
+run) and `/new` (registration), and one that is **deliberately not linked from
+anywhere**:
+
+```
+/operator               delete a society — operator key, no link, own chunk
+```
+
+`/operator` drives the one route that can destroy a sealed result. The path is not
+the control — every request it makes carries `SUPER_ADMIN_KEY`, which the API
+checks — but the most destructive screen in the system has no business on an
+officer's nav, and a link to it would look like a tidy-up rather than a
+regression, so a test asserts that none exists. The key lives in component state
+for one visit: never `localStorage`, never `sessionStorage`, never a URL, and the
+field is a password input. The slug has to be typed back, and the API requires it
+again in the body.
+
+**A society's logo renders through `logoSrc()`, in both apps.** A stored
+`logo_url` is root-relative (`/api/logos/...`) because that is what the upload
+route returns, so putting it straight into a `src` resolves it against the
+*frontend's* origin — a different host in production — and the image 404s with
+nothing in the console to say why. Both apps therefore prefix the API base for a
+root-relative value and leave an `https://` one alone. `alt=""`, because the
+society's name is always rendered beside it.
+
 ### 5.2 Officer screens
 
 The officer's job on the day is: import the roll, open an election, watch turnout, close, read the

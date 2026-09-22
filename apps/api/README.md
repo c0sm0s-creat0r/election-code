@@ -39,17 +39,32 @@ never type one.
 Rotating it invalidates every live session, which means everyone signs in
 again — so rotate between events, not during one.
 
-### `SUPER_ADMIN_KEY` — provisions batches
+### `SUPER_ADMIN_KEY` — the operator's key
 
 ```sh
 openssl rand -base64 32 | wrangler secret put SUPER_ADMIN_KEY
 ```
 
-Sent as the `x-super-admin-key` header on `POST /api/batches`, the only route
-that creates a tenant. Held by the operator and by nobody else — not by an
-officer, and never in a frontend bundle or a `VITE_` variable. A denied
-attempt is written to `audit_log` with a `NULL` `batch_id`; the supplied key
-is never recorded, not even as a prefix.
+Sent as the `x-super-admin-key` header. Two routes take it:
+
+- `POST /api/batches` — optional. Signup is open, so the key only marks a
+  society as operator-created rather than self-registered.
+- `DELETE /api/batches/:id` — **required, and irreversible.** It deletes every
+  row a society owns and its logo objects, and it is the only route in the
+  system that can destroy an `election_seal` or an `election_result`. It also
+  requires `confirm_slug` in the body to equal the society's own slug, because
+  the id is a UUID nobody proofreads.
+
+Held by the operator and by nobody else — not by an officer, and never in a
+frontend bundle or a `VITE_` variable. The admin app's `/operator` screen takes
+it as typed input for one request and stores it nowhere; it is not linked from
+anywhere in the app, and a test asserts that stays true.
+
+A denied attempt on either route is written to `audit_log` with a `NULL`
+`batch_id` (`batch.create.denied` / `batch.delete.denied`); the supplied key is
+never recorded, not even as a prefix. A *successful* delete is recorded too, as
+counts — `audit_log` has no foreign key to `batch` precisely so that it does not
+cascade away with the society it describes.
 
 ### `ALLOWED_ORIGINS` — the CORS allow-list
 

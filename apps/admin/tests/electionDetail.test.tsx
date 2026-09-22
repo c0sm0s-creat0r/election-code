@@ -26,6 +26,60 @@ const show = (status: AdminElection['status']) => {
   return { onChanged, ...view }
 }
 
+describe('deleting an election', () => {
+  it('asks for confirmation first, and states the rule', () => {
+    show('draft')
+    fireEvent.click(screen.getByRole('button', { name: /^delete this election$/i }))
+    expect(screen.getByText(/cannot be undone/i)).toBeTruthy()
+    // The officer learns the limit here, not from a 409 after clicking.
+    expect(screen.getByText(/anyone has voted in cannot be deleted/i)).toBeTruthy()
+  })
+
+  it('sends a DELETE for the election and reports the change', async () => {
+    const spy = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', spy)
+    const { onChanged } = show('draft')
+    fireEvent.click(screen.getByRole('button', { name: /^delete this election$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /yes, delete this election/i }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/api/batches/b1/elections/e1')
+    expect(url).not.toContain('/candidates')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('SHOWS THE API\'S REFUSAL when ballots exist, with the count in it', async () => {
+    // The guarantee is the API's, not this screen's: an officer password removes
+    // a mistake and never a vote.
+    stub(409, {
+      error: 'this election has 12 ballot(s) in it and cannot be deleted.',
+      code: 'has_ballots',
+    })
+    const { onChanged } = show('draft')
+    fireEvent.click(screen.getByRole('button', { name: /^delete this election$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /yes, delete this election/i }))
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/12 ballot/))
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it('cancels without sending anything', () => {
+    const spy = vi.fn(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    show('draft')
+    fireEvent.click(screen.getByRole('button', { name: /^delete this election$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    expect(screen.queryByRole('button', { name: /yes, delete/i })).toBeNull()
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('is offered for a closed election too, because an empty one is still junk', () => {
+    show('closed')
+    expect(screen.getByRole('button', { name: /^delete this election$/i })).toBeTruthy()
+  })
+})
+
 describe('ElectionDetail', () => {
   it('states the freeze rule BEFORE opening, not after', () => {
     show('draft')

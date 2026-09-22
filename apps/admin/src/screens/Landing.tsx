@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listSocieties, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
+import { SocietyLogo } from '../components/SocietyLogo.js'
 
 export function Landing() {
   const [societies, setSocieties] = useState<Omit<Batch, 'id'>[]>([])
@@ -36,11 +37,16 @@ export function Landing() {
       {societies.length > 0 && (
         <>
           <h3>Societies using this system</h3>
-          <ul className="election-list plain-list">
+          <ul className="society-list plain-list">
             {societies.map((society) => (
               <li key={society.slug}>
-                <Link to={`/b/${society.slug}`}>{society.name}</Link>{' '}
-                <span className="muted">/{society.slug}</span>
+                <Link className="society-card" to={`/b/${society.slug}`}>
+                  <SocietyLogo branding={society.branding} />
+                  <span className="society-text">
+                    <span className="society-title">{society.name}</span>
+                    <span className="muted society-slug">/{society.slug}</span>
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -53,3 +59,4 @@ export function Landing() {
     </section>
   )
 }
+
