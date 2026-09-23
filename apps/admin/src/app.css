@@ -223,3 +223,48 @@
 }
 
 .screen-head h2 { margin: 0; }
+
+/* --- the roll note and the election walkthrough ------------------------- */
+
+/* Not a warning colour: an empty roll is the normal state of a new society, just
+   one that has to be fixed before the day. */
+.roll-missing {
+  margin: 0;
+  padding: calc(var(--step) * 1.5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.officer-header { position: relative; }
+
+.officer-actions { display: flex; align-items: baseline; gap: calc(var(--step) / 2); }
+
+/* Quiet, like sign out beside it, but underlined: it is the one thing on that
+   line a new officer should feel free to press. */
+.help-button {
+  min-height: var(--touch);
+  padding: 0 calc(var(--step) * 1.5);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+/* Anchored to the header, not the button, so it opens across the width available
+   rather than off the edge of a phone. */
+.help-panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + var(--step) / 2);
+  right: 0;
+  width: min(26rem, 100%);
+  padding: calc(var(--step) * 2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+
+.help-panel h2 { margin: 0; font-size: 1.125rem; }
+.help-steps { margin: 0; padding-left: 1.25rem; }
+.help-steps > li + li { margin-top: var(--step); }

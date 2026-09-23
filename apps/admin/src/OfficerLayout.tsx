@@ -15,6 +15,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useParams } from 'react-router'
 import { getBatchBySlug, officerSignOut, probeOfficer, type Batch } from './api.js'
 import { useStaffSession } from './useStaffSession.js'
+import { ElectionHelp } from './components/ElectionHelp.js'
 
 const OfficerSignIn = lazy(() => import('./screens/OfficerSignIn.js').then((m) => ({ default: m.OfficerSignIn })))
 
@@ -76,13 +77,16 @@ export function OfficerLayout() {
           <h1>
             <Link to={base}>{batch.branding.title}</Link>
           </h1>
-          <button
-            type="button"
-            className="sign-out"
-            onClick={() => { void officerSignOut(batch.id).finally(forget) }}
-          >
-            Sign out
-          </button>
+          <div className="officer-actions">
+            <ElectionHelp base={base} />
+            <button
+              type="button"
+              className="sign-out"
+              onClick={() => { void officerSignOut(batch.id).finally(forget) }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
         <nav aria-label="Officer">
           <ul className="officer-nav plain-list">
@@ -101,6 +105,7 @@ export function OfficerLayout() {
                   and a separate password, so it is a departure rather than a tab. */}
               <a href={`${base}/door`}>Check-in desk</a>
             </li>
+
           </ul>
         </nav>
       </header>

@@ -160,3 +160,23 @@ describe('roll import', () => {
     expect(row!.c).toBe(1300)
   })
 })
+
+describe('roll summary', () => {
+  const summary = (cookie = officerCookie) =>
+    SELF.fetch(`https://example.com/api/batches/${batchId}/officer/roll/summary`, { headers: { cookie } })
+
+  it('requires an officer session', async () => {
+    expect((await summary('')).status).toBe(401)
+  })
+
+  it('is zero before anything is imported', async () => {
+    const res = await summary()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ total: 0, eligible: 0 })
+  })
+
+  it('counts the imported roll, and nothing else', async () => {
+    await upload('/roll')
+    expect(await (await summary()).json()).toEqual({ total: 6, eligible: 4 })
+  })
+})

@@ -135,4 +135,18 @@ describe('OfficerLayout', () => {
     show()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/could not find/i))
   })
+
+  it('has a help button beside sign out that walks through an election', async () => {
+    stub(200)
+    show()
+    const help = await screen.findByRole('button', { name: 'Help' })
+    expect(help.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(help)
+    const steps = screen.getByRole('region', { name: /how to run an election/i })
+    expect(steps.textContent).toMatch(/upload the member roll/i)
+    expect(steps.textContent).toMatch(/only checked-in members can vote/i)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: /how to run an election/i })).toBeNull()
+  })
 })

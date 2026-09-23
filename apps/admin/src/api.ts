@@ -119,6 +119,11 @@ const uploadRoll = (batchId: string, path: string, file: File) => {
 export const previewRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll/preview', file)
 export const commitRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll', file)
 
+/** Counts only: enough to tell an officer the roll is missing, never who is on it. */
+export type RollSummary = { total: number; eligible: number }
+export const getRollSummary = (batchId: string) =>
+  request<RollSummary>(`/api/batches/${batchId}/officer/roll/summary`)
+
 // --- elections -------------------------------------------------------------
 
 export type ElectionStatus = 'draft' | 'open' | 'closed'

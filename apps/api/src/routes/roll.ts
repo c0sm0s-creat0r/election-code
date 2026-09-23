@@ -133,3 +133,20 @@ roll.post('/api/batches/:id/roll', requireRole('officer'), async (c) => {
 
   return c.json(toPreview(parsed))
 })
+
+/**
+ * Whether a roll exists yet, for the officer's election screen: without one,
+ * nobody can be checked in and so nobody can vote. Counts only — the names stay
+ * behind the door role, which is the only one that needs them.
+ */
+roll.get('/api/batches/:id/officer/roll/summary', requireRole('officer'), async (c) => {
+  const batchId = requireSession(c).batchId
+  const row = await c.env.DB
+    .prepare(
+      `SELECT count(*) AS total, coalesce(sum(eligible), 0) AS eligible
+         FROM voter_roll WHERE batch_id = ?`,
+    )
+    .bind(batchId)
+    .first<{ total: number; eligible: number }>()
+  return c.json({ total: row?.total ?? 0, eligible: row?.eligible ?? 0 })
+})

@@ -6,8 +6,8 @@
  * had just created.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router'
-import { createElection, listElections, type AdminElection } from '../api.js'
+import { Link, useOutletContext } from 'react-router'
+import { createElection, getRollSummary, listElections, type AdminElection } from '../api.js'
 import type { OfficerContext } from '../OfficerLayout.js'
 import { staffMessage } from '../errorMessage.js'
 import { ElectionDetail } from './ElectionDetail.js'
@@ -26,6 +26,10 @@ export function Elections() {
   // The form is a disclosure, not a permanent fixture. Creating an election is a
   // once-per-office act; the list is what an officer comes back to.
   const [creating, setCreating] = useState(false)
+  // Only ever `true` once the server has said the roll is empty. Unknown — still
+  // loading, or the request failed — shows nothing: a warning that flashes up and
+  // disappears on every visit is one officers learn to ignore.
+  const [rollMissing, setRollMissing] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -36,6 +40,14 @@ export function Elections() {
   }, [batchId])
 
   useEffect(() => { void reload() }, [reload])
+
+  useEffect(() => {
+    let live = true
+    getRollSummary(batchId)
+      .then((summary) => { if (live) setRollMissing(summary.total === 0) })
+      .catch(() => { /* advisory only; see rollMissing */ })
+    return () => { live = false }
+  }, [batchId])
 
   const create = async () => {
     const parsedSeats = Number(seats)
@@ -74,6 +86,14 @@ export function Elections() {
       </div>
 
       {error !== '' && <p className="error" role="alert">{error}</p>}
+
+      {/* Without a roll nobody can be checked in, and without a check-in nobody
+          can vote — so this is worth saying before the day, not at the door. */}
+      {rollMissing && (
+        <p className="roll-missing" role="status">
+          !!! No members have been imported yet. <Link to={`/b/${slug}/roll`}>Upload the member roll</Link>{' '}!!!.
+        </p>
+      )}
 
       {creating && (
         <div className="adder stack">

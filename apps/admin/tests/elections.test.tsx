@@ -139,4 +139,21 @@ describe('Elections', () => {
     expect(screen.getByRole('heading', { name: 'President' })).toBeTruthy()
     expect(screen.getByText(/cannot be added, renamed or removed/i)).toBeTruthy()
   })
+
+  it('tells the officer to upload the roll when none has been imported', async () => {
+    stubList([draft], (url) => (url.includes('/roll/summary') ? { total: 0, eligible: 0 } : undefined))
+    renderOfficerScreen(<Elections />)
+    const link = await screen.findByRole('link', { name: /upload the member roll/i })
+    expect(link.getAttribute('href')).toBe('/b/soc/roll')
+  })
+
+  it('says nothing about the roll once members are imported', async () => {
+    stubList([draft], (url) => (url.includes('/roll/summary') ? { total: 6, eligible: 4 } : undefined))
+    renderOfficerScreen(<Elections />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'President' })).toBeTruthy())
+    await waitFor(() => expect(
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) => String(u).includes('/roll/summary')),
+    ).toBe(true))
+    expect(screen.queryByText(/no members have been imported/i)).toBeNull()
+  })
 })
