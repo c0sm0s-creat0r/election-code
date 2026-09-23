@@ -5,6 +5,11 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// Must share an apex with vote. and admin.: the session cookie is
+	// SameSite=Strict, so on *.workers.dev it is never sent. See EXECUTION.md §1.
+	"routes": [
+		{ "pattern": "api.dalyell.com.au", "custom_domain": true }
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",
