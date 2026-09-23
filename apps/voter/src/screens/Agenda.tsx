@@ -73,7 +73,7 @@ export function Agenda({ elections, receipts, stale, onVote, onReceipt }: Agenda
       */}
       <p class="muted" aria-live="polite">
         {elections.length > 0 && voted === elections.length
-          ? 'That is everything open so far. Keep this page open — the next election appears here when it opens.'
+          ? 'Keep this page open for the next election.'
           : 'More elections open as the meeting goes on. Keep this page open and they will appear here.'}
       </p>
     </section>

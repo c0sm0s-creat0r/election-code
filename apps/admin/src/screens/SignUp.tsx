@@ -8,10 +8,16 @@
  *
  * The two passwords are shown back once, because PBKDF2 makes them
  * unrecoverable and losing the officer one means losing the society.
+ *
+ * **The logo goes up after the society exists.** The upload route needs an
+ * officer session and a batch id, neither of which exist until registration
+ * succeeds, so the screen signs in with the officer password just typed and
+ * then uploads. A refused logo does not undo the registration: the society is
+ * real either way, and the officer is told to add it from Appearance instead.
  */
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { signUpSociety, type Batch } from '../api.js'
+import { logoSrc, officerSignIn, signUpSociety, uploadLogo, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
 /** Matches the API's floor in routes/batches.ts. */
@@ -28,6 +34,8 @@ export function SignUp() {
   const [officerPassword, setOfficerPassword] = useState('')
   const [doorPassword, setDoorPassword] = useState('')
   const [accent, setAccent] = useState('#2563eb')
+  const [logo, setLogo] = useState<File | undefined>(undefined)
+  const [logoError, setLogoError] = useState('')
   const [created, setCreated] = useState<Batch | undefined>(undefined)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -45,8 +53,9 @@ export function SignUp() {
     if (!ready || busy) return
     setBusy(true)
     setError('')
+    setLogoError('')
     try {
-      setCreated(await signUpSociety({
+      const batch = await signUpSociety({
         name: name.trim(),
         slug: effectiveSlug,
         officer_password: officerPassword,
@@ -57,7 +66,17 @@ export function SignUp() {
           accent_color: accent,
           logo_url: '',
         },
-      }))
+      })
+      if (logo) {
+        try {
+          await officerSignIn(batch.id, officerPassword)
+          const { logo_url } = await uploadLogo(batch.id, logo)
+          batch.branding = { ...batch.branding, logo_url }
+        } catch (caught) {
+          setLogoError(staffMessage(caught))
+        }
+      }
+      setCreated(batch)
     } catch (caught) {
       setError(staffMessage(caught))
     } finally {
@@ -68,11 +87,20 @@ export function SignUp() {
   if (created) {
     return (
       <section className="stack">
+        {created.branding.logo_url && (
+          <img className="society-logo" src={logoSrc(created.branding.logo_url)} alt="" />
+        )}
         <h2>{created.name} is registered</h2>
 
+        {logoError !== '' && (
+          <p className="error" role="alert">
+            The society was registered, but the logo was not: {logoError} You can add one later from
+            Appearance once signed in.
+          </p>
+        )}
+
         <p className="rule-note">
-          <strong>Write both passwords down now.</strong> They are hashed and cannot be recovered or
-          reset. Losing the officer password means losing control of this society.
+          <strong>Make sure you've written down your passwords!</strong>
         </p>
 
         <h3>Where to go</h3>
@@ -100,9 +128,7 @@ export function SignUp() {
       <h2>Register a society</h2>
 
       <p className="rule-note">
-        Registering is open to anyone and <strong>nothing here checks who you are</strong>. A new
-        society starts with no members: only the people you import from your membership export can
-        vote.
+        Fill in your society's details below. All except the passwords can be later changed if needed in <strong>appearance</strong> tab.
       </p>
 
       {error !== '' && <p className="error" role="alert">{error}</p>}
@@ -135,7 +161,7 @@ export function SignUp() {
           onChange={(e) => setOfficerPassword(e.target.value)}
         />
         <p className="muted">
-          At least {PASSWORD_MIN} characters. Full control of every election.
+          At least {PASSWORD_MIN} characters. Main access password for the Returning Officer.
         </p>
       </div>
 
@@ -149,14 +175,26 @@ export function SignUp() {
           onChange={(e) => setDoorPassword(e.target.value)}
         />
         <p className="muted">
-          At least {PASSWORD_MIN} characters, and different from the officer password — it is typed on
-          volunteers' phones and grants check-in only.
+          At least {PASSWORD_MIN} characters, and different from the officer password. Used by an executive to check people in at the door.
         </p>
       </div>
 
       <div className="field">
         <label htmlFor="accent">Accent colour</label>
         <input id="accent" type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
+      </div>
+
+      <div className="field">
+        <label htmlFor="logo-file">Logo (optional)</label>
+        <input
+          id="logo-file"
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          onChange={(e) => setLogo(e.target.files?.[0])}
+        />
+        <p className="muted">
+          PNG, JPEG, GIF or WebP file.
+        </p>
       </div>
 
       <button type="submit" className="primary" disabled={!ready || busy}>

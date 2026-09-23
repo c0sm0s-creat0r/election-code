@@ -81,8 +81,7 @@ export function Operator() {
 
       <p className="rule-note">
         Deleting a society destroys its roll, its check-ins, its elections, its ballots and its sealed
-        results. It cannot be undone, and there is no backup inside this system. The audit log is the
-        only thing that survives.
+        results.
       </p>
 
       <div className="field">
@@ -94,7 +93,6 @@ export function Operator() {
           value={key}
           onChange={(event) => setKey(event.target.value)}
         />
-        <p className="muted">Used for this one action and stored nowhere.</p>
       </div>
 
       {error !== '' && <p className="error" role="alert">{error}</p>}

@@ -13,8 +13,8 @@
 .rule-note,
 .override {
   padding: calc(var(--step) * 1.5);
-  border-left: 3px solid var(--accent);
-  background: var(--sunk);
+  /* border-left: 3px solid var(--accent); */
+  /* background: var(--sunk); */
 }
 
 /* Closing is irreversible, so its confirmation is bordered in the danger colour

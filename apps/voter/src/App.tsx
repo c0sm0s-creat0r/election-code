@@ -202,8 +202,7 @@ export function App() {
           <p class="muted">Checking for open elections…</p>
         ) : elections.length === 0 ? (
           <p aria-live="polite">
-            Nothing is open for voting yet. Leave this page open — signing in appears here as soon
-            as the first election opens.
+            Nothing is open for voting yet. This page will auto refresh when exec elections open.
           </p>
         ) : (
           <SignIn

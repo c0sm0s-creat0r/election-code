@@ -24,28 +24,25 @@ export function Exports({ batchId, electionId }: ExportsProps) {
           <li>
             <a href={`${base}/elections/${electionId}/ballots.csv`}>Ballots (CSV)</a>
             <span className="muted">
-              The anonymous ballot box. Carries the <code>voided</code> column, so anyone can
-              recompute the seal digest from this file alone and confirm these are the sealed ballots.
+              The ballots. Also allows for the seal digest to be recomputed.
             </span>
           </li>
           <li>
             <a href={`${base}/elections/${electionId}/candidates.csv`}>Candidates (CSV)</a>
             <span className="muted">
-              Needed alongside the ballots: a recount refuses a preference naming a candidate it has
-              not been given, so the ballots alone cannot be replayed.
+              The candidates in the election.
             </span>
           </li>
           <li>
             <a href={`${base}/elections/${electionId}/result.json`}>Sealed result (JSON)</a>
             <span className="muted">
-              The count as stored, with every round, every tie-break and its reasoning.
+              The count result every round. Includies tie-breaks and reasoning.
             </span>
           </li>
           <li>
             <a href={`${base}/elections/${electionId}/attendance.csv`}>Attendance for this election (CSV)</a>
             <span className="muted">
-              Who voted — never how. Includes <code>added_at_door</code>, so the total carries its
-              provenance.
+              Who voted. Doesn't include how they voted.
             </span>
           </li>
         </ul>
@@ -71,8 +68,7 @@ export function Exports({ batchId, electionId }: ExportsProps) {
           <li>
             <a href={`${base}/guests.csv`}>Guests (CSV)</a>
             <span className="muted">
-              People who attended and could not vote. Separate from attendance on purpose —
-              attendance is about voting.
+              People who attended and could not vote. Download as needed.
             </span>
           </li>
         </ul>

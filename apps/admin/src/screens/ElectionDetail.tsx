@@ -129,7 +129,6 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
 
           <p className="rule-note">
             Once voting opens, candidates <strong>cannot be added, renamed or removed</strong>.
-            Anyone added afterwards could not be ranked by people who have already voted.
           </p>
 
           <button
@@ -143,7 +142,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
         </>
       ) : (
         <p className="rule-note">
-          Candidates are frozen because voting has opened.
+          Candidates can no longer be edited because voting has opened.
         </p>
       )}
 
@@ -161,13 +160,13 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
             <p className="muted">Loading turnout…</p>
           )}
           <p className="muted">
-            The count is not available until voting is closed. That is deliberate.
+            The count is not available until voting is closed.
           </p>
 
           {confirmingClose ? (
             <div className="confirm stack">
               <p>
-                Closing seals the ballots and publishes the count. It{' '}
+                Closing seals the ballots. It{' '}
                 <strong>cannot be reopened</strong>.
               </p>
               <button
@@ -211,7 +210,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
             from it. It <strong>cannot be undone</strong>.
           </p>
           <p>
-            An election that anyone has voted in cannot be deleted at all — close it and keep it.
+            An election that anyone has voted in cannot be deleted at all.
           </p>
           <div className="add-actions">
             <button

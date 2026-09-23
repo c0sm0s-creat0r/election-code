@@ -148,7 +148,7 @@ export function RankedBallot({
       */}
       <p class="progress muted" role="status">
         {ranking.length} of {minimum} required preference{minimum === 1 ? '' : 's'} ranked
-        {complete ? ' — ready to submit' : ''}
+        {complete ? 'Ready to submit' : ''}
       </p>
 
       <div class="submit-bar sticky-bar">

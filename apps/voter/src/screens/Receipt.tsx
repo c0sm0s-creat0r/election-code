@@ -74,8 +74,7 @@ export function Receipt({ token, onVoided }: ReceiptProps) {
               : `Your ballot for ${receipt.election_name} was cancelled (voided).`}
           </p>
           <p class="muted">
-            Keep this code. It confirms your ballot was counted — it does not show how you voted, and
-            nobody can work that out from it.
+            The below is a unique key designed to serve as proof of your vote for largely contested elections (hopefully not this one).
           </p>
           <p class="receipt-token figures">{token}</p>
 

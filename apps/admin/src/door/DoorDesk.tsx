@@ -237,8 +237,8 @@ function AddGuest({ onAdd, onCancel }: {
     <div className="adder stack">
       <h3>Add a guest</h3>
       <p className="rule-note">
-        A guest is recorded as attending and <strong>cannot vote</strong>. If they are a member the
-        export missed, use <strong>Add member</strong> instead.
+        A guest is recorded as attending and cannot vote. If they are a member the
+        import missed, use <strong>Add member</strong> instead.
       </p>
       <div className="field">
         <label htmlFor="guest-name">Name</label>
@@ -270,8 +270,8 @@ function AddMember({ onAdd, onCancel }: {
     <div className="adder stack">
       <h3>Add a member the export missed</h3>
       <p className="rule-note">
-        This person <strong>will be able to vote</strong>. Only add someone you have confirmed is a
-        current member. They are recorded separately in the attendance export.
+        As an added member this person will be able to vote. Only add someone you have confirmed is a
+        current member.
       </p>
       <div className="field">
         <label htmlFor="member-usu">USU ID</label>

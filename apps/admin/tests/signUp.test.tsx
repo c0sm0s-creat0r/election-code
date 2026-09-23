@@ -117,4 +117,43 @@ describe('SignUp', () => {
     submit()
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/reserved/i))
   })
+
+  it('UPLOADS THE LOGO after registering, signed in as the new officer', async () => {
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    const spy = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/batches')) return json(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' } })
+      if (url.endsWith('/officer/session')) return json(200, { ok: true, role: 'officer' })
+      return json(201, { logo_url: '/api/logos/batches/b1/abc.png' })
+    })
+    vi.stubGlobal('fetch', spy)
+    renderRouted(<SignUp />)
+    fill()
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'logo.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [file] } })
+    submit()
+    await waitFor(() => expect(screen.getByText(/is registered/i)).toBeTruthy())
+    const urls = spy.mock.calls.map((call) => String(call[0]))
+    expect(urls.map((u) => u.replace(/^.*\/api/, '/api'))).toEqual([
+      '/api/batches', '/api/batches/b1/officer/session', '/api/batches/b1/logo',
+    ])
+    expect(document.querySelector('img.society-logo')!.getAttribute('src')).toMatch(/\/api\/logos\/batches\/b1\/abc\.png$/)
+  })
+
+  it('STILL SHOWS THE PASSWORDS when the logo is refused, because the society exists', async () => {
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/api/batches')) return json(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' } })
+      if (url.endsWith('/officer/session')) return json(200, { ok: true, role: 'officer' })
+      return json(400, { error: 'that file is not a PNG, JPEG, GIF or WebP image', code: 'not_an_image' })
+    }))
+    renderRouted(<SignUp />)
+    fill()
+    fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [new File(['nope'], 'x.png')] } })
+    submit()
+    await waitFor(() => expect(screen.getByText(/cannot be recovered/i)).toBeTruthy())
+    expect(screen.getByRole('alert').textContent).toMatch(/logo was not/i)
+    expect(document.querySelector('img.society-logo')).toBeNull()
+  })
 })

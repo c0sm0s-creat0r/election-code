@@ -92,9 +92,7 @@ export function Result({ batchId, electionId, slug }: ResultProps) {
 
       <h3>The seal</h3>
       <p className="muted">
-        {result.ballot_count} ballots were in the box when voting closed, including any that were
-        cancelled. Anyone can recompute this digest from the exported ballot CSV and confirm they
-        hold the sealed ballots.
+        {result.ballot_count} ballots were in the box when voting closed. Includes cancelled ballots.
       </p>
       <p className="figures seed">{result.ballots_sha256}</p>
     </section>

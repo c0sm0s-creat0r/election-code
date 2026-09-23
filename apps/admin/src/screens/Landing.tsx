@@ -50,10 +50,6 @@ export function Landing() {
               </li>
             ))}
           </ul>
-          <p className="muted">
-            Anyone can register, and registering is not an endorsement — this list says only that a
-            society signed itself up.
-          </p>
         </>
       )}
     </section>
