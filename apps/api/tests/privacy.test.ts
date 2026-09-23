@@ -25,7 +25,6 @@ beforeEach(async () => {
   for (const t of ['ballot', 'vote_receipt', 'candidate', 'election', 'check_in', 'voter_roll', 'audit_log', 'batch']) {
     await env.DB.prepare(`DELETE FROM ${t}`).run()
   }
-  for (const k of (await env.RATE_LIMIT.list()).keys) await env.RATE_LIMIT.delete(k.name)
 })
 
 /** Provision, import, check in, open, vote, void, recast — the whole path. */

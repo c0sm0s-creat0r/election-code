@@ -18,14 +18,14 @@
 			"remote": true
 		}
 	],
-	// Rate-limit counters only. Nothing here is durable or authoritative: KV
-	// expiry is eventual, and a lost counter costs at most one extra window.
-	"kv_namespaces": [
-		{
-			"binding": "RATE_LIMIT",
-			"id": "e86e54daaa834c8e9f9c20cb00d2491b",
-			"remote": true
-		}
+	// Per-IP rate limits. Not KV: its 1,000 writes a day ran out and every
+	// limited route returned 500. Sizing rationale in src/middleware/rateLimit.ts;
+	// a period change must be mirrored in RATE_LIMITS there. namespace_id only
+	// has to be unique within the account.
+	"ratelimits": [
+		{ "name": "BATCH_CREATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
+		{ "name": "STAFF_SIGNIN_LIMITER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
+		{ "name": "VOTING_LIMITER", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
 	],
 	// Society logos. Objects are keyed by a hash of their content, so they are
 	// immutable and one society can never overwrite another's.

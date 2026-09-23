@@ -1,113 +1,99 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
+import { describe, it, expect } from 'vitest'
+import { Hono } from 'hono'
+import wranglerConfig from '../wrangler.jsonc?raw'
+import type { Env } from '../src/index.js'
+import { rateLimit, RATE_LIMITS } from '../src/middleware/rateLimit.js'
 
-const KEY = 'super-secret-test-key'
-const body = (slug: string) => JSON.stringify({
-  name: 'N', slug, officer_password: 'officer-password-1', door_password: 'door-password-1',
-  branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-})
+/**
+ * The limiter runs against a fake binding: the real one's counters cannot be
+ * reset between tests, so vitest.config.ts gives integration tests limits they
+ * never reach. What is tested here is the middleware's contract; the numbers
+ * are Cloudflare's to enforce and are checked against wrangler.jsonc below.
+ */
+function fakeLimiter(limit: number) {
+  const counts = new Map<string, number>()
+  const keys: string[] = []
+  const binding = {
+    limit: async ({ key }: { key: string }) => {
+      keys.push(key)
+      const n = (counts.get(key) ?? 0) + 1
+      counts.set(key, n)
+      return { success: n <= limit }
+    },
+  }
+  return { binding: binding as unknown as RateLimit, keys }
+}
 
-beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  await env.DB.prepare('DELETE FROM batch').run()
-  await env.DB.prepare('DELETE FROM audit_log').run()
-  for (const k of (await env.RATE_LIMIT.list()).keys) await env.RATE_LIMIT.delete(k.name)
-})
-
-const create = (slug: string, ip = '203.0.113.1') =>
-  SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY, 'cf-connecting-ip': ip },
-    body: body(slug),
+function appWith(env: Partial<Env>) {
+  let handled = 0
+  const app = new Hono<{ Bindings: Env }>()
+  app.post('/x', rateLimit(RATE_LIMITS.staffSignIn), (c) => {
+    handled++
+    return c.json({ ok: true })
   })
+  const hit = (ip = '203.0.113.1') =>
+    app.request('/x', { method: 'POST', headers: { 'cf-connecting-ip': ip } }, env as Env)
+  return { hit, handled: () => handled }
+}
 
 describe('rate limiting', () => {
   it('allows requests under the limit', async () => {
-    expect((await create('a')).status).toBe(201)
-    expect((await create('b')).status).toBe(201)
+    const { hit } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(2).binding })
+    expect((await hit()).status).toBe(200)
+    expect((await hit()).status).toBe(200)
   })
 
-  it('returns 429 once the limit is exceeded', async () => {
-    for (let i = 0; i < 10; i++) await create(`s${i}`)
-    const res = await create('over-the-limit')
+  it('returns 429 with Retry-After once the limit is exceeded, without running the handler', async () => {
+    const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(1).binding })
+    await hit()
+    const res = await hit()
     expect(res.status).toBe(429)
-    expect(await res.json()).toMatchObject({ error: 'rate_limited' })
-  })
-
-  it('sets Retry-After on a 429', async () => {
-    for (let i = 0; i < 10; i++) await create(`t${i}`)
-    const res = await create('t-over')
-    expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0)
+    expect(await res.json()).toMatchObject({ error: 'rate_limited', retry_after: 60 })
+    expect(res.headers.get('retry-after')).toBe('60')
+    // A 429 on sign-in must not have run PBKDF2 or written an audit row.
+    expect(handled()).toBe(1)
   })
 
   it('counts per IP, so one blocked client does not block another', async () => {
-    for (let i = 0; i < 10; i++) await create(`u${i}`, '203.0.113.1')
-    expect((await create('u-over', '203.0.113.1')).status).toBe(429)
-    expect((await create('other-ip', '198.51.100.7')).status).toBe(201)
-  })
-
-  it('limits the sign-in route separately from batch creation', async () => {
-    // exhausting one must not exhaust the other
-    for (let i = 0; i < 10; i++) await create(`v${i}`)
-    const res = await SELF.fetch('https://example.com/api/batches/nope/officer/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.1' },
-      body: JSON.stringify({ password: 'x' }),
-    })
-    expect(res.status).not.toBe(429)
-  })
-
-  it('rejects before doing the expensive work', async () => {
-    // a 429 on sign-in must not have run PBKDF2 or written an audit row
-    for (let i = 0; i < 30; i++) {
-      await SELF.fetch('https://example.com/api/batches/nope/officer/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.9' },
-        body: JSON.stringify({ password: 'x' }),
-      })
-    }
-    const before = await env.DB.prepare(`SELECT count(*) c FROM audit_log`).first<{ c: number }>()
-    const res = await SELF.fetch('https://example.com/api/batches/nope/officer/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.9' },
-      body: JSON.stringify({ password: 'x' }),
-    })
-    expect(res.status).toBe(429)
-    const after = await env.DB.prepare(`SELECT count(*) c FROM audit_log`).first<{ c: number }>()
-    expect(after!.c).toBe(before!.c)
-  })
-
-  it('limits the door sign-in route too', async () => {
-    // spec §6 and HANDOFF §6b(3): both staff sign-ins are unauthenticated,
-    // cost ~210k PBKDF2 iterations, and write an audit row per failure.
-    for (let i = 0; i < 30; i++) {
-      await SELF.fetch('https://example.com/api/batches/nope/door/session', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.11' },
-        body: JSON.stringify({ password: 'x' }),
-      })
-    }
-    const res = await SELF.fetch('https://example.com/api/batches/nope/door/session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.11' },
-      body: JSON.stringify({ password: 'x' }),
-    })
-    expect(res.status).toBe(429)
+    const { hit } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(1).binding })
+    await hit('203.0.113.1')
+    expect((await hit('203.0.113.1')).status).toBe(429)
+    expect((await hit('198.51.100.7')).status).toBe(200)
   })
 
   it('falls back to x-forwarded-for when cf-connecting-ip is absent', async () => {
-    for (let i = 0; i < 10; i++) {
-      await SELF.fetch('https://example.com/api/batches', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY, 'x-forwarded-for': '192.0.2.5, 70.41.3.18' },
-        body: body(`xff${i}`),
-      })
+    const { binding, keys } = fakeLimiter(10)
+    const app = new Hono<{ Bindings: Env }>()
+    app.post('/x', rateLimit(RATE_LIMITS.staffSignIn), (c) => c.json({ ok: true }))
+    await app.request('/x', { method: 'POST', headers: { 'x-forwarded-for': '192.0.2.5, 70.41.3.18' } },
+      { STAFF_SIGNIN_LIMITER: binding } as Env)
+    expect(keys).toEqual(['192.0.2.5'])
+  })
+
+  // The failure that prompted the move off KV: the limiter's own storage threw,
+  // and every limited route -- ballots included -- returned 500 for the day.
+  it('fails open when the limiter itself throws', async () => {
+    const broken = { limit: async () => { throw new Error('limiter down') } } as unknown as RateLimit
+    const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: broken })
+    expect((await hit()).status).toBe(200)
+    expect(handled()).toBe(1)
+  })
+
+  it('gives each budget its own binding, so exhausting one never exhausts another', () => {
+    const bindings = Object.values(RATE_LIMITS).map((l) => l.binding)
+    expect(new Set(bindings).size).toBe(bindings.length)
+  })
+
+  it('declares every binding in wrangler.jsonc with the period RATE_LIMITS reports', () => {
+    for (const { binding, periodSeconds } of Object.values(RATE_LIMITS)) {
+      const line = wranglerConfig.split('\n').find((l) => l.includes(`"name": "${binding}"`))
+      expect(line, binding).toBeDefined()
+      expect(line).toContain(`"period": ${periodSeconds}`)
     }
-    const res = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY, 'x-forwarded-for': '192.0.2.5, 70.41.3.18' },
-      body: body('xff-over'),
-    })
-    expect(res.status).toBe(429)
+  })
+
+  it('keeps the voting budget loose enough for a full room on one IP', () => {
+    const line = wranglerConfig.split('\n').find((l) => l.includes('"name": "VOTING_LIMITER"'))!
+    expect(Number(/"limit": (\d+)/.exec(line)![1])).toBeGreaterThanOrEqual(600)
   })
 })

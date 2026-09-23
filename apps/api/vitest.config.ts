@@ -19,7 +19,14 @@ export default defineWorkersConfig(async () => {
           wrangler: { configPath: './wrangler.jsonc' },
           miniflare: {
             d1Databases: ['DB'],
-            kvNamespaces: ['RATE_LIMIT'],
+            // The binding's counters cannot be reset between tests the way KV
+            // could, so integration tests run with limits they never reach.
+            // The limiter itself is tested against a fake in rateLimit.test.ts.
+            ratelimits: {
+              BATCH_CREATE_LIMITER: { simple: { limit: 1_000_000, period: 60 } },
+              STAFF_SIGNIN_LIMITER: { simple: { limit: 1_000_000, period: 60 } },
+              VOTING_LIMITER: { simple: { limit: 1_000_000, period: 60 } },
+            },
             r2Buckets: ['LOGOS'],
             bindings: {
               TEST_MIGRATIONS: migrations,

@@ -22,10 +22,12 @@ import { doorVoters } from './routes/doorVoters.js'
 export type Env = {
   DB: D1Database
   /**
-   * Fixed-window rate-limit counters. Configuration, not a dependency — see
+   * Rate-limit bindings, one per budget. Configuration, not a dependency — see
    * src/middleware/rateLimit.ts for why the numbers are as loose as they are.
    */
-  RATE_LIMIT: KVNamespace
+  BATCH_CREATE_LIMITER: RateLimit
+  STAFF_SIGNIN_LIMITER: RateLimit
+  VOTING_LIMITER: RateLimit
   /** Society logos, keyed by content hash. See routes/logo.ts. */
   LOGOS: R2Bucket
   SUPER_ADMIN_KEY: string

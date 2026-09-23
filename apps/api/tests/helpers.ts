@@ -33,7 +33,6 @@ export const ALL_TABLES = [
 export async function resetDatabase(): Promise<void> {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
   for (const table of ALL_TABLES) await env.DB.prepare(`DELETE FROM ${table}`).run()
-  for (const key of (await env.RATE_LIMIT.list()).keys) await env.RATE_LIMIT.delete(key.name)
 }
 
 export type Fixture = {

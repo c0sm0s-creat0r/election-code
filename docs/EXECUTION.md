@@ -14,7 +14,7 @@ For *why* it is built this way, read
 | --- | --- | --- |
 | `packages/core` | STV count, ballot validation, CSV import. Zero dependencies. | nothing — imported |
 | `packages/styles` | Design tokens and element defaults, shared by both frontends. | nothing — imported |
-| `apps/api` | Hono on Workers. Bindings: D1, KV, R2. | `api.dalyell.com.au` |
+| `apps/api` | Hono on Workers. Bindings: D1, R2, rate limiters. | `api.dalyell.com.au` |
 | `apps/voter` | Preact. The ballot. | `vote.dalyell.com.au` |
 | `apps/admin` | React 19. Officer screens + the check-in desk at `/b/:slug/door`. | `admin.dalyell.com.au` |
 | `e2e` | One Playwright smoke test. | nothing — run locally |
@@ -41,7 +41,7 @@ before you touch anything else.**
 
 ## 2. First-time setup
 
-Node 20+. You need a Cloudflare account with Workers, D1, KV and R2 enabled.
+Node 20+. You need a Cloudflare account with Workers, D1 and R2 enabled.
 
 ```bash
 npm install
@@ -53,7 +53,6 @@ npm install
 cd apps/api
 
 wrangler d1 create election                 # paste the id into wrangler.jsonc -> d1_databases
-wrangler kv namespace create RATE_LIMIT     # paste the id into wrangler.jsonc -> kv_namespaces
 wrangler r2 bucket create election-logos    # name already matches wrangler.jsonc
 ```
 
@@ -121,12 +120,11 @@ cd apps/admin  && npm run dev                                                   
 ### `npm run dev` uses the PRODUCTION database — read this before experimenting
 
 All three bindings in `wrangler.jsonc` carry `"remote": true`, so `wrangler dev` runs the Worker
-locally and sends every D1 query, KV write and R2 upload to the **real** resources. Wrangler says so
+locally and sends every D1 query and R2 upload to the **real** resources. Wrangler says so
 on startup:
 
 ```
 env.DB (election)          D1 Database    remote
-env.RATE_LIMIT (…)         KV Namespace   remote
 env.LOGOS (election-logos) R2 Bucket      remote
 ```
 
@@ -391,7 +389,7 @@ you: the check belongs to the auditor.
 | Every sign-in returns 503 `server_not_configured` | `SESSION_SECRET` is missing or under 32 characters | Locally: create `apps/api/.dev.vars` (§3). Deployed: `wrangler secret put SESSION_SECRET` |
 | Sign-in works, everything after fails | The three hosts are not on one apex, so the cookie is never sent | Fix the hostnames. **Do not** set `origin: '*'` |
 | A check-in tablet shows a permission error mid-queue | The desk session lapsed (see lifetimes below) | The password form returns by itself with a reason. Just re-enter the check-in desk password |
-| "Too many attempts" | Rate limit. 30/10min on staff sign-in, 300/10min on voting | Wait. The window is ten minutes, not an hour |
+| "Too many attempts" | Rate limit, per IP. 10/min on staff sign-in, 600/min on voting, 3/min on sign-up | Wait one minute. On venue wifi the whole room is one IP; mobile data avoids that |
 | Close succeeded but there is no result | Worker died between the status flip and the seal | Click close again. It detects closed-but-unsealed and finishes sealing |
 | A voter says their vote did not go through | Usually it did — a lost response cannot return the receipt | Check the attendance export for their ID. They cannot get the receipt back; `LIMITATIONS.md` §1 |
 | A member is not on the roll | Stale export | Re-import a corrected export, or use **Add member** at the door |

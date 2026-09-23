@@ -65,7 +65,7 @@ export const brandingSchema = z.object({
  * characters a lowercase-and-digits password is about 2 billion combinations,
  * which is within reach of an offline attack on commodity hardware if a hash is
  * ever exposed, so the practical defence is now the sign-in rate limit
- * (30 per 10 minutes per IP) rather than the password itself.
+ * (10 per minute per IP) rather than the password itself.
  *
  * The floor still lives at provisioning time, where the password is chosen,
  * rather than at sign-in where it would be too late.

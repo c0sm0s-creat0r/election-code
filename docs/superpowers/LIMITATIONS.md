@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-23, after the PBKDF2 ceiling (17 live entries, 1 closed).
+**Last updated:** 2026-09-24, after moving rate limits off KV (18 live entries, 1 closed).
 
 ---
 
@@ -98,8 +98,8 @@ typically in a room of two hundred.
 **Where:** `apps/api/src/middleware/rateLimit.ts`.
 
 An AGM is one room on one wifi network, and Australian carriers use CGNAT, so a single IP can be the
-entire electorate. Voting surfaces therefore allow 300 per 10 minutes, which will not stop a
-determined attacker.
+entire electorate. Voting surfaces therefore allow 600 per minute per IP, which will not stop a
+determined attacker. The limiter fails open: if it errors, requests go through.
 
 **Why accepted:** a limit tight enough to stop an attacker locks out the room, which breaks the
 election outright. Integrity comes from the roll, the door check-in and the `vote_receipt` primary
@@ -358,3 +358,24 @@ stored hash carries its own count, so raising it later needs no migration.
 
 **What would close it:** Cloudflare raising the ceiling, or a WASM Argon2id build if the CPU cost
 proves affordable.
+
+---
+
+## 19. Rate limits fail open, and are approximate
+
+**Where:** `apps/api/src/middleware/rateLimit.ts`, `ratelimits` in `apps/api/wrangler.jsonc`.
+
+Limits used to be counters in KV. On 2026-09-24 the free plan's 1,000 KV writes a day ran out, `put()`
+threw, and every limited route returned 500, including voter sign-in and ballot submission. They now
+use the Workers Rate Limiting binding, which has no storage quota. If that binding errors, the request
+is **allowed** and the error is logged. Its counters are per Cloudflare location and eventually
+consistent, so it can admit somewhat more than the configured limit, and the only periods it offers
+are 10 or 60 seconds.
+
+**Why accepted:** the limits were always cost ceilings, not integrity controls (§5). A limiter that
+fails closed turns its own outage into an election outage, which is what happened. The one place a
+limit matters for security is staff sign-in with six-character passwords (§18). There a limiter
+outage briefly removes the throttle, but PBKDF2 and the audit row still apply.
+
+**What would close it:** a Durable Object counter would be exact and would not depend on a
+per-location binding, but it adds a moving part to every voting request for no integrity gain.

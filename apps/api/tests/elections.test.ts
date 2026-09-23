@@ -13,7 +13,6 @@ beforeEach(async () => {
   for (const t of ['candidate', 'election', 'audit_log', 'batch']) {
     await env.DB.prepare(`DELETE FROM ${t}`).run()
   }
-  for (const k of (await env.RATE_LIMIT.list()).keys) await env.RATE_LIMIT.delete(k.name)
 
   const res = await SELF.fetch('https://example.com/api/batches', {
     method: 'POST',

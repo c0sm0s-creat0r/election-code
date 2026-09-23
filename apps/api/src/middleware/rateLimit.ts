@@ -1,5 +1,5 @@
 /**
- * Fixed-window request counter in KV.
+ * Per-IP request limits, on Cloudflare's Workers Rate Limiting binding.
  *
  * **The sizing matters more than the mechanism.** An AGM is one room on one
  * wifi network, so every voter shares a source IP, and Australian mobile
@@ -10,39 +10,52 @@
  * stop runaway billable CPU and to stop the audit trail being flooded until
  * real entries are unreadable — not to be a quota.
  *
- * The window is short on purpose: a stall that trips a limit recovers in ten
- * minutes rather than at the top of the hour.
+ * **Why not KV (2026-09-24).** This was a counter in KV, written on every
+ * request. The free plan allows 1,000 KV writes a day, and when they ran out
+ * `put()` threw, so every limited route — staff sign-in, voter sign-in, ballot
+ * submission — returned 500 until midnight UTC. One AGM would spend the quota
+ * on its own. KV also allows one write per second per key, and a room behind
+ * one IP is exactly one key. The binding has neither limit, and costs nothing.
  *
- * A fixed window can admit up to 2x the limit across a boundary, and the
- * read-then-write below can under-count under concurrency. Both are accepted
- * for the same reason: the numbers are cost ceilings, not guarantees.
+ * **The numbers live in wrangler.jsonc**, one binding per budget, because the
+ * binding enforces them; `RATE_LIMITS` only names which binding a route uses.
+ * The binding supports a 10 or 60 second period and nothing longer. Its
+ * counters are per Cloudflare location and eventually consistent, so it can
+ * admit somewhat more than the limit — accepted for the same reason as above.
+ *
+ * **It fails open.** If the binding itself throws, the request proceeds and
+ * the error is logged. A limiter outage must never take the election down
+ * with it; that is precisely what the KV version did.
  */
 import type { Context, MiddlewareHandler } from 'hono'
 import type { Env } from '../index.js'
 
+type LimiterBinding = 'BATCH_CREATE_LIMITER' | 'STAFF_SIGNIN_LIMITER' | 'VOTING_LIMITER'
+
 export type RateLimitOptions = {
-  /** Namespace, so exhausting one route's budget never exhausts another's. */
-  name: string
-  limit: number
-  windowSeconds: number
+  /** Which binding, so exhausting one route's budget never exhausts another's. */
+  binding: LimiterBinding
+  /** The binding's period, sent back as Retry-After. Must match wrangler.jsonc. */
+  periodSeconds: 10 | 60
 }
 
 export const RATE_LIMITS = {
-  /** Operator-only, from anywhere. Tight is safe. */
-  batchCreate: { name: 'batch-create', limit: 10, windowSeconds: 3600 },
+  /** Society sign-up and operator delete. 3 per minute per IP. */
+  batchCreate: { binding: 'BATCH_CREATE_LIMITER', periodSeconds: 60 },
   /**
-   * Both staff sign-ins. ~100k PBKDF2 iterations *and* an audit row per
-   * failure, on an unauthenticated route. Loose enough for a committee
-   * retyping a shared password, tight enough that the audit trail cannot be
-   * buried.
+   * Both staff sign-ins, 10 per minute per IP. ~100k PBKDF2 iterations *and*
+   * an audit row per failure, on an unauthenticated route. Loose enough for a
+   * committee retyping a shared password, tight enough that the audit trail
+   * cannot be buried.
    */
-  staffSignIn: { name: 'staff-signin', limit: 30, windowSeconds: 600 },
+  staffSignIn: { binding: 'STAFF_SIGNIN_LIMITER', periodSeconds: 60 },
   /**
-   * Roll lookup, voter sign-in, ballot submission. **Deliberately loose.** A
-   * limit that blocks a queue of 200 people breaks the election; one that
-   * lets them through cannot forge a ballot.
+   * Roll lookup, voter sign-in, ballot submission, receipts: 600 per minute
+   * per IP. **Deliberately loose.** A whole room submitting within the same
+   * minute is the expected case, not an attack. A limit that blocks the queue
+   * breaks the election; one that lets them through cannot forge a ballot.
    */
-  voting: { name: 'voting', limit: 300, windowSeconds: 600 },
+  voting: { binding: 'VOTING_LIMITER', periodSeconds: 60 },
 } as const satisfies Record<string, RateLimitOptions>
 
 /**
@@ -55,22 +68,19 @@ const clientIp = (c: Context): string =>
 
 export function rateLimit(opts: RateLimitOptions): MiddlewareHandler<{ Bindings: Env }> {
   return async (c, next) => {
-    const nowSeconds = Math.floor(Date.now() / 1000)
-    const window = Math.floor(nowSeconds / opts.windowSeconds)
-    const key = `rl:${opts.name}:${window}:${clientIp(c)}`
+    let allowed = true
+    try {
+      allowed = (await c.env[opts.binding].limit({ key: clientIp(c) })).success
+    } catch (err) {
+      console.error('rate limiter unavailable; allowing request', opts.binding, err)
+    }
 
-    const current = Number((await c.env.RATE_LIMIT.get(key)) ?? '0')
-    if (current >= opts.limit) {
-      const resetAt = (window + 1) * opts.windowSeconds
-      const retryAfter = Math.max(1, resetAt - nowSeconds)
+    if (!allowed) {
+      const retryAfter = opts.periodSeconds
       return c.json({ error: 'rate_limited', retry_after: retryAfter }, 429, {
         'retry-after': String(retryAfter),
       })
     }
-
-    // Two windows of TTL so a key written at the very end of a window is
-    // still readable for the whole of it. KV expiry is eventual, not exact.
-    await c.env.RATE_LIMIT.put(key, String(current + 1), { expirationTtl: opts.windowSeconds * 2 })
 
     await next()
   }

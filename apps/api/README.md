@@ -85,7 +85,7 @@ spec §6 exists to close.
 
 ### The bindings are real, and `wrangler dev` uses them
 
-D1, KV and R2 all exist, their ids are in `wrangler.jsonc`, and migrations
+D1 and R2 exist, their ids are in `wrangler.jsonc`, and migrations
 `0001`–`0004` are applied to the remote database.
 
 All three bindings carry `"remote": true`, so **`npm run dev` reads and writes
