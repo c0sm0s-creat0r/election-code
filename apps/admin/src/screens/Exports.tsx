@@ -57,8 +57,16 @@ export function Exports({ batchId, electionId }: ExportsProps) {
       {electionId === undefined && (
         <ul className="export-list plain-list">
           <li>
-            <a href={`${base}/attendance.csv`}>Attendance across the AGM (CSV)</a>
-            <span className="muted">Every election's mark-off in one file, for the minutes.</span>
+            <a href={`${base}/attendance.csv`}>Voters in every election (CSV)</a>
+            <span className="muted">
+              Who voted in each election, one row per vote. Doesn't include how they voted.
+            </span>
+          </li>
+          <li>
+            <a href={`${base}/check-ins.csv`}>Checked-in members (CSV)</a>
+            <span className="muted">
+              Everyone checked in at the desk, whether or not they voted. Download for the minutes.
+            </span>
           </li>
           <li>
             <a href={`${base}/guests.csv`}>Guests (CSV)</a>

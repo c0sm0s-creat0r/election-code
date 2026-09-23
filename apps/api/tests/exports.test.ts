@@ -193,4 +193,39 @@ describe('exports', () => {
   it('requires an officer session for the guest export', async () => {
     expect((await get('/guests.csv', f.doorCookie)).status).toBe(403)
   })
+
+  it('names the all-elections file for what it holds', async () => {
+    const res = await get('/attendance.csv')
+    expect(res.headers.get('content-disposition')).toContain(`voters-all-elections-${f.batchId}.csv`)
+  })
+
+  it('exports everyone checked in, whether or not they voted', async () => {
+    // 2400001, 2400002 and 2400004 are checked in by setUp and all voted; the
+    // point is the file is the door's list, so check someone in who has not.
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/check-in`, {
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
+      body: JSON.stringify({ usu_id: '2400006' }),
+    })
+    const res = await get('/check-ins.csv')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toContain(`check-ins-${f.batchId}.csv`)
+    const [header, ...rows] = (await res.text()).trim().split('\n')
+    expect(header).toBe('usu_id,first_name,last_name,eligible,added_at_door,checked_in_at')
+    expect(rows.map((r) => r.split(',')[0])).toEqual(
+      expect.arrayContaining(['"2400001"', '"2400002"', '"2400004"', '"2400006"']),
+    )
+  })
+
+  it('leaves guests out of the check-in export', async () => {
+    await SELF.fetch(`https://example.com/api/batches/${f.batchId}/guests`, {
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
+      body: JSON.stringify({ name: 'Jo Visitor', note: 'observer' }),
+    })
+    expect(await (await get('/check-ins.csv')).text()).not.toContain('Jo Visitor')
+  })
+
+  it('requires an officer session for the check-in export', async () => {
+    expect((await get('/check-ins.csv', f.doorCookie)).status).toBe(403)
+    expect((await get('/check-ins.csv', '')).status).toBe(401)
+  })
 })

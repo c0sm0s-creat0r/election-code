@@ -93,7 +93,8 @@ describe('Result', () => {
     stub(200, document_)
     renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())
-    expect(screen.queryByRole('link', { name: /across the AGM/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /voters in every election/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /checked-in members/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /guests \(csv\)/i })).toBeNull()
   })
 

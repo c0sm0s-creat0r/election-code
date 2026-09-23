@@ -2,6 +2,7 @@
  * Everything a disputing party needs to check the work themselves.
  *
  * - **attendance** is the roll mark-off: who voted, never what.
+ * - **check-ins** is who was in the room, voted or not.
  * - **ballots** is the anonymous box. With the `voided` column it is now
  *   sufficient to recompute `ballots_sha256`, so a recipient can confirm these
  *   are the sealed ballots *before* recounting them — that was the gap spec §2
@@ -87,7 +88,12 @@ exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('offi
   )
 })
 
-/** Attendance across every election in the batch, for the AGM minutes. */
+/**
+ * Who voted, in every election in the batch, for the AGM minutes: one row per
+ * member per election they voted in. The path keeps its old name so saved links
+ * still work, but the file is not attendance — a member who was checked in and
+ * did not vote is not in it. That is `check-ins.csv`.
+ */
 exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
 
@@ -111,7 +117,7 @@ exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c
 
   return csvResponse(
     c,
-    `attendance-${batchId}.csv`,
+    `voters-all-elections-${batchId}.csv`,
     csv(
       ['election_id', 'election_name', 'usu_id', 'first_name', 'last_name', 'voted_at', 'added_at_door'],
       results.map((r) => [
@@ -168,6 +174,44 @@ exports_.get('/api/batches/:id/guests.csv', requireRole('officer'), async (c) =>
     c,
     `guests-${batchId}.csv`,
     csv(['name', 'note', 'checked_in_at'], results.map((r) => [r.name, r.note ?? '', String(r.checked_in_at)])),
+  )
+})
+
+/**
+ * Everyone checked in at the door: the room, not the ballot box.
+ *
+ * An inner join is safe here, unlike the voting exports: `check_in` has a
+ * cascading foreign key to `voter_roll`, so no check-in outlives its roll row and
+ * after the purge this is honestly empty. `eligible` travels with every row,
+ * because a re-import can mark a checked-in member ineligible, and quorum counts
+ * only the eligible ones.
+ */
+exports_.get('/api/batches/:id/check-ins.csv', requireRole('officer'), async (c) => {
+  const batchId = requireSession(c).batchId
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT ci.usu_id, r.first_name, r.last_name, r.eligible, r.added_at_door, ci.checked_in_at
+         FROM check_in ci
+         JOIN voter_roll r ON r.batch_id = ci.batch_id AND r.usu_id = ci.usu_id
+        WHERE ci.batch_id = ?
+        ORDER BY ci.checked_in_at, ci.usu_id`,
+    )
+    .bind(batchId)
+    .all<{
+      usu_id: string; first_name: string; last_name: string
+      eligible: number; added_at_door: number; checked_in_at: number
+    }>()
+
+  return csvResponse(
+    c,
+    `check-ins-${batchId}.csv`,
+    csv(
+      ['usu_id', 'first_name', 'last_name', 'eligible', 'added_at_door', 'checked_in_at'],
+      results.map((r) => [
+        r.usu_id, r.first_name, r.last_name,
+        String(r.eligible), String(r.added_at_door), String(r.checked_in_at),
+      ]),
+    ),
   )
 })
 

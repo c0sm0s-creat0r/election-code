@@ -18,13 +18,17 @@ describe('Exports', () => {
 
   it('offers the whole-AGM files when given no election', () => {
     renderRouted(<Exports batchId="b1" electionId={undefined} />)
-    expect(screen.getByRole('link', { name: /across the AGM/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /voters in every election/i }).getAttribute('href'))
+      .toContain('/api/batches/b1/attendance.csv')
+    expect(screen.getByRole('link', { name: /checked-in members/i }).getAttribute('href'))
+      .toContain('/api/batches/b1/check-ins.csv')
     expect(screen.getByRole('link', { name: /guests \(csv\)/i })).toBeTruthy()
   })
 
   it('never shows both sets at once', () => {
     renderRouted(<Exports batchId="b1" electionId="e1" />)
-    expect(screen.queryByRole('link', { name: /across the AGM/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /voters in every election/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /checked-in members/i })).toBeNull()
   })
 
   it('shows no per-election files without an election', () => {
