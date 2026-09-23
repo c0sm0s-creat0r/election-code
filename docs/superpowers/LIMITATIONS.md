@@ -7,7 +7,7 @@ as if it were a bug and quietly "fixes" it into something worse.
 Each entry says what the limitation is, why it was accepted, and what would close it. A limitation
 leaving this list should mean it was closed, not that it was forgotten.
 
-**Last updated:** 2026-09-22, after the operator delete capability (16 live entries, 1 closed).
+**Last updated:** 2026-09-23, after the PBKDF2 ceiling (17 live entries, 1 closed).
 
 ---
 
@@ -337,3 +337,24 @@ scheduled job after a grace period — which would turn an irreversible action i
 and still take abandoned societies off the list. That is the right shape if this is ever used on a
 society that has really run an election. A second operator approval, or an export-before-delete
 requirement, would cost more than it buys at this scale.
+
+---
+
+## 18. Passwords are hashed at 100,000 PBKDF2 iterations, under OWASP's 210,000
+
+**Where:** `apps/api/src/auth/password.ts`, and `DUMMY_HASH` in `apps/api/src/routes/auth.ts`.
+
+Production Workers throw `NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+supported`. Local workerd has no such limit, so at 210,000 the test suite and `wrangler dev` were all
+green while every society sign-up on `api.dalyell.com.au` returned 500.
+
+**Why accepted (2026-09-23):** it is the platform ceiling, not a choice. The only alternatives are
+Argon2 or bcrypt as WASM, which cost bundle size and CPU time on every sign-in. Against a leaked hash
+of a six-character password (see the note in `routes/batches.ts`), the difference between 100k and
+210k iterations is about 2x, which is not where the defence comes from. The sign-in rate limit is.
+
+**What bounds it:** `tests/password.test.ts` fails if the count goes above 100,000 again, and the
+stored hash carries its own count, so raising it later needs no migration.
+
+**What would close it:** Cloudflare raising the ceiling, or a WASM Argon2id build if the CPU cost
+proves affordable.

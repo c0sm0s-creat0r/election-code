@@ -20,8 +20,16 @@ describe('password hashing', () => {
     const stored = await hashPassword('x')
     const [scheme, iterations] = stored.split('$')
     expect(scheme).toBe('pbkdf2-sha256')
-    expect(Number(iterations)).toBeGreaterThanOrEqual(210_000)
+    expect(Number(iterations)).toBeGreaterThanOrEqual(100_000)
     expect(stored.split('$')).toHaveLength(4)
+  })
+
+  // Production Workers throw NotSupportedError above 100,000 iterations; local
+  // workerd does not, so no other test here can catch a count over the cap.
+  // Exceeding it made every society sign-up a 500 on api.dalyell.com.au.
+  it('never exceeds the Workers PBKDF2 ceiling of 100,000 iterations', async () => {
+    const [, iterations] = (await hashPassword('x')).split('$')
+    expect(Number(iterations)).toBeLessThanOrEqual(100_000)
   })
 
   it('never stores the plaintext', async () => {

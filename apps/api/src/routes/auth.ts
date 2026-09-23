@@ -39,8 +39,10 @@ type SignInRole = keyof typeof TTL_SECONDS
 // A fixed, validly-formatted hash to run through verifyPassword when the
 // batch does not exist, so an unknown batch id and a wrong password take a
 // comparable code path rather than returning early with no PBKDF2 work done
-// at all — belt-and-braces alongside the identical 401 status.
-const DUMMY_HASH = 'pbkdf2-sha256$210000$BwcHBwcHBwcHBwcHBwcHBw==$wyu1lWWAh+nnX8b+mM2RXS+x6AYfbSoM8AAskjgywzs='
+// at all — belt-and-braces alongside the identical 401 status. Its iteration
+// count must match password.ts: above 100,000 production throws instantly and
+// verifyPassword swallows it, which silently reopens the timing gap.
+const DUMMY_HASH = 'pbkdf2-sha256$100000$BwcHBwcHBwcHBwcHBwcHBw==$xl+cmf7KzCjhMIgwm24j5zJdLtkUvSCoFpYH1NYVjrg='
 
 async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
   // Before any password work or batch lookup: a misconfigured deployment must
@@ -115,7 +117,7 @@ async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
 export const auth = new Hono<AuthedEnv>()
 
 // The limiter is composed FIRST, so a 429 costs no PBKDF2 and writes no audit
-// row. These two routes are unauthenticated, run ~210k iterations per call and
+// row. These two routes are unauthenticated, run ~100k iterations per call and
 // append to `audit_log` on every failure, which makes them both a billable-CPU
 // amplifier and a way to bury the audit trail an anonymous caller should not
 // be able to touch.

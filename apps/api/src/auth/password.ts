@@ -2,15 +2,23 @@
  * PBKDF2-HMAC-SHA256 via WebCrypto.
  *
  * Argon2 and bcrypt are deliberately not used: both need a WASM build on
- * Workers, where PBKDF2 is native. 210,000 iterations follows OWASP guidance
- * for PBKDF2-HMAC-SHA256.
+ * Workers, where PBKDF2 is native.
+ *
+ * **100,000 iterations is a platform ceiling, not a choice.** OWASP asks for
+ * 210,000, but production Workers throw NotSupportedError above 100,000, and
+ * local workerd (so every test and `wrangler dev`) does not. At 210,000 every
+ * hashPassword call in production was a 500. Do not raise it.
+ *
+ * verifyPassword reads the count from the stored value, so a hash written at
+ * 210,000 by a local `wrangler dev` against the remote database will fail to
+ * verify in production. Reset that password rather than raise this.
  *
  * Encoded form: pbkdf2-sha256$<iterations>$<salt-b64>$<hash-b64>
  */
 import { timingSafeEqual } from './timing-safe-equal.js'
 
 const SCHEME = 'pbkdf2-sha256'
-const ITERATIONS = 210_000
+const ITERATIONS = 100_000
 const SALT_BYTES = 16
 const KEY_BITS = 256
 

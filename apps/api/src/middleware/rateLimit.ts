@@ -31,7 +31,7 @@ export const RATE_LIMITS = {
   /** Operator-only, from anywhere. Tight is safe. */
   batchCreate: { name: 'batch-create', limit: 10, windowSeconds: 3600 },
   /**
-   * Both staff sign-ins. ~210k PBKDF2 iterations *and* an audit row per
+   * Both staff sign-ins. ~100k PBKDF2 iterations *and* an audit row per
    * failure, on an unauthenticated route. Loose enough for a committee
    * retyping a shared password, tight enough that the audit trail cannot be
    * buried.

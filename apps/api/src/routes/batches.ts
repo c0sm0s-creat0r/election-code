@@ -60,7 +60,7 @@ export const brandingSchema = z.object({
 /**
  * Lowered from 12 to 6 on 2026-09-22 at the user's direction.
  *
- * PBKDF2 at 210k iterations is the only thing in front of these, and it slows an
+ * PBKDF2 at 100k iterations (the Workers ceiling) is the only thing in front of these, and it slows an
  * attacker by a constant factor — it does not rescue a short password. At six
  * characters a lowercase-and-digits password is about 2 billion combinations,
  * which is within reach of an offline attack on commodity hardware if a hash is
