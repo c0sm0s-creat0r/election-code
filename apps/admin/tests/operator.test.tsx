@@ -64,7 +64,7 @@ describe('Operator', () => {
   it('says what deleting a society destroys, before anything is clicked', async () => {
     stubApi()
     renderRouted(<Operator />)
-    expect(screen.getByText(/cannot be undone/i)).toBeTruthy()
+    expect(screen.getByText(/destroys its roll/i)).toBeTruthy()
     expect(screen.getByText(/sealed results/i)).toBeTruthy()
   })
 

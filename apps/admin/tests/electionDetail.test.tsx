@@ -102,7 +102,7 @@ describe('ElectionDetail', () => {
   it('explains why the controls are gone', () => {
     stub(200, turnout)
     show('open')
-    expect(screen.getByText(/frozen/i)).toBeTruthy()
+    expect(screen.getByText(/can no longer be edited because voting has opened/i)).toBeTruthy()
   })
 
   it('reports why an election could not be opened', async () => {

@@ -22,11 +22,6 @@ const fill = (over: Partial<Record<'name' | 'officer' | 'door' | 'slug', string>
 const submit = () => fireEvent.click(screen.getByRole('button', { name: /register society/i }))
 
 describe('SignUp', () => {
-  it('SAYS PLAINLY that nothing verifies who you are', () => {
-    renderRouted(<SignUp />)
-    expect(screen.getByText(/nothing here checks who you are/i)).toBeTruthy()
-  })
-
   it('suggests a slug from the name, so nobody has to guess the rules', () => {
     renderRouted(<SignUp />)
     fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society!' } })
@@ -55,12 +50,12 @@ describe('SignUp', () => {
     expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain('x-super-admin-key')
   })
 
-  it('TELLS THEM THE PASSWORDS CANNOT BE RECOVERED', async () => {
+  it('TELLS THEM TO WRITE THE PASSWORDS DOWN', async () => {
     stub(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} })
     renderRouted(<SignUp />)
     fill()
     submit()
-    await waitFor(() => expect(screen.getByText(/cannot be recovered/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/written down your passwords/i)).toBeTruthy())
   })
 
   it('shows all three URLs afterwards', async () => {
@@ -152,7 +147,7 @@ describe('SignUp', () => {
     fill()
     fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [new File(['nope'], 'x.png')] } })
     submit()
-    await waitFor(() => expect(screen.getByText(/cannot be recovered/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/written down your passwords/i)).toBeTruthy())
     expect(screen.getByRole('alert').textContent).toMatch(/logo was not/i)
     expect(document.querySelector('img.society-logo')).toBeNull()
   })

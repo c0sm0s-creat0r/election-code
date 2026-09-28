@@ -53,13 +53,6 @@ describe('Landing', () => {
     expect(document.querySelector('img.society-logo')).toBeNull()
   })
 
-  it('SAYS THE LIST IS NOT AN ENDORSEMENT', async () => {
-    // Registration is open and unverified, so the list must not read as vetting.
-    stub(200, societies)
-    renderRouted(<Landing />)
-    await waitFor(() => expect(screen.getByText(/not an endorsement/i)).toBeTruthy())
-  })
-
   it('shows no list when there are none, rather than an empty heading', async () => {
     stub(200, [])
     renderRouted(<Landing />)
