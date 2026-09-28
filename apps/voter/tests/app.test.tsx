@@ -6,7 +6,15 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
   document.documentElement.style.removeProperty('--accent')
+  setVisibility('visible')
 })
+
+/** jsdom's page is always visible; this is how a locked phone looks to the app. */
+const setVisibility = (state: 'visible' | 'hidden') => {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  Object.defineProperty(document, 'hidden', { value: state === 'hidden', configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
 
 const BATCH = {
   id: 'b1', slug: 's', name: 'Soc',
@@ -150,7 +158,7 @@ describe('App', () => {
     atSlug('s')
     render(<App />)
     await waitFor(() => expect(screen.getByText(/nothing is open for voting yet/i)).toBeTruthy())
-    expect(screen.getByText(/leave this page open/i)).toBeTruthy()
+    expect(screen.getByText(/auto refresh/i)).toBeTruthy()
   })
 
   it('shows sign-in once an election is open', async () => {
@@ -335,6 +343,46 @@ describe('App', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(screen.getByText('President')).toBeTruthy()
     expect(screen.getByText(/could not check for new elections/i)).toBeTruthy()
+  })
+
+  it('STOPS CHECKING while the screen is off or the tab is in the background', async () => {
+    // A room of phones left on the table, each asking every ten seconds, is
+    // what spends the free plan's daily Worker requests and D1 reads.
+    vi.useFakeTimers()
+    const spy = vi.fn(async (url: string) => {
+      if (url.includes('by-slug')) return new Response(JSON.stringify(BATCH), json)
+      return new Response(JSON.stringify([election('e1', 'President')]), json)
+    })
+    vi.stubGlobal('fetch', spy)
+    atSlug('s')
+    render(<App />)
+    await settle()
+
+    const polls = () => spy.mock.calls.filter(([url]) => url.endsWith('/elections')).length
+    const before = polls()
+    setVisibility('hidden')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(polls()).toBe(before)
+  })
+
+  it('CHECKS AT ONCE when the voter comes back, so a newly opened election is there', async () => {
+    vi.useFakeTimers()
+    let open: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('by-slug')) return new Response(JSON.stringify(BATCH), json)
+      return new Response(JSON.stringify(open), json)
+    }))
+    atSlug('s')
+    render(<App />)
+    await settle()
+    setVisibility('hidden')
+
+    // Opened while the phone was locked. Waiting up to ten seconds after
+    // unlocking would look like the app had missed it.
+    open = [election('e1', 'President')]
+    setVisibility('visible')
+    await settle()
+    expect(screen.getByLabelText(/usu id/i)).toBeTruthy()
   })
 
   it('MARKS AN ELECTION VOTED ACROSS A RELOAD, and still offers the receipt', async () => {

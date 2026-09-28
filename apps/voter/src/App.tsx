@@ -54,9 +54,10 @@ function Masthead({ title, branding }: { title: string; branding: Branding | und
 const slugFromPath = (): string => (window.location.pathname.split('/')[1] ?? '').trim()
 
 /**
- * Ten seconds. Fast enough that a voter looking at the screen when the chair
- * opens an election sees it without being told to reload, slow enough to be
- * nothing against D1's read path.
+ * Ten seconds, and only while the page is visible. Fast enough that a voter
+ * looking at the screen when the chair opens an election sees it without being
+ * told to reload. It is not free: 300 phones is ~108,000 requests an hour, more
+ * than the Workers free plan allows in a day.
  */
 const POLL_MS = 10_000
 
@@ -126,9 +127,28 @@ export function App() {
         if (live) setStale(true)
       }
     }
-    void poll()
-    const timer = setInterval(() => void poll(), POLL_MS)
-    return () => { live = false; clearInterval(timer) }
+    // Only while the page is on screen. A locked phone or a background tab asks
+    // nothing: a room of phones left polling on the table is what spent the
+    // free plan's daily Worker requests and D1 reads. Coming back checks at
+    // once, so an election opened meanwhile is there without a ten-second wait.
+    let timer: ReturnType<typeof setInterval> | undefined
+    const start = () => {
+      if (timer !== undefined) return
+      void poll()
+      timer = setInterval(() => void poll(), POLL_MS)
+    }
+    const stop = () => {
+      clearInterval(timer)
+      timer = undefined
+    }
+    const onVisibility = () => (document.hidden ? stop() : start())
+    document.addEventListener('visibilitychange', onVisibility)
+    if (!document.hidden) start()
+    return () => {
+      live = false
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [batch])
 
   const heading = batch?.branding.title ?? 'Vote'

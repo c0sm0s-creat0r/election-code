@@ -171,3 +171,84 @@ describe('ElectionDetail', () => {
     expect(screen.queryByRole('link', { name: /result/i })).toBeNull()
   })
 })
+
+/** jsdom's page is always visible; this is how a background tab looks to the app. */
+const setVisibility = (state: 'visible' | 'hidden') => {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+  Object.defineProperty(document, 'hidden', { value: state === 'hidden', configurable: true })
+  document.dispatchEvent(new Event('visibilitychange'))
+}
+
+/**
+ * Each turnout poll reads the whole roll twice, every check-in and every ballot.
+ * One officer tab left open on this screen spent the free plan's 5 million daily
+ * D1 row reads in a couple of hours, so the poll stops when nobody is looking.
+ */
+describe('turnout polling', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    setVisibility('visible')
+  })
+
+  const pollCounter = () => {
+    const spy = vi.fn(async () => new Response(JSON.stringify(turnout), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', spy)
+    return () => spy.mock.calls.length
+  }
+
+  it('PAUSES after ten minutes with no activity, and says so', async () => {
+    vi.useFakeTimers()
+    const polls = pollCounter()
+    show('open')
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 5000)
+    const atPause = polls()
+    expect(screen.getByText(/turnout updates paused/i)).toBeTruthy()
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(polls()).toBe(atPause)
+  })
+
+  it('keeps updating while the officer is using the page', async () => {
+    vi.useFakeTimers()
+    const polls = pollCounter()
+    show('open')
+    for (let minute = 0; minute < 15; minute++) {
+      await vi.advanceTimersByTimeAsync(60_000)
+      fireEvent.pointerDown(document.body)
+    }
+    const before = polls()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(polls()).toBe(before + 1)
+    expect(screen.queryByText(/turnout updates paused/i)).toBeNull()
+  })
+
+  it('RESUMES from the button, fetching at once', async () => {
+    vi.useFakeTimers()
+    const polls = pollCounter()
+    show('open')
+    await vi.advanceTimersByTimeAsync(11 * 60_000)
+    const atPause = polls()
+
+    fireEvent.click(screen.getByRole('button', { name: /resume/i }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(polls()).toBe(atPause + 1)
+    expect(screen.queryByText(/turnout updates paused/i)).toBeNull()
+  })
+
+  it('STOPS while the tab is in the background, and catches up on return', async () => {
+    vi.useFakeTimers()
+    const polls = pollCounter()
+    show('open')
+    await vi.advanceTimersByTimeAsync(0)
+    setVisibility('hidden')
+    const hiddenAt = polls()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(polls()).toBe(hiddenAt)
+
+    setVisibility('visible')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(polls()).toBe(hiddenAt + 1)
+  })
+})
