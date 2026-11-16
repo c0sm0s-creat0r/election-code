@@ -1,10 +1,8 @@
 /**
- * One election's ballot, and what happens when submitting it goes wrong.
- *
- * The ranking itself lives in `RankedBallot`; this screen owns the submission and
- * its outcomes. The interesting one is the network failure: a request that never
- * completes may still have committed, and the wording has to say that (spec §4.4,
- * `docs/superpowers/LIMITATIONS.md` §1).
+ * One election's ballot and its submission errors. `RankedBallot` owns the
+ * ranking; this screen owns the submission. A request that never completes
+ * may still have committed, and the wording must say so
+ * (docs/superpowers/LIMITATIONS.md §1).
  */
 import { useState } from 'preact/hooks'
 import { ApiError, submitBallot, type PublicElection } from '../api.js'
@@ -13,10 +11,10 @@ import { RankedBallot } from '../components/RankedBallot.js'
 export type BallotProps = {
   batchId: string
   election: PublicElection
-  /** Leaving without voting. Without it, tapping into a ballot is a trap. */
+  /** Leaving without voting. */
   onBack: () => void
   onCast: (receiptToken: string) => void
-  /** Handed the draft ranking, so a lapsed session costs nobody their work. */
+  /** Receives the draft ranking, so an expired session loses no work. */
   onSessionLost: (draft: string[]) => void
   initialRanking?: string[]
 }
@@ -28,9 +26,7 @@ export function Ballot({
   const [submitting, setSubmitting] = useState(false)
 
   const submit = async (preferences: string[]) => {
-    // Single-flight. A double tap on a laggy connection would otherwise send two
-    // requests; the API refuses the second with 409, but "already voted" is a bad
-    // answer to a question the voter did not ask.
+    // Single-flight: a double tap would get a 409 "already voted".
     if (submitting) return
     setSubmitting(true)
     setError('')
@@ -43,10 +39,8 @@ export function Ballot({
         return
       }
       if (caught.status === 0) {
-        // The dangerous case. The insert may have committed while the response was
-        // lost, and the receipt token is never stored server-side, so it is gone.
-        // Say so: do not imply failure, and do not offer a retry that would read
-        // as a second chance at the receipt.
+        // The ballot may have committed while the response, with the receipt token,
+        // was lost. Do not imply failure or offer a retry.
         setError(
           'Your vote may have been recorded, but we could not show you a receipt — '
           + 'so you will not be able to verify it later. Do not submit again; '
@@ -67,8 +61,7 @@ export function Ballot({
         return
       }
       if (caught.status === 400) {
-        // validateBallot's reasons are written to be read by a voter mid-ballot,
-        // so they are shown verbatim rather than translated.
+        // validateBallot's reasons are written for a voter. Show them as-is.
         setError(caught.message)
         return
       }
@@ -80,11 +73,7 @@ export function Ballot({
 
   return (
     <section class="stack">
-      {/*
-        No "election 2 of 3": the count is only of what is open right now, and
-        stating it as a total told voters the meeting was nearly over when it was
-        not. The agenda lists what is open; this says which one you are in.
-      */}
+      {/* No "election 2 of 3": only the open ones are known. */}
       <p>
         <button type="button" class="link-button" onClick={onBack}>
           ← All elections

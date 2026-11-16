@@ -1,10 +1,7 @@
 /**
- * The two delete routes, and what each of them refuses.
- *
- * They exist at opposite ends of the privilege range and the tests are written
- * to hold that line: an officer can remove a mistake and can never remove a
- * vote; the operator can remove a whole society, including sealed results, and
- * cannot do it by accident or without the audit trail recording it.
+ * The two delete routes and what each refuses. An officer can remove a
+ * mistake, never a vote. The operator can remove a society, with a
+ * confirmation and an audit row.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
@@ -69,8 +66,6 @@ describe('deleting an election', () => {
   })
 
   it('REFUSES ONE THAT HAS A BALLOT IN IT, and leaves it standing', async () => {
-    // The whole point of the route's guard. An officer password removes a
-    // mistake; it never removes a vote.
     const { batchId, officerCookie, electionId, candidateIds, voterCookies } = await setUp(['2400001'])
     await submitBallot(batchId, electionId, voterCookies['2400001']!, [candidateIds.a])
 
@@ -82,8 +77,7 @@ describe('deleting an election', () => {
   })
 
   it('refuses one whose only ballot was voided, because the row is still there', async () => {
-    // A voided ballot stays in the table so the seal still covers it. It is
-    // evidence, and evidence counts.
+    // a voided ballot stays in the table, so the seal covers it
     const { batchId, officerCookie, electionId, candidateIds, voterCookies } = await setUp(['2400001'])
     const cast = await submitBallot(batchId, electionId, voterCookies['2400001']!, [candidateIds.a])
     const { receipt_token } = (await cast.json()) as { receipt_token: string }
@@ -95,8 +89,7 @@ describe('deleting an election', () => {
   })
 
   it('removes a closed election with an empty box, seal and result included', async () => {
-    // `election_seal` and `election_result` have no ON DELETE CASCADE, so if
-    // this route did not name them the delete would fail on the foreign key.
+    // Neither table cascades, so the route deletes them explicitly.
     const { batchId, officerCookie, electionId } = await setUp([])
     await SELF.fetch(at(`/api/batches/${batchId}/elections/${electionId}/close`), {
       method: 'POST', headers: { cookie: officerCookie },
@@ -142,7 +135,7 @@ describe('deleting an election', () => {
     const entry = (await auditActions()).find((row) => row.action === 'election.delete')
     expect(entry).toBeDefined()
     expect(JSON.parse(entry!.detail!)).toEqual({ kind: 'election_delete', status: 'draft' })
-    // Never the election's name or id: the audit row outlives what it describes.
+    // No election name or id: the audit row outlives what it describes.
     expect(entry!.detail).not.toContain('Secretary')
     expect(entry!.detail).not.toContain(draft)
   })
@@ -172,7 +165,7 @@ describe('deleting a society', () => {
     const denied = (await auditActions()).find((row) => row.action === 'batch.delete.denied')
     expect(denied).toBeDefined()
     expect(denied!.batch_id).toBeNull()
-    // The supplied key never appears, not even in part.
+    // The supplied key does not appear, even in part.
     expect(denied!.detail).toBeNull()
   })
 
@@ -195,8 +188,7 @@ describe('deleting a society', () => {
   })
 
   it('DESTROYS EVERY TABLE THE SOCIETY OWNS, sealed ballots included', async () => {
-    // The full-fat case: a roll, check-ins, a closed election with real ballots
-    // in it and a seal over them. Nothing in the system may be left behind.
+    // A roll, check-ins, and a closed election with ballots and a seal.
     const fixture = await setUp(['2400001', '2400002'])
     await submitBallot(fixture.batchId, fixture.electionId, fixture.voterCookies['2400001']!, [fixture.candidateIds.a])
     await SELF.fetch(at(`/api/batches/${fixture.batchId}/elections/${fixture.electionId}/close`), {
@@ -220,7 +212,7 @@ describe('deleting a society', () => {
   })
 
   it('LEAVES EVERY OTHER SOCIETY ALONE', async () => {
-    // The failure that would matter most: a delete that reaches past its tenant.
+    // a delete must stay inside its batch
     const survivorId = await createBatch('survivor')
     const survivorOfficer = await signIn(survivorId, 'officer', 'officer-password-1')
     const survivorDoor = await signIn(survivorId, 'door', 'door-password-1')
@@ -246,8 +238,7 @@ describe('deleting a society', () => {
   })
 
   it('KEEPS THE AUDIT TRAIL, and records the deletion as counts', async () => {
-    // audit_log has no foreign key to batch precisely so it does not cascade
-    // away with its subject. The row that records the deletion outlives it.
+    // audit_log has no foreign key to batch, so it does not cascade.
     const fixture = await setUp(['2400001'])
     await submitBallot(fixture.batchId, fixture.electionId, fixture.voterCookies['2400001']!, [fixture.candidateIds.a])
 

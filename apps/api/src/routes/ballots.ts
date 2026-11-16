@@ -1,23 +1,12 @@
 /**
- * Ballot submission. The most careful route in the API.
+ * Ballot submission.
  *
- * **A session cookie is not proof of eligibility.** A voter session proves only
- * that someone passed id + surname at some earlier moment. An officer can
- * un-check-in a voter *after* their cookie was issued, and the post-AGM roll
- * purge deletes rows while cookies stay valid for their full TTL. Eligibility
- * is therefore re-verified on every submission.
+ * A session cookie does not prove eligibility: a voter can be un-checked-in,
+ * or the roll purged, while the cookie is valid. Both inserts re-check
+ * eligibility with `WHERE EXISTS`, so there is no read-then-write race.
  *
- * **And that re-check is not a read-then-write.** A `SELECT` before the insert
- * reintroduces exactly the race spec §6 exists to fix in the legacy
- * `attendee.voted` flag, where two browser tabs both read "has not voted" and
- * both proceed. The check is folded into both inserts with `WHERE EXISTS`, so
- * the database decides once, inside one transaction.
- *
- * **The ballot row carries no voter reference and no timestamp.** `id` is a
- * random UUID in a `WITHOUT ROWID` table, so physical row order is UUID order
- * rather than insertion order, and with no `cast_at` there is no join key
- * against `vote_receipt.voted_at`. Post-close stuffing is caught by the seal,
- * not by per-ballot timestamps — that is what the seal is for.
+ * The ballot row has no voter reference and no timestamp. Its table is
+ * `WITHOUT ROWID` with a random id, so nothing joins it to `vote_receipt`.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -30,15 +19,12 @@ import { sha256Hex } from '../lib/hash.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
 
 const ballotSchema = z.object({
-  // The usu_id is NEVER in the body: spec §5 says it is carried by the session
-  // cookie, so a caller cannot nominate whose ballot this is.
+  // No usu_id here. It comes from the session, so a caller cannot choose whose
+  // ballot this is.
   preferences: z.array(z.string().min(1)).min(1).max(200),
 })
 
-/**
- * Both inserts carry the same eligibility clause, so they succeed together or
- * not at all: no ballot without a mark-off, and no mark-off without a ballot.
- */
+/** On both inserts: never a ballot without a mark-off, or the reverse. */
 const ELIGIBLE = `
   EXISTS (
     SELECT 1
@@ -49,10 +35,8 @@ const ELIGIBLE = `
   )`
 
 /**
- * One live ballot per voter per election. This is the double-vote guard, and
- * it is a guard rather than the `vote_receipt` primary key because after a void
- * the receipt row still exists and must be reusable — a plain INSERT would
- * refuse a legitimate recast.
+ * One live ballot per voter per election. The `vote_receipt` primary key
+ * cannot enforce it: the receipt row survives a void and must allow a recast.
  */
 const NO_LIVE_BALLOT = `
   NOT EXISTS (
@@ -70,16 +54,13 @@ ballots.post(
     const session = requireSession(c)
     const batchId = session.batchId
     const electionId = pathParam(c, 'eid')
-    // requireRole('voter') has already narrowed the role, and the Session union
-    // gives a voter session a `subject` that cannot be undefined.
+    // A voter session always has a subject; this narrows the type.
     const usuId = session.subject
     if (usuId === undefined) return c.json({ error: 'forbidden' }, 403)
 
     const parsed = ballotSchema.safeParse(await c.req.json().catch(() => undefined))
     if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
 
-    // One round trip, not two: the candidate query binds nothing from the
-    // election query, and this runs once per voter in the room.
     const [election, { results: candidates }] = await Promise.all([
       c.env.DB
         .prepare(`SELECT id, status, seats FROM election WHERE id = ? AND batch_id = ?`)
@@ -95,15 +76,12 @@ ballots.post(
       return c.json({ error: `voting is not open (election is ${election.status})`, code: 'not_open' }, 409)
     }
 
-    // The same validation the voter's browser ran, run again here. Its reason
-    // strings are written to be read by a voter mid-ballot, so they are
-    // returned as-is.
+    // Same validation as the browser. Its reasons are written for a voter, so
+    // return them as-is.
     const check = validateBallot(parsed.data.preferences, candidates.map((x) => x.id), election.seats)
     if (!check.ok) return c.json({ error: check.reason, code: 'invalid_ballot' }, 400)
 
-    // Minted once, hashed immediately, returned once, never stored. A voter who
-    // loses it can no longer verify inclusion — which is the trade for a
-    // receipt that cannot be used to prove how they voted.
+    // Returned once, stored only as a hash. A lost token cannot be recovered.
     const receiptToken = crypto.randomUUID()
     const receiptHash = await sha256Hex(receiptToken)
 
@@ -117,17 +95,15 @@ ballots.post(
       receiptHash,
     ]
 
-    // ORDER MATTERS. The ballot insert runs first. Reversed, the receipt upsert
-    // sets live_receipt_hash and the ballot's own NO_LIVE_BALLOT guard then
-    // fails against the row it just wrote, refusing every first ballot.
+    // Ballot first. Reversed, the receipt upsert sets live_receipt_hash and
+    // NO_LIVE_BALLOT refuses every first ballot.
     const ballotStmt = c.env.DB.prepare(
       `INSERT INTO ballot (id, election_id, preferences, receipt_hash, voided)
        SELECT ?5, ?2, ?6, ?7, 0 WHERE ${ELIGIBLE} AND ${NO_LIVE_BALLOT}`,
     ).bind(...params)
 
-    // The mark-off on the roll: who voted, never what. DO UPDATE rather than a
-    // bare INSERT because the row survives a void. recast_count is NOT touched
-    // here — the void already counted it.
+    // The mark-off: who voted, never what. An upsert, because the row survives a
+    // void. recast_count is unchanged; the void already counted it.
     const receiptStmt = c.env.DB.prepare(
       `INSERT INTO vote_receipt (election_id, usu_id, voted_at, recast_count, live_receipt_hash)
        SELECT ?2, ?3, ?4, 0, ?7 WHERE ${ELIGIBLE}
@@ -142,9 +118,8 @@ ballots.post(
     const wroteReceipt = (receiptResult?.meta.changes ?? 0) > 0
 
     if (!wroteBallot && !wroteReceipt) {
-      // Both guards are equivalent, so this is the only failure shape. Read the
-      // receipt row once to say which refusal it was; the write has already
-      // happened or not, so this cannot race it.
+      // Read the receipt row to say which refusal it was. The write is done, so
+      // this cannot race it.
       const receipt = await c.env.DB
         .prepare(`SELECT live_receipt_hash FROM vote_receipt WHERE election_id = ? AND usu_id = ?`)
         .bind(electionId, usuId)
@@ -156,10 +131,8 @@ ballots.post(
     }
 
     if (wroteBallot !== wroteReceipt) {
-      // Unreachable: the two statements carry equivalent guards inside one
-      // transaction. If it ever fires, a ballot exists with no mark-off or a
-      // mark-off with no ballot, and the count is no longer defensible — so it
-      // is a 500 and a log line, never a success.
+      // Unreachable while the two guards stay equivalent. A ballot without a
+      // mark-off (or the reverse) breaks the count, so throw.
       throw new Error('ballot and receipt disagreed inside one transaction')
     }
 

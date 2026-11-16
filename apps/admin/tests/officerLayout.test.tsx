@@ -13,7 +13,7 @@ const BATCH = {
 
 const json = { 'content-type': 'application/json' }
 
-/** `ping` decides whether the password form appears; everything else is the batch. */
+/** `ping` decides whether the password form appears. Everything else is the batch. */
 const stub = (pingStatus: number) =>
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/officer/ping')) {
@@ -43,9 +43,7 @@ const show = () =>
 
 describe('OfficerLayout', () => {
   it('DOES NOT ASK FOR A PASSWORD when the session cookie is still valid', async () => {
-    // The whole point. Previously `signedIn` was useState(false), so every full
-    // page load — and every menu link was one — demanded the password again while
-    // the cookie sat there valid.
+    // a reload with a valid cookie must not ask for the password again
     stub(200)
     show()
     await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
@@ -77,8 +75,7 @@ describe('OfficerLayout', () => {
   })
 
   it('does NOT ask for a password when the probe fails for a non-auth reason', async () => {
-    // A network failure or a 503 is not a reason to demand a password; that would
-    // train an officer to retype it at a broken server.
+    // a network failure or a 503 is not a reason to ask for a password
     stub(503)
     show()
     await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
@@ -94,9 +91,7 @@ describe('OfficerLayout', () => {
   })
 
   it('KEEPS SIGN OUT OUT OF THE NAV, beside the society name instead', async () => {
-    // It is not a destination, and a row of places to go with one way out on the
-    // end invites the tap that ends the session by accident — the nav wraps on a
-    // phone, so which row it lands on is not predictable.
+    // sign out is not a destination, so it is not in the nav
     stub(200)
     show()
     await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())

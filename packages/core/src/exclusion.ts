@@ -1,15 +1,9 @@
 import type { Fixed } from './fixed.js'
 
 /**
- * Bulk exclusion, as the Australian Senate count uses - WITH the safety
- * condition irv.py omits.
- *
- * Several candidates may be excluded together only while their combined
- * total stays below the next candidate's total. Otherwise the group could
- * include someone who, on transfers, would have overtaken that candidate.
- *
- * `maxExcludable` caps the set so the continuing field never drops below
- * the number of seats still to fill.
+ * Bulk exclusion under the Senate safety condition: candidates go together
+ * only while their combined total is below the next candidate's.
+ * `maxExcludable` keeps enough candidates to fill the remaining seats.
  */
 export function bulkExclusionSet(
   totals: { id: string; votes: Fixed }[],

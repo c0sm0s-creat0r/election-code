@@ -1,24 +1,13 @@
 /**
- * The door desk: a search box and a list, on a volunteer's phone, in a queue.
+ * The door desk: a search box and a list, on a volunteer's phone.
  *
- * **The roll is fetched once and filtered in memory.** ~1,300 rows is about
- * 50 KB, so search is instant on every keystroke and keeps working if venue wifi
- * drops mid-queue (spec §4). A server round-trip per keystroke is the wrong shape
- * for a queue of people.
+ * The roll (~50 KB) is fetched once and filtered in memory, so search works
+ * if venue wifi drops. It is never written to browser storage: that would
+ * keep members' names past the post-AGM purge. A reload therefore needs the
+ * network (LIMITATIONS.md §10).
  *
- * **It is never written to storage.** No `localStorage`, no `sessionStorage`, no
- * IndexedDB. Persisting 1,300 members' names and USU ids onto a personal device
- * would put them outside the reach of the post-AGM purge, which is the one thing
- * that makes the retention claim true. The cost is that a reload needs the
- * network — accepted, and recorded in `LIMITATIONS.md` §10.
- *
- * **Search matches the USU id as well as either name**, because a member handing
- * over a card is showing the number, not spelling their surname.
- *
- * **Two separate additions, deliberately.** "Add guest" records someone who
- * attends and cannot vote; "Add member" records someone the export missed, who
- * can. One catch-all button would mean a volunteer's finger decides whether a
- * stranger gets a ballot.
+ * Search matches the USU id as well as names: members show a card. "Add
+ * guest" (cannot vote) and "Add member" (can) are separate.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
@@ -35,23 +24,17 @@ const isSessionFailure = (caught: unknown): boolean =>
 
 export type DoorDeskProps = {
   batchId: string
-  /** For the back link. The door sits outside the officer layout, so it is passed in. */
+  /** For the back link. The door is outside the officer layout, so it is passed in. */
   slug: string
-  /**
-   * Called when the API says this session is no longer a door session — a lapsed
-   * cookie, or an officer cookie on a door route, which `requireRole` answers 403.
-   * Without this the desk showed a permission error and offered nothing to click.
-   */
+  /** The API says this is not a door session: an expired cookie, or an officer's (403). */
   onSessionLost: () => void
 }
 
-/** A roll row with its search text precomputed, so a keystroke allocates nothing. */
+/** A roll row with its search text precomputed. */
 type Searchable = RollEntry & { haystack: string }
 
 const searchable = (entry: RollEntry): Searchable => ({
   ...entry,
-  // Matching the full name covers both parts, so there is nothing to check
-  // separately. The id is here because a member hands over a card, not a spelling.
   haystack: `${entry.first_name} ${entry.last_name} ${entry.usu_id}`.toLowerCase(),
 })
 
@@ -63,7 +46,7 @@ export function DoorDesk({ batchId, slug, onSessionLost }: DoorDeskProps) {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState<'none' | 'guest' | 'member'>('none')
 
-  /** The full load: the roll, the guests and the counts. Once, on arrival. */
+  /** The full load: roll, guests and counts. Once, on arrival. */
   const loadAll = useCallback(async () => {
     try {
       const [rollRows, guestRows, counts] = await Promise.all([
@@ -86,11 +69,8 @@ export function DoorDesk({ batchId, slug, onSessionLost }: DoorDeskProps) {
   }, [roll, term])
 
   /**
-   * A check-in patches the one row it changed and refetches four integers.
-   *
-   * Reloading the whole roll instead would be ~50 KB per tap, so a night of
-   * 1,300 check-ins would pull ~65 MB over venue wifi and re-render the list
-   * every time — which also defeats the point of holding it in memory.
+   * A check-in patches the row it changed and refetches the counts. Reloading
+   * the roll would cost ~50 KB per tap over venue wifi.
    */
   const checkedInAt = (usuId: string, at: number | null) =>
     setRoll((rows) => rows.map((r) => (r.usu_id === usuId ? { ...r, checked_in_at: at } : r)))
@@ -226,7 +206,7 @@ export function DoorDesk({ batchId, slug, onSessionLost }: DoorDeskProps) {
   )
 }
 
-/** Attends, cannot vote — and the form says so, because that is the distinction. */
+/** Attends, cannot vote. The form says so. */
 function AddGuest({ onAdd, onCancel }: {
   onAdd: (name: string, note?: string) => void
   onCancel: () => void
@@ -257,7 +237,7 @@ function AddGuest({ onAdd, onCancel }: {
   )
 }
 
-/** A member the export missed. They can vote, so the wording is different. */
+/** A member the export missed. They can vote, so the wording differs. */
 function AddMember({ onAdd, onCancel }: {
   onAdd: (usuId: string, firstName: string, lastName: string) => void
   onCancel: () => void

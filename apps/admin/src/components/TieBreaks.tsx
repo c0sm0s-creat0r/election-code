@@ -1,15 +1,11 @@
 /**
- * Every tie the count had to resolve, and the officer's power to overrule one.
+ * Every tie the count resolved, and the officer's override.
  *
- * **The control is labelled from the tie's `kind`, and this is the whole reason
- * the API field was renamed from `winner_id` to `resolved_id`.** For
- * `kind: 'exclusion'` the id in `TieBreakRecord.resolved` is the candidate
- * **excluded** — the one who loses. A control saying "pick the winner" would
- * collect the exact opposite of the officer's intent, and the resulting sealed
- * document would look perfectly correct.
+ * The control is labelled from the tie's `kind`. For `exclusion` the resolved
+ * id is the candidate excluded, so "pick the winner" would collect the
+ * opposite of the officer's intent.
  *
- * The seed is shown because spec §3 makes the draw verifiable: anyone holding the
- * sealed ballots can re-derive it and check it was not steered.
+ * The seed is shown so the draw can be re-derived from the sealed ballots.
  */
 import { useState } from 'react'
 import type { TieBreakKind, TieBreakRecord } from '@election/core'
@@ -21,7 +17,7 @@ export type TieBreaksProps = {
   onOverride: (request: OverrideRequest) => void
 }
 
-/** The one place the asymmetry is written down for the UI. */
+/** Maps a tie's `kind` to its wording. The only place the UI does this. */
 const promptFor = (kind: TieBreakKind): string =>
   kind === 'exclusion' ? 'Choose who is excluded' : 'Choose who is elected first'
 

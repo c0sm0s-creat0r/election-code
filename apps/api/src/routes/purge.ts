@@ -1,22 +1,14 @@
 /**
- * The post-AGM purge: delete the members' details, keep the defensible count.
+ * The post-AGM purge (spec §2). Deletes `voter_roll`, `check_in` and `guest`.
+ * Keeps `ballot`, `election_seal` and `election_result`: they are anonymous
+ * and are the audit record.
  *
- * Spec §2's retention rule. `voter_roll` and `check_in` go; `ballot`,
- * `election_seal` and `election_result` stay, because they are anonymous and
- * they are the audit record. What is left is a fully checkable result and none
- * of the 1,302 members' personal details.
+ * `vote_receipt` is kept, with its `usu_id`: the mark-off shows that distinct
+ * eligible members cast the ballots in the box (LIMITATIONS.md §4). Its
+ * `live_receipt_hash` was cleared at close.
  *
- * **`vote_receipt` is kept, and it holds a `usu_id`.** That is a deliberate
- * exception to "all the personal data goes", decided on 2026-09-21: the
- * mark-off is half the integrity story — it is what shows that 200 distinct
- * eligible members cast the 200 ballots in the box — and the attendance export
- * is built from it. Spec §2 names it rather than claiming otherwise. Its
- * `live_receipt_hash` is already NULL by then, cleared at close.
- *
- * **Refused while any election is open or in draft.** Purging mid-AGM would
- * make every remaining voter ineligible, because Plan 2b's ballot insert
- * re-checks `voter_roll` on every submission by design. This has to be a
- * deliberate end-of-event action.
+ * Refused while any election is open or in draft: the ballot insert checks
+ * `voter_roll`, so a mid-AGM purge would make every voter ineligible.
  */
 import { Hono } from 'hono'
 import { auditLogStatement } from '../db/audit.js'
@@ -54,13 +46,11 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
   const checkins = counts?.checkins ?? 0
   const guests = counts?.guests ?? 0
 
-  // check_in first: its foreign key references voter_roll(batch_id, usu_id).
-  // The delete order matters even with ON DELETE CASCADE, because the cascade
-  // is the database's fallback and not something to lean on for ordering.
+  // check_in first. Do not rely on the cascade for ordering.
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM check_in WHERE batch_id = ?`).bind(batchId),
     c.env.DB.prepare(`DELETE FROM voter_roll WHERE batch_id = ?`).bind(batchId),
-    // A guest's name is personal data and nothing else reaches this table.
+    // A guest's name is personal data too.
     c.env.DB.prepare(`DELETE FROM guest WHERE batch_id = ?`).bind(batchId),
     auditLogStatement(c.env.DB, {
       batchId,
@@ -70,7 +60,6 @@ purge.delete('/api/batches/:id/roll', requireRole('officer'), async (c) => {
     }),
   ])
 
-  // Idempotent: a second call deletes nothing and reports zeros, so a retry
-  // after a dropped connection is safe.
+  // Idempotent: a second call deletes nothing and reports zeros.
   return c.json({ voter_roll: roll, check_in: checkins, guest: guests })
 })

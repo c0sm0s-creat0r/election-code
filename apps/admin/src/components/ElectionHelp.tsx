@@ -1,14 +1,8 @@
 /**
- * "Help", beside sign out: the whole AGM, in order, for an officer who has never
- * run one here before. The order is the part that is not obvious — the roll has
- * to exist before anyone can be checked in, and a member has to be checked in
- * before they can vote.
+ * "Help", beside sign out: the AGM in order, for an officer running their
+ * first. The roll must exist before check-in, and check-in before voting.
  *
- * Out of the nav for the same reason sign out is: it is not a destination.
- *
- * A toggled panel rather than the `popover` attribute or a `<dialog>`: it needs
- * no focus trap (it is reading matter, not a form), and it keeps the nav usable
- * while it is open, so an officer can follow a step to its screen.
+ * A toggled panel, not a `<dialog>`: the nav stays usable while it is open.
  */
 import { useEffect, useId, useRef, useState } from 'react'
 

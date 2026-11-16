@@ -1,21 +1,12 @@
 /**
- * One election: candidates while it is a draft, turnout while it is open, and a
- * link to the result once it is closed.
+ * One election: candidates while draft, turnout while open, a link to the
+ * result once closed.
  *
- * **Two rules from spec §4 live here, and both are stated rather than merely
- * enforced.**
+ * Candidates freeze at open. The screen states the rule before the officer
+ * opens anything, and removes the controls afterwards.
  *
- * *Candidates freeze at open.* The rule is on screen before the officer opens
- * anything, because the API's 409 afterwards arrives too late to be useful — and
- * adding a candidate after fifty ballots means those fifty voters never had the
- * chance to rank them. The controls are **removed** once open, not disabled: a
- * disabled control says "later", and there is no later.
- *
- * *No tally before closed.* While open this screen shows turnout and nothing
- * else: ballots cast, voters checked in, eligible, and how many of those were
- * added at the door. There is deliberately no per-candidate figure anywhere in
- * this app before a seal exists, because an officer who can watch the result
- * develop and choose when to stop makes every other control decorative.
+ * No tally before closed. While open this shows turnout only, never a
+ * per-candidate figure (spec §4).
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
@@ -34,10 +25,9 @@ export type ElectionDetailProps = {
 }
 
 /**
- * Turnout is polled every five seconds, but only while the tab is visible and
- * the officer has touched the page in the last ten minutes. Each poll reads the
- * whole roll twice plus every check-in and ballot, and one tab left open on this
- * screen spent the free plan's 5 million daily D1 row reads in a few hours.
+ * Turnout is polled only while the tab is visible and the officer has been
+ * active in the last ten minutes. Each poll costs D1 row reads, and one tab
+ * left open used the free plan's daily allowance in a few hours.
  */
 const POLL_MS = 5000
 const IDLE_MS = 10 * 60_000
@@ -51,7 +41,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [paused, setPaused] = useState(false)
-  // Bumped by the Resume button to restart the poll effect.
+  // The Resume button bumps this to restart the poll effect.
   const [resumes, setResumes] = useState(0)
 
   useEffect(() => {
@@ -65,8 +55,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
       timer = undefined
     }
     const poll = () => {
-      // Checked on each tick rather than with its own timer: the officer is
-      // idle only once a whole IDLE_MS passes with no poll-worthy activity.
+      // Checked on each tick, so there is no separate idle timer.
       if (Date.now() - lastActivity > IDLE_MS) {
         stop()
         setPaused(true)
@@ -74,19 +63,18 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
       }
       getTurnout(batchId, election.id)
         .then((next) => { if (live) setTurnout(next) })
-        .catch(() => { /* a dropped poll is not worth an error banner */ })
+        .catch(() => { /* ignore a dropped poll: no error banner */ })
     }
     const start = () => {
       if (timer !== undefined) return
       setPaused(false)
       poll()
-      // Polling, not WebSockets: the double-vote race is settled by a database
-      // constraint, so a Durable Object would buy nothing here (spec §1).
+      // Polling, not WebSockets: a database constraint settles the double-vote
+      // race, so a live channel has nothing to coordinate (spec §1).
       timer = setInterval(poll, POLL_MS)
     }
-    // Only activity keeps a running poll alive; once paused, it takes the
-    // button (or coming back to the tab) to restart, so a stray mouse nudge
-    // on an unattended laptop does not quietly restart the reads.
+    // Activity keeps a running poll alive. Once paused, only the button or
+    // returning to the tab restarts it, not a stray mouse move.
     const onActivity = () => { lastActivity = Date.now() }
     const onVisibility = () => {
       if (document.hidden) return stop()
@@ -256,12 +244,7 @@ export function ElectionDetail({ batchId, slug, election, onChanged }: ElectionD
         </p>
       )}
 
-      {/*
-        Offered at every status, with the rule stated, rather than hidden by a
-        guess at whether it would work. The API is the authority — it refuses the
-        moment one ballot exists and says how many there are — and this screen's
-        job is to make sure the officer already knows that before clicking.
-      */}
+      {/* Offered at every status, with the rule stated. The API refuses once a ballot exists. */}
       {confirmingDelete ? (
         <div className="confirm stack">
           <p>

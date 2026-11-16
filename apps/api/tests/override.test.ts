@@ -5,10 +5,8 @@ import { setUp, submitBallot, JSON_HEADERS, type Fixture } from './helpers.js'
 let f: Fixture
 
 /**
- * Two ballots, one seat, one each: nobody reaches the quota of 2, both are
- * lowest, so the count must resolve an `exclusion` tie by seeded draw. That
- * makes the override meaningful — and it is the case where `resolved_id` names
- * the candidate to REMOVE, so overriding it flips the winner.
+ * Two ballots, one seat, one each: an `exclusion` tie settled by seeded draw.
+ * `resolved_id` names the candidate excluded, so overriding it flips the winner.
  */
 beforeEach(async () => {
   f = await setUp(['2400001', '2400002'])
@@ -38,13 +36,13 @@ type Document = {
   tie_breaks: { id: string; kind: string; method: string; resolved: string; candidates: string[]; reason: string | null }[]
 }
 
-/** Close, count, and hand back the first result document. */
+/** Close, count, and return the first result document. */
 const closeAndCount = async (): Promise<Document> => {
   await close()
   return await (await getResult()).json() as Document
 }
 
-/** The candidate that tie did NOT resolve to — i.e. the other side of the draw. */
+/** The other side of the draw. */
 const otherSide = (doc: Document) => {
   const tb = doc.tie_breaks[0]!
   return tb.candidates.find((id) => id !== tb.resolved)!
@@ -112,8 +110,8 @@ describe('tie-break override', () => {
   it('CHANGES THE WINNER — resolved_id for an exclusion tie is who goes OUT', async () => {
     const before = await closeAndCount()
     const winnerBefore = before.winners[0]!.id
-    // the tie resolved to exclude `resolved`; excluding the other side instead
-    // must elect the candidate who was previously excluded
+    // the tie resolved to exclude `resolved`; excluding the other candidate
+    // must elect the one previously excluded
     await override({ tie_break_id: 'tb-1', resolved_id: otherSide(before), reason: 'Returning officer drew lots' })
     const after = await (await getResult()).json() as Document
     expect(after.winners[0]!.id).not.toBe(winnerBefore)
@@ -140,12 +138,12 @@ describe('tie-break override', () => {
   })
 
   it('keeps an earlier override when a later one is applied', async () => {
-    // an override must not silently discard one the officer already made
+    // a new override must keep the officer's earlier one
     const doc = await closeAndCount()
     const first = otherSide(doc)
     await override({ tie_break_id: 'tb-1', resolved_id: first, reason: 'first decision' })
     const second = await (await getResult()).json() as Document
-    // re-apply the same tie the other way round, then check the reason trail
+    // resolve the same tie the other way, then check the reasons
     await override({ tie_break_id: 'tb-1', resolved_id: second.tie_breaks[0]!.candidates[0]!, reason: 'second decision' })
     const third = await (await getResult()).json() as Document
     const tb = third.tie_breaks.find((t) => t.method === 'officer_override')

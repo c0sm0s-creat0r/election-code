@@ -14,7 +14,7 @@ const withStorage = (initial: Record<string, string> = {}) => {
   return store
 }
 
-/** Every method throws, the way Safari's private mode does. */
+/** Every method throws, as in Safari's private mode. */
 const withBrokenStorage = () =>
   vi.stubGlobal('localStorage', {
     getItem: () => { throw new Error('denied') },
@@ -46,8 +46,7 @@ describe('held receipts', () => {
   })
 
   it('SURVIVES STORAGE THAT THROWS, which is the whole reason for the guards', () => {
-    // A voter in private mode must still be able to vote. Losing the token costs
-    // them the receipt; an exception would cost them the ballot.
+    // a voter in private mode must still be able to vote
     withBrokenStorage()
     expect(readReceipts('b1')).toEqual({})
     expect(rememberReceipt('b1', 'e1', 'tok-1')).toEqual({ e1: 'tok-1' })
@@ -55,8 +54,7 @@ describe('held receipts', () => {
   })
 
   it('ignores a stored value that is not a map of tokens', () => {
-    // Anyone can edit their own localStorage. A non-string where a token belongs
-    // would otherwise reach the receipt lookup as one.
+    // anyone can edit their own localStorage
     withStorage({ 'election:receipts:b1': '["not", "an", "object"]' })
     expect(readReceipts('b1')).toEqual({})
 

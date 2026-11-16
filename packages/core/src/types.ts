@@ -47,20 +47,13 @@ export type CountInput = {
   ballots: CountBallot[]
   seats: number
   electionId: string
-  /** hex digest from election_seal; fixes the tie-break draw */
+  /** Hex digest from election_seal. Fixes the tie-break draw. */
   ballotsSha256: string
   /**
-   * Officer overrides, keyed by `TieBreakRecord.id` ("tb-1", "tb-2", ...).
-   *
-   * `candidateId` is what the tie RESOLVES TO, which is not always who benefits:
-   * for `kind: 'exclusion'` it is the candidate to EXCLUDE, and for
-   * `kind: 'election_order'` the one to elect FIRST. `reason` is required and is
-   * copied verbatim into `TieBreakRecord.reason`.
-   *
-   * An override whose key matches no tie-break, or whose `candidateId` is not
-   * among that tie's candidates, makes `count` throw. A stale override must not
-   * be silently discarded: the officer would be told their decision stands while
-   * the result says it was never applied.
+   * Officer overrides, keyed by `TieBreakRecord.id`. `candidateId` is the
+   * candidate to exclude (`exclusion`) or to elect first (`election_order`).
+   * `count` throws on an override that matches no tie-break or names someone
+   * outside the tie.
    */
   overrides?: Record<string, { candidateId: string; reason: string }>
 }

@@ -1,9 +1,6 @@
 /**
- * Branding and the society logo.
- *
- * The logo upload is validated by the API's magic-byte check, not by its
- * filename, so a rejection is shown verbatim: the officer needs to know it was
- * the file's *contents* that were refused rather than its name.
+ * Branding and the society logo. The API checks the logo's contents, not its
+ * filename. Its rejection message is shown as-is.
  */
 import { useState } from 'react'
 import { updateBranding, uploadLogo, type Branding } from '../api.js'

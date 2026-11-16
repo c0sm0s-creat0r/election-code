@@ -88,7 +88,7 @@ describe('roll purge', () => {
   })
 
   it('leaves the ballot export still verifiable against the seal', async () => {
-    // the whole point: the count was sealed against the ballots, not the roll
+    // the count was sealed against the ballots, not the roll
     await closeAndCount()
     const before = await (await SELF.fetch(
       `https://example.com/api/batches/${f.batchId}/elections/${f.electionId}/ballots.csv`,

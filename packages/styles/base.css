@@ -1,6 +1,6 @@
 /**
- * Element defaults and the few primitives both apps use identically. Anything
- * specific to one app belongs in that app's own app.css.
+ * Element defaults and primitives shared by both apps. App-specific rules go
+ * in that app's app.css.
  */
 *,
 *::before,
@@ -18,8 +18,8 @@ body {
   background: var(--paper);
 }
 
-/* One readable column, centred, from 320px up. The bottom padding clears the
-   sticky action bar so the last row is never trapped underneath it. */
+/* One centred column, from 320px up. The bottom padding clears the sticky
+   action bar. */
 .page {
   max-width: var(--measure);
   margin: 0 auto;
@@ -31,11 +31,7 @@ h1 { font-size: 1.5rem; }
 h2 { font-size: 1.25rem; }
 h3 { font-size: 1.0625rem; }
 
-/*
- * 16px is a floor, not a preference. iOS Safari zooms the viewport when a
- * focused input has a smaller font-size, which throws the layout mid-form and
- * reads to the voter as a broken page.
- */
+/* 16px minimum: iOS Safari zooms on focusing a smaller input. */
 input,
 select,
 textarea,
@@ -66,8 +62,7 @@ button {
 
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Visible focus, always. The ballot must be operable by keyboard, and removing
-   this is an accessibility regression rather than a style choice. */
+/* Visible focus: the ballot must work by keyboard. */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .primary {
@@ -92,8 +87,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .field + .field { margin-top: calc(var(--step) * 2); }
 
-/* A row of content with a control on the right: ballot preferences, candidates,
-   the door's roll. 44px tall so a thumb in a queue hits it. */
+/* A row with a control on the right: preferences, candidates, the door's
+   roll. 44px tall for touch. */
 .spread { justify-content: space-between; }
 
 .row-card {
@@ -106,8 +101,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-radius: var(--radius);
 }
 
-/* Pinned above the home bar. The safe-area inset is the non-obvious part: without
-   it the iPhone home bar sits on top of whatever is in here. */
+/* Pinned above the iPhone home bar by the safe-area inset. */
 .sticky-bar {
   position: sticky;
   bottom: 0;

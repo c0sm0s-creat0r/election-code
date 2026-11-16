@@ -25,7 +25,7 @@ describe('count - exclusions', () => {
   })
 
   it('resolves a two-way tie instead of returning no winner', async () => {
-    // THE irv.py BUG: 5-5 eliminated both and returned winner: null
+    // the irv.py bug: a 5-5 tie eliminated both and returned winner: null
     const r = await count({
       candidates: [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }],
       ballots: ballots([[['a'], 5], [['b'], 5]]),
@@ -47,15 +47,8 @@ describe('count - exclusions', () => {
       ballotsSha256: 'deadbeef00000000',
     }
     const natural = await count(args)
-    // NOTE: this deliberately differs from the original brief, which
-    // overrode with the complement of the natural winner. That was a
-    // tautology and reviewed/accepted as a bug in the brief, not this test
-    // — do not "restore" it. The exclusion tie-break's resolved value IS the excluded candidate
-    // (see count.ts: `toExclude = [await resolveTie(...)]`). To flip the
-    // outcome we must override tb-1 with the NATURAL WINNER's id, forcing
-    // that candidate to be excluded instead so the other one wins.
-    // (Overriding with the complement-of-winner, i.e. the candidate who was
-    // already excluded naturally, is a no-op with only two candidates.)
+    // An exclusion tie resolves to the candidate excluded. To flip the outcome,
+    // override tb-1 with the natural winner's id.
     const naturalWinner = natural.winners[0]!.id
     const overridden = await count({
       ...args,
@@ -65,18 +58,14 @@ describe('count - exclusions', () => {
     })
     expect(overridden.tieBreaks[0]!.method).toBe('officer_override')
     expect(overridden.winners[0]!.id).not.toBe(natural.winners[0]!.id)
-    // I3: the officer's own words reach the result document, rather than the
-    // hardcoded string 'Officer override' that used to overwrite them.
+    // the officer's reason reaches the result document
     expect(overridden.tieBreaks[0]!.reason).toBe(
       'Lots drawn in the room, as the constitution requires',
     )
   })
 
   it('refuses an override whose tie-break id matches nothing in this count', async () => {
-    // The realistic path: an officer overrides tb-2, a ballot is then voided
-    // and the count re-run, and there is no longer a tb-2. Silently ignoring
-    // it would report a result the officer never sanctioned while the audit
-    // log claims an override was applied.
+    // e.g. tb-2 is overridden, a ballot is voided, and the re-run has no tb-2
     await expect(
       count({
         candidates: [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }],

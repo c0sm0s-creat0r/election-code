@@ -1,23 +1,15 @@
 /**
- * Voter sign-in: USU id **and** surname, both matching the roll.
+ * Voter sign-in: USU id and surname, both matching the roll.
  *
- * **Why both.** Looking a voter up by id alone and echoing their name back is
- * an enumeration oracle over a seven-digit space — anyone could walk it and map
- * ids to real names. Requiring the surname gives nothing away on a wrong guess:
- * a wrong surname and an unknown id return a byte-identical 401. This is the
- * same reasoning as the DUMMY_HASH on staff sign-in.
+ * Both, because a lookup by id that echoed a name would map ids to names. A
+ * wrong surname and an unknown id return the same 401.
  *
- * **401 versus 403 is a deliberate split, and it does leak one bit.** A voter
- * who is on the roll and passes the surname but is not checked in, or is marked
- * ineligible, gets a 403 with a code — because both are fixable at the door and
- * standing in a queue being told "unauthorized" helps nobody. The cost is that
- * someone who already knows a member's id *and* surname learns whether they
- * have arrived. That is information a person in the room can see anyway, and it
- * is worth it for a voter who would otherwise be stuck.
+ * On the roll but ineligible or not checked in gets a 403 with a code: both
+ * are fixable at the door. This tells someone who knows a member's id and
+ * surname whether they have arrived. Accepted.
  *
- * **The session carries `subject` = usu_id.** `Session` is a discriminated
- * union, so `{ role: 'voter' }` cannot typecheck without it. routes/ballots.ts
- * reads it to identify the voter — and never treats it as proof of eligibility.
+ * The session's `subject` is the usu_id. ballots.ts uses it to identify the
+ * voter, never as proof of eligibility.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -40,10 +32,8 @@ const voterSignInSchema = z.object({
 })
 
 /**
- * Four hours. Long enough to cover an AGM including a late-running agenda, and
- * short enough that a phone left on a table is not a live session tomorrow.
- * Ballot submission re-verifies eligibility regardless of how fresh the cookie
- * is, so the TTL is a convenience bound rather than a security control.
+ * Long enough for a late AGM. Not a control: ballot submission re-checks
+ * eligibility.
  */
 const VOTER_TTL_SECONDS = 4 * 60 * 60
 
@@ -60,10 +50,8 @@ voter.post(
     if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
     const { usu_id: usuId, surname } = parsed.data
 
-    // One query. The surname comparison is in SQL so that a member who exists
-    // and a member who does not take the same path, and `checked_in_at` comes
-    // back in the same round trip rather than a second lookup that would need
-    // its own not-found branch.
+    // The surname is compared in SQL, so an unknown id and a wrong surname take
+    // the same path.
     const row = await c.env.DB
       .prepare(
         `SELECT vr.first_name, vr.eligible, ci.checked_in_at
@@ -76,10 +64,8 @@ voter.post(
       .first<{ first_name: string; eligible: number; checked_in_at: number | null }>()
 
     if (!row) {
-      // Identical for an unknown id and a wrong surname. No audit row: this
-      // route is unauthenticated and a miss here is attacker-controllable, so
-      // logging every one is a way to flood the trail. The rate limiter is
-      // what bounds guessing.
+      // No audit row: an unauthenticated miss is attacker-controlled and would
+      // flood the log. The rate limiter bounds guessing.
       return c.json({ error: 'unauthorized' }, 401)
     }
 

@@ -1,15 +1,11 @@
 import { type Fixed, fromInt } from './fixed.js'
 
 /**
- * Droop quota, as the Australian Senate uses:
- *   floor(valid ballots / (seats + 1)) + 1
+ * Droop quota: floor(valid ballots / (seats + 1)) + 1.
  *
- * Computed once from the initial valid total and never recomputed, so
- * exhausted ballots can leave the final seat filled below quota. That is
- * standard, and handled by the "continuing == remaining seats" rule.
- *
- * At seats = 1 this is floor(n/2) + 1, i.e. an absolute majority - which is
- * why instant-runoff needs no separate implementation.
+ * Computed once. Exhausted ballots can leave the last seat filled below
+ * quota. At seats = 1 it is an absolute majority, so instant-runoff needs no
+ * separate code.
  */
 export function droopQuota(validBallots: number, seats: number): Fixed {
   if (!Number.isInteger(seats) || seats < 1) {

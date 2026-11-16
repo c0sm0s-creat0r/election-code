@@ -1,16 +1,9 @@
 /**
- * Editing a society's branding.
+ * Editing a society's branding. The schema is shared with batches.ts, so the
+ * `logo_url` allow-list is in one place.
  *
- * The schema is imported from `routes/batches.ts` rather than restated, so the
- * provisioning path and the edit path cannot drift on what a valid accent
- * colour or logo URL is. That matters most for `logo_url`, which is an
- * allow-list: empty, an `https://` URL, or a root-relative path. A second copy
- * would be a second place for `javascript:` to become acceptable.
- *
- * PATCH replaces the whole branding object rather than merging field by field.
- * It is one small object that an officer edits as a whole in a form, and a merge
- * would let an omitted `accent_color` silently keep a value they thought they
- * had cleared.
+ * PATCH replaces the whole object. A merge would keep a field the officer
+ * meant to clear.
  */
 import { Hono } from 'hono'
 import { brandingSchema } from './batches.js'
@@ -31,9 +24,7 @@ branding.patch('/api/batches/:id/branding', requireRole('officer'), async (c) =>
     c.env.DB
       .prepare(`UPDATE batch SET branding = ? WHERE id = ?`)
       .bind(JSON.stringify(parsed.data), batchId),
-    // Not even the new branding: an audit row carrying a whole JSON payload
-    // would be the first exception to "counts and reasons", and the next would
-    // be a ballot.
+    // No payload in the audit row.
     auditLogStatement(c.env.DB, { batchId, role: 'officer', action: 'branding.update' }),
   ])
 

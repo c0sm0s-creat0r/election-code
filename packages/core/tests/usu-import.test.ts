@@ -10,8 +10,7 @@ describe('parseUsuExport', () => {
   })
 
   it('reads Left Group from the SHIFTED position, not the header position', () => {
-    // the bug this module exists to prevent: a naive parse reads 0 for every
-    // row and grants departed members voting rights
+    // A naive parse reads 0 for every row and gives departed members a vote.
     const r = parseUsuExport(csv)
     expect(r.excluded).toBe(2)
     expect(r.eligible).toBe(4)
@@ -53,16 +52,12 @@ describe('parseUsuExport', () => {
     expect(() => parseUsuExport('')).toThrow(/header/i)
   })
 
-  // --- regression coverage: quote-aware parsing must span the whole file,
-  // not just a single line, and misaligned rows must be surfaced rather
-  // than silently misread. ---
+  // --- quote-aware parsing across the whole file, and misaligned rows ---
 
   const header =
     '"User Identifier","Net Id","Member Identifier","First Name","Last Name","Email","Year Of Graduation","Member Type","Officer","Source Type","Membership End Date","Signup Date","Membership Payments","Events Payments","Member Tags","Sub-Groups Tags","User Tags","Officer  Notes","Last Online iOS","Last Online Android","Unsubscribed from all emails","Left Group","Left Group Reason","Dalyell Status","First Aid Expiry","Online Module Expiry","RSA Expiry","Working with Children Expiry"'
 
-  // A shifted (29-field) data row, matching the real defect shape, with the
-  // "Officer  Notes" field (index 18 once shifted) set by the caller so
-  // individual tests can inject special characters into it.
+  // A shifted (29-field) row with a caller-supplied "Officer  Notes" field.
   const shiftedRow = (netId: string, first: string, last: string, officerNotes: string, leftGroup: string) =>
     [
       '"900001"', `"${netId}"`, '"13000001"', `"${first}"`, `"${last}"`,
@@ -73,10 +68,8 @@ describe('parseUsuExport', () => {
     ].join(',')
 
   it('does not fracture a logical row on a newline embedded inside quotes (the Critical regression)', () => {
-    // A naive split(/\r?\n/) run BEFORE quote-aware parsing would cut this
-    // single row into fragments, none of which reach the Left Group index,
-    // so the departed member would come back eligible (silently granted a
-    // ballot). Assert the opposite: the row survives intact.
+    // Splitting on newlines first would break this row, and the departed member
+    // would come back eligible.
     const notesWithNewline = 'Left\nafter dispute'
     const csvWithEmbeddedNewline = [header, shiftedRow('2500001', 'Grace', 'Departed', notesWithNewline, '1')].join(
       '\n',
@@ -134,16 +127,10 @@ describe('parseUsuExport', () => {
     expect(r.skipped).toBe(1)
   })
 
-  // --- round 2: the whole-file tokenizer that fixed the newline fracture
-  // widened the blast radius of a single stray, un-escaped quote. It no
-  // longer runs away to the end of one line - it swallows every following
-  // newline until another '"' closes it, or until EOF. ---
+  // --- stray quotes: one swallows every following newline until it is closed ---
 
   it('throws when a quoted field is never closed before end of file', () => {
-    // Exactly one stray quote, and nothing after it to close it: the file
-    // ends still inQuotes. This is unrecoverable - the whole document is
-    // untrustworthy, so refuse it outright rather than flushing a dangling
-    // field into a plausible-looking partial roll.
+    // Still in quotes at EOF: reject the whole file.
     const unterminated = [header, shiftedRow('2500007', 'Never', 'Closed', '-', '0')]
       .join('\n')
       .replace('"Never"', '"Never') // drop this field's closing quote
@@ -152,15 +139,9 @@ describe('parseUsuExport', () => {
   })
 
   it('an even number of stray quotes lets the file terminate, but silently merges the rows in between - and skipped undercounts the real loss', () => {
-    // One stray quote opens a runaway field partway through row 2600002's
-    // "Officer  Notes"; it is never closed on that line. Two more physical
-    // lines follow that contain NO quote characters of their own (as if
-    // they were plain, un-quoted text), so they get swallowed whole as
-    // literal content of the still-open field. A single stray quote three
-    // lines later finally closes it. Net result: the file has an EVEN
-    // number of stray quotes overall, so parseCsvRows does NOT throw - but
-    // three logical member rows (2600002, 2600003, 2600004) have collapsed
-    // into one oversized field.
+    // A stray quote opens a runaway field in row 2600002. Two quote-free lines
+    // are swallowed into it, and a second stray quote closes it. The quotes
+    // balance, so nothing throws, but three member rows have merged into one.
     const good1 = shiftedRow('2600001', 'First', 'Good', '-', '0')
     const corruptLine = [
       '"900002"', '"2600002"', '"13000002"', '"Stray"', '"Quote"',
@@ -168,8 +149,7 @@ describe('parseUsuExport', () => {
       '"Joined a group"', '"12/31/2026"', '"1/1/2026 9:00:00 AM"', '"0"', '"0"',
       '"-"', '"-"', '"Note with a stray',
     ].join(',')
-    // stand-ins for two more members' rows, swallowed whole because they
-    // carry no quote characters to toggle state back
+    // two more members' rows, with no quotes of their own
     const swallowedA = 'PLAIN,2600003,ThirdPerson,SwallowedWhole'
     const swallowedB = 'PLAIN,2600004,FourthPerson,AlsoSwallowed'
     // exactly one quote character: closes the runaway field
@@ -185,12 +165,8 @@ describe('parseUsuExport', () => {
     expect(r.members.map((m) => m.usuId)).toEqual(['2600001', '2600005'])
     // ... and the merged row is counted as exactly ONE skipped row ...
     expect(r.skipped).toBe(1)
-    // ... even though THREE real members (2600002, 2600003, 2600004) are
-    // actually missing from the roll. This is the documented limitation:
-    // `skipped` counts rows, not lost members, once rows have merged. An
-    // officer must not read "1 skipped" as "1 member affected" when the
-    // file is corrupt in this way - which is exactly why an unclosed quote
-    // at EOF (the test above) throws instead of returning a result at all.
+    // ... although three members are missing. `skipped` counts rows, not lost
+    // members, once rows have merged.
     const intendedMembers = 5 // 2600001..2600005
     const actuallyAccountedFor = r.members.length + r.skipped
     expect(actuallyAccountedFor).toBeLessThan(intendedMembers)

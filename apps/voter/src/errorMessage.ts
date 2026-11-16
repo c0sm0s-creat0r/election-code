@@ -1,16 +1,9 @@
 import { ApiError } from './api.js'
 
 /**
- * Turns an `ApiError` into something a voter can act on.
- *
- * The API distinguishes its refusals with a `code` precisely so this mapping can
- * exist (spec §3): a 401 is deliberately vague, because a wrong surname and an
- * unknown id must be indistinguishable, while a 403 says what to do, because both
- * of its causes are fixable at the door and "unauthorized" in a queue tells a
- * volunteer nothing.
- *
- * Nothing here prints the server's message for a 5xx. Those messages are about
- * configuration and a caller has no business reading them.
+ * Turns an `ApiError` into a message a voter can act on. A 401 is vague on
+ * purpose: a wrong surname and an unknown id look the same. A 403 says what
+ * to do. A 5xx message is never shown.
  */
 export function signInMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Something went wrong. Please try again.'

@@ -1,9 +1,6 @@
 /**
- * Turnout while voting is open — and nothing else.
- *
- * **This must never grow a per-candidate figure.** Spec §4 gives the officer
- * "see turnout only" while an election is open; withholding the tally until close
- * is the central control, and a breakdown added here would undo it.
+ * Turnout while voting is open, and nothing else. Never add a per-candidate
+ * figure: no tally exists before close.
  */
 import { Hono } from 'hono'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
@@ -15,8 +12,7 @@ turnout.get('/api/batches/:id/elections/:eid/turnout', requireRole('officer'), a
   const batchId = requireSession(c).batchId
   const electionId = pathParam(c, 'eid')
 
-  // One statement. `found` answers the 404 that used to need its own SELECT, on
-  // the one endpoint designed to be polled every few seconds.
+  // One statement, `found` included: clients poll this every few seconds.
   const row = await c.env.DB
     .prepare(
       `SELECT
@@ -39,8 +35,7 @@ turnout.get('/api/batches/:id/elections/:eid/turnout', requireRole('officer'), a
 
   if (!row || row.found === 0) return c.json({ error: 'not found' }, 404)
 
-  // `added_at_door` travels with the totals, never separately: a door password can
-  // enrol a voter, so the number must never be presented without its provenance.
+  // `added_at_door` is always returned with the totals.
   return c.json({
     ballots_cast: row.ballots_cast,
     voters_checked_in: row.voters_checked_in,

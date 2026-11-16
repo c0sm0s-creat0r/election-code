@@ -1,6 +1,5 @@
-// Hand-written row types matching apps/api/migrations/0001_initial.sql exactly.
-// No ORM: these describe the shape of rows returned by D1's prepared-statement
-// API. Booleans and timestamps are SQLite integers (0/1, unix ms).
+// Hand-written row types matching the migrations. Booleans and timestamps
+// are SQLite integers (0/1, unix ms).
 
 export type BatchRow = {
   id: string
@@ -14,26 +13,18 @@ export type BatchRow = {
 
 export type VoterRollRow = {
   batch_id: string
-  // usu_id is the "Net Id" column in the USU member export (7 digits).
-  // It is the only identifier a voter ever sees or types. The export's
-  // "User Identifier" (6) and "Member Identifier" (8) are not imported.
+  // "Net Id" in the USU export. The only identifier a voter types.
   usu_id: string
   first_name: string
   last_name: string
   eligible: number // 0 | 1; computed at import: "Left Group" = 0
-  /**
-   * 1 when a door volunteer created this row because the export missed the
-   * member. Added in 0004, and never cleared -- see that migration. This is
-   * what keeps a door-added voter visible in `GET /quorum` and in both
-   * attendance exports.
-   */
+  /** 1 when a door volunteer added this member. Never cleared (migration 0004). */
   added_at_door: number // 0 | 1
 }
 
 /**
- * Someone in the room who is not on the roll and cannot vote. Migration 0004.
- * Deliberately has no `usu_id`: nothing joins a guest to the roll, so the
- * ballot insert's eligibility clause has nothing to match.
+ * Someone in the room who cannot vote. No `usu_id`: nothing joins a guest to
+ * the roll, so the ballot insert's eligibility clause cannot match.
  */
 export type GuestRow = {
   id: string
@@ -68,7 +59,7 @@ export type CandidateRow = {
   ordinal: number
 }
 
-// the secret part — no timestamp column. See migration comment.
+// No timestamp column. See migration 0001.
 export type BallotRow = {
   id: string // random UUIDv4, never sequential
   election_id: string
@@ -80,20 +71,16 @@ export type BallotRow = {
 /** The two columns the count needs from a ballot. */
 export type CountBallotRow = Pick<BallotRow, 'id' | 'preferences'>
 
-// who voted, never what. This is the mark-off on the roll.
+// Who voted, never what. The mark-off on the roll.
 export type VoteReceiptRow = {
   election_id: string
   usu_id: string // = "Net Id" in the USU export
   voted_at: number
   recast_count: number
   /**
-   * The receipt hash of this voter's CURRENT live ballot, or null if they hold
-   * none (they have voided, or the election has closed). Added in 0002; see
-   * that migration for why it exists and why it must not outlive the count.
-   *
-   * Non-null, this is a join from a usu_id to a ballot's preferences. Do not
-   * select it into anything, do not export it, and do not leave it set once
-   * ballots can no longer be voided.
+   * Receipt hash of this voter's live ballot. Null once voided or the election
+   * closes. While set it joins a usu_id to a ballot's preferences: never select
+   * or export it. See migration 0002.
    */
   live_receipt_hash: string | null
 }
@@ -111,7 +98,7 @@ export type ElectionResultRow = {
   id: number
   election_id: string
   computed_at: number
-  /** Fixed-point, formatted, e.g. "2.00000". Added in 0003; see that migration. */
+  /** Fixed-point, formatted, e.g. "2.00000". */
   quota: string
   rounds: string // full round-by-round JSON
   winners: string
@@ -124,8 +111,7 @@ export type AuditLogRole = 'super' | 'public' | 'officer' | 'door' | 'voter'
 
 export type AuditLogRow = {
   id: number
-  // null for a privileged action that has no batch to attribute -- a
-  // denied super-admin-key attempt. See migrations/0001_initial.sql.
+  // null for an action with no batch: a denied super-admin-key attempt
   batch_id: string | null
   role: AuditLogRole
   action: string

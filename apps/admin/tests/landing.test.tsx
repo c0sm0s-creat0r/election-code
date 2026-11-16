@@ -25,15 +25,13 @@ describe('Landing', () => {
   it('lists societies, so nobody has to know a slug by heart', async () => {
     stub(200, societies)
     renderRouted(<Landing />)
-    // The whole card is the link — a bare name is a small target inside a much
-    // larger row that does nothing — so its name carries the slug too.
+    // the whole card is the link, so its name carries the slug too
     await waitFor(() => expect(screen.getByRole('link', { name: /Science Society/ })).toBeTruthy())
     expect(screen.getByRole('link', { name: /Science Society/ }).getAttribute('href')).toBe('/b/scisoc')
   })
 
   it('SHOWS A LOGO POINTED AT THE API, not at this app\'s own origin', async () => {
-    // A stored logo_url is root-relative to the API, which in production is a
-    // different host. Rendering it as-is 404s silently.
+    // A stored logo_url is root-relative to the API, a different origin.
     stub(200, [{
       ...societies[0]!,
       branding: { ...societies[0]!.branding, logo_url: '/api/logos/batches/b1/abc.png' },
@@ -42,7 +40,7 @@ describe('Landing', () => {
     await waitFor(() => expect(document.querySelector('img.society-logo')).toBeTruthy())
     expect(document.querySelector('img.society-logo')!.getAttribute('src'))
       .toBe('http://localhost:8787/api/logos/batches/b1/abc.png')
-    // Decorative: the name is right beside it, so a reader must not hear it twice.
+    // Decorative: the name is beside it, so a screen reader must not read it twice.
     expect(document.querySelector('img.society-logo')!.getAttribute('alt')).toBe('')
   })
 

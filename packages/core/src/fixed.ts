@@ -1,10 +1,6 @@
 /**
  * Vote values in fixed point: 5 decimal places, truncated toward zero.
- *
- * Chosen over arbitrary-precision rationals deliberately — a published, fixed
- * rule can be checked by hand on paper, which is the whole audit story.
- * `format` throws on a negative value: a negative total is nonsense, and
- * rendering one would put it in a document laid before a committee.
+ * A fixed rule can be checked by hand.
  */
 export type Fixed = bigint
 

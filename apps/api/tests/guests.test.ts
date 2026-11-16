@@ -85,12 +85,12 @@ describe('guests', () => {
   it('A GUEST IS NOT ON THE ROLL, so they cannot be checked in as a voter', async () => {
     const before = await env.DB.prepare('SELECT count(*) c FROM voter_roll').first<{ c: number }>()
     await addGuest({ name: 'Jo Visitor' })
-    // adding a guest creates no roll row at all, which is the control
+    // adding a guest creates no roll row: that is the control
     const after = await env.DB.prepare('SELECT count(*) c FROM voter_roll').first<{ c: number }>()
     expect(after!.c).toBe(before!.c)
-    // and nothing absent from the roll can be checked in. (A guest id is a
-    // 36-char UUID, which checkInSchema's max(32) rejects as a 400 before the
-    // lookup, so this uses a well-formed id that is simply not there.)
+    // Nothing absent from the roll can be checked in. A guest id is a 36-char
+    // UUID, which checkInSchema's max(32) rejects with a 400, so this uses a
+    // well-formed id that is not on the roll.
     const res = await SELF.fetch(`https://example.com/api/batches/${f.batchId}/check-in`, {
       method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
       body: JSON.stringify({ usu_id: '9999999' }),

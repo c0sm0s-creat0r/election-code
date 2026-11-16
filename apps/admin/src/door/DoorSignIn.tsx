@@ -1,6 +1,6 @@
 /**
- * Door sign-in. The door password grants check-in and the quorum count, and
- * nothing else — no elections, no candidates, no tally.
+ * Door sign-in. The door password grants check-in and the quorum count only:
+ * no elections, candidates or tally.
  */
 import { useState, type FormEvent } from 'react'
 import { doorSignIn } from '../api.js'

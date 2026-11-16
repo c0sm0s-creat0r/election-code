@@ -1,16 +1,16 @@
 /**
  * Component classes for the voter app. Tokens and element defaults come from
- * @election/styles; nothing here redefines a token.
+ * @election/styles. Nothing here redefines a token.
  */
 
-/* --- the ranked ballot ----------------------------------------------------- */
+/* Ranked ballot */
 
 .ranked-list > li + li,
 .add-list > li + li { margin-top: var(--step); }
 
 .ranked-item { background: var(--paper); }
 
-/* The fix for the legacy defect: rank is shown, never inferred from tap order. */
+/* Rank is always shown, never inferred from tap order. */
 .ordinal {
   flex: 0 0 auto;
   display: grid;
@@ -31,7 +31,7 @@
   gap: calc(var(--step) / 2);
 }
 
-/* The whole row is the target, not just the label — a thumb aims at the row. */
+/* The whole row is the tap target, not just the label. */
 .add-row > button {
   display: flex;
   align-items: center;
@@ -59,7 +59,7 @@
   border: 0;
 }
 
-/* --- the receipt ----------------------------------------------------------- */
+/* Receipt */
 
 .receipt-token {
   padding: calc(var(--step) * 1.5);
@@ -69,10 +69,9 @@
   word-break: break-all;
 }
 
-/* --- the masthead and the society list ------------------------------------- */
+/* Masthead and society list */
 
-/* The logo sits beside the title rather than above it: vertical space above the
-   fold is what a ballot needs on a phone. */
+/* Beside the title, not above it: a ballot needs the vertical space. */
 .masthead {
   display: flex;
   align-items: center;
@@ -98,8 +97,7 @@
 
 .society-card:hover { border-color: var(--accent); background: var(--sunk); }
 
-/* Contain, never cover: a society's logo is its identity and cropping it is not
-   ours to do. A fixed box keeps one tall logo from setting the row height. */
+/* Contain, never crop. The fixed box stops a tall logo setting the row height. */
 .society-logo {
   flex: 0 0 auto;
   width: calc(var(--step) * 6);
@@ -111,11 +109,11 @@
 .society-title { font-weight: 600; }
 .society-slug { font-size: 0.875rem; }
 
-/* --- the agenda ------------------------------------------------------------ */
+/* Agenda */
 
 .agenda-list > li + li { margin-top: var(--step); }
 
-/* Name above, seats below, so a long office name wraps without shoving the
+/* Name above, seats below, so a long office name wraps without pushing the
    button off a narrow screen. */
 .agenda-name {
   display: flex;
@@ -126,9 +124,7 @@
 
 .agenda-seats { font-size: 0.875rem; }
 
-/* A button that reads as a link: going back is navigation, but there is no
-   router here, so it cannot be an anchor. 44px tall for the same reason every
-   other target is. */
+/* A button styled as a link: there is no router to navigate with. */
 .link-button {
   min-height: var(--touch);
   padding: 0;

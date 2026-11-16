@@ -144,7 +144,7 @@ describe('door check-in', () => {
       }),
     })
     const otherId = (await other.json() as { id: string }).id
-    // a door cookie for the OTHER batch, used against this batch's route
+    // a door cookie for the other batch, used on this batch's route
     const otherDoor = (await (await SELF.fetch(`https://example.com/api/batches/${otherId}/door/session`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ password: 'door-password-2' }),

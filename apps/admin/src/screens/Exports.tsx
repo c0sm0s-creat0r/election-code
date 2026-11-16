@@ -1,13 +1,8 @@
 /**
  * The exports, each labelled with what it proves.
  *
- * **Plain download links, not fetches.** A navigation carries the session cookie
- * and lets the browser stream the file to disk, so a multi-megabyte ballot CSV
- * never sits in a laptop's memory mid-AGM. (`Content-Disposition` is exposed by
- * the API's CORS config if a fetch is ever genuinely needed.)
- *
- * The labels matter as much as the links. These files are the answer to "prove
- * it", and an officer handing one over should know which question it answers.
+ * Plain download links, not fetches: a navigation sends the session cookie
+ * and streams the file to disk.
  */
 import { API_BASE } from '../api.js'
 
@@ -48,9 +43,7 @@ export function Exports({ batchId, electionId }: ExportsProps) {
         </ul>
       )}
 
-      {/* Only when no election was named. The whole-AGM files have their own
-          screen; repeating them under every election's result would suggest they
-          were about that election. */}
+      {/* Only when no election is named: these files cover the whole AGM. */}
       {electionId === undefined && (
         <ul className="export-list plain-list">
           <li>

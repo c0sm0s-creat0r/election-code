@@ -1,23 +1,14 @@
 /**
- * The returning officer's tie-break override.
+ * The returning officer's tie-break override: the last step, after countback
+ * and the seeded draw (spec §3). It needs a reason, which goes to `audit_log`
+ * and the result document.
  *
- * Spec §3 puts this at the end of the resolution ladder: countback, then a
- * seeded draw, then the officer — who "may override any tie-break, which
- * requires a reason, is written to `audit_log`, and appears in the result
- * document". Constitutions that require lots to be drawn in the room need it.
+ * The field is `resolved_id`, not a winner: for `kind: 'exclusion'` it is the
+ * candidate excluded. The response returns each tie's `kind` so a frontend
+ * can label the control.
  *
- * **The field is `resolved_id`, not `winner_id`.** Spec §5 originally named it
- * `winner_id`, which is a trap: for `kind: 'exclusion'` the id in
- * `TieBreakRecord.resolved` is the candidate **excluded**, not the survivor. A
- * UI built from that name would say "pick the winner" and collect the exact
- * opposite of the officer's intent, producing a result that looks right. The
- * response therefore echoes each tie's `kind` so a frontend can label the
- * control truthfully, and spec §5 has been amended.
- *
- * **An override never edits the old result.** It writes a new `election_result`
- * row with `supersedes` pointing at the previous one. Spec §2 wants "the officer
- * changed the tie-break and the winner changed" to remain a visible fact with
- * both counts attached, so nothing is ever deleted.
+ * An override does not edit a result. It writes a new `election_result` row
+ * that supersedes the previous one. Both stay on record.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -30,21 +21,15 @@ import { loadSealed, currentResult, resultDocument, computeAndStore, sealedError
 const overrideSchema = z.object({
   tie_break_id: z.string().min(1).max(64),
   resolved_id: z.string().min(1).max(64),
-  // Trimmed before the length check, so "   " is a missing reason rather than a
-  // three-character one. Spec §3 requires a reason; an empty one would satisfy
-  // the letter of that and none of the point.
+  // Trimmed first, so "   " is missing.
   reason: z.string().transform((s) => s.trim()).refine((s) => s.length > 0, {
     message: 'reason is required',
   }),
 })
 
 /**
- * Every override already in force, keyed as `CountInput.overrides` expects.
- *
- * Read back off the stored tie-breaks rather than kept in a column of their own:
- * a `TieBreakRecord` with `method: 'officer_override'` *is* the record of one,
- * and it already carries the resolved candidate and the reason. A second store
- * would be a second source of truth to keep in step.
+ * Every override in force, keyed as `CountInput.overrides` expects. Read
+ * from the stored tie-breaks.
  */
 const overridesInForce = (tieBreaks: TieBreakRecord[]): Record<string, { candidateId: string; reason: string }> => {
   const overrides: Record<string, { candidateId: string; reason: string }> = {}
@@ -67,8 +52,6 @@ override.post('/api/batches/:id/elections/:eid/result/override', requireRole('of
 
   const current = await currentResult(c.env.DB, electionId)
   if (!current) {
-    // Nothing to override yet. Counting first is the officer's decision to
-    // make, not something to do implicitly on their behalf.
     return c.json({ error: 'count the election before overriding a tie-break', code: 'not_counted' }, 409)
   }
 
@@ -80,8 +63,7 @@ override.post('/api/batches/:id/elections/:eid/result/override', requireRole('of
 
   const tieBreaks = JSON.parse(current.tie_breaks) as TieBreakRecord[]
   const target = tieBreaks.find((t) => t.id === tieBreakId)
-  // `count` throws on both of these, which would surface as a 500. They are
-  // bad input, and the officer needs to be told which of the two it was.
+  // `count` would throw on either. Both are bad input: 400.
   if (!target) {
     return c.json({ error: `no tie-break ${tieBreakId} in this count`, code: 'unknown_tie_break' }, 400)
   }
@@ -92,16 +74,13 @@ override.post('/api/batches/:id/elections/:eid/result/override', requireRole('of
     )
   }
 
-  // Accumulate: an override must not silently discard an earlier one, or the
-  // officer would be told their decision stands while the result says it was
-  // never applied.
+  // Accumulate, so a new override keeps the earlier ones.
   const overrides = { ...overridesInForce(tieBreaks), [tieBreakId]: { candidateId: resolvedId, reason } }
 
   await computeAndStore(c.env.DB, batchId, sealed, overrides, current.id)
 
-  // The officer's decision, separate from the count it caused. Spec §3 requires
-  // the reason in audit_log; `tie_override` is the allow-listed variant that
-  // carries it, and a tie-break id and a reason name no person and no ballot.
+  // The decision is audited separately from the count. The detail names no
+  // person and no ballot.
   await recordAudit(c.env.DB, {
     batchId,
     role: 'officer',

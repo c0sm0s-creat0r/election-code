@@ -4,12 +4,7 @@ import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 const KEY = 'super-secret-test-key'
 
 beforeEach(async () => {
-  // The brief's literal snippet imports the migration as a raw SQL string via
-  // `?raw` and passes it to applyD1Migrations; that fails at runtime with
-  // "parameter 2 is not of type 'D1Migration[]'" (confirmed when this test was
-  // first run). Per the task context notes and tests/schema.test.ts, migrations
-  // must go through the TEST_MIGRATIONS binding that vitest.config.ts builds
-  // with readD1Migrations() on the Node side.
+  // Migrations come from the TEST_MIGRATIONS binding in vitest.config.ts.
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
   await env.DB.prepare('DELETE FROM audit_log').run()
   await env.DB.prepare('DELETE FROM batch').run()
@@ -30,10 +25,7 @@ const valid = {
 
 describe('POST /api/batches', () => {
   it('ALLOWS creation with no key — societies sign themselves up', async () => {
-    // Reversed deliberately on 2026-09-22. This endpoint required the
-    // super-admin key until then, and spec §1 listed self-serve signup as a
-    // non-goal; both were overridden. The key is still honoured when offered
-    // (see the next test), so a wrong one is still an operator attempt.
+    // Sign-up needs no key. A key that is sent must be right (next test).
     expect((await create(valid)).status).toBe(201)
   })
 
@@ -74,9 +66,7 @@ describe('POST /api/batches', () => {
   })
 
   it('audits a DENIED super-admin-key attempt, with a null batch_id', async () => {
-    // The highest-privileged action in the system, and the direct descendant
-    // of the legacy unauthenticated tenant-creation endpoint. batch_id is
-    // NULL because no batch exists to attribute the attempt to.
+    // batch_id is NULL: no batch exists to attribute the attempt to.
     expect((await create(valid, 'wrong')).status).toBe(401)
     const row = await env.DB.prepare(`SELECT batch_id, role, action, detail FROM audit_log`)
       .first<{ batch_id: string | null; role: string; action: string; detail: string | null }>()
@@ -90,8 +80,7 @@ describe('POST /api/batches', () => {
   })
 
   it('never records the supplied key, or any prefix of it, in the audit row', async () => {
-    // A near-miss guess written into `detail` is a credential sitting in a
-    // table officers and exports can read.
+    // A near-miss guess in `detail` would be a credential in a readable table.
     const guess = 'super-secret-test-kex'
     await create(valid, guess)
     const row = await env.DB.prepare(`SELECT detail FROM audit_log`).first<{ detail: string | null }>()
@@ -116,14 +105,7 @@ describe('POST /api/batches', () => {
   })
 
   it('leaves no audit_log row behind when the batch insert fails (duplicate slug)', async () => {
-    // Regression check on the insert-fails path: a duplicate slug throws
-    // before either statement in db.batch([insert, audit]) commits, so no
-    // audit row should appear. Note this does not by itself discriminate
-    // the atomicity fix from the pre-fix code, since the old code also
-    // returned 409 before ever calling recordAudit on this path — see the
-    // task report for the failure mode this doesn't cover (the audit write
-    // failing *after* a successful insert), which was not cleanly
-    // inducible from the HTTP boundary.
+    // A duplicate slug fails before either statement commits: no audit row.
     await create(valid, KEY)
     const dup = await create(valid, KEY)
     expect(dup.status).toBe(409)
@@ -182,14 +164,12 @@ describe('POST /api/batches validation', () => {
   })
 
   it('rejects a protocol-relative logo_url (//evil.com)', async () => {
-    // The root-relative branch must not admit a scheme-relative URL that
-    // browsers resolve off-origin.
+    // scheme-relative: browsers resolve it off-origin
     expect((await withBranding({ logo_url: '//evil.com/logo.png' })).status).toBe(400)
   })
 
   it('rejects a backslash-prefixed logo_url (/\\evil.com)', async () => {
-    // Some browsers treat a leading backslash as a path separator too,
-    // making "/\\evil.com" behave like "//evil.com".
+    // some browsers treat a leading backslash as a slash
     expect((await withBranding({ logo_url: '/\\evil.com' })).status).toBe(400)
   })
 
@@ -197,9 +177,6 @@ describe('POST /api/batches validation', () => {
     expect((await withBranding({ logo_url: '' })).status).toBe(201)
   })
 
-  // PBKDF2 at 210k iterations buys a constant factor; it does not rescue a
-  // one-character door password, which is typed on a volunteer's phone in a
-  // public room and chosen in a hurry.
   const withPasswords = (officer: string, door: string) =>
     create({ ...valid, officer_password: officer, door_password: door }, KEY)
 
@@ -212,15 +189,13 @@ describe('POST /api/batches validation', () => {
   })
 
   it('rejects a 5-character password but accepts 6', async () => {
-    // The floor was 12 until 2026-09-22, when it was lowered to 6 at the user's
-    // direction. See routes/batches.ts for what that costs.
+    // the minimum is 6 (see routes/batches.ts)
     expect((await withPasswords('a'.repeat(5), 'door-password-1')).status).toBe(400)
     expect((await withPasswords('a'.repeat(6), 'b'.repeat(6))).status).toBe(201)
   })
 
   it('refuses a short password without echoing it back', async () => {
-    // The 400 body is a fixed literal; the Zod message stays server-side so
-    // nothing the caller typed is reflected.
+    // The 400 body is a fixed literal. Nothing the caller typed is reflected.
     const res = await withPasswords('short', 'door-password-1')
     expect(res.status).toBe(400)
     expect(await res.text()).not.toContain('short')
@@ -228,13 +203,8 @@ describe('POST /api/batches validation', () => {
 })
 
 describe('DB.batch() atomicity (carried from Task 5 review)', () => {
-  // Task 5 made the batch insert and its audit write atomic via db.batch(),
-  // but no test exercised the real failure direction: a second statement in
-  // the same batch failing *after* a first statement that would otherwise
-  // have succeeded. This is the primitive spec §2 also relies on for the
-  // ballot/receipt pair, so it is worth pinning directly rather than only
-  // through the HTTP-level duplicate-slug case (which fails *before* either
-  // statement runs).
+  // The duplicate-slug case fails before either statement runs. This checks
+  // the other direction, which the ballot/receipt pair also relies on.
   it('rolls back a successful batch insert when a later statement in the same db.batch() fails', async () => {
     await expect(
       env.DB.batch([
@@ -302,8 +272,7 @@ describe('self-serve signup', () => {
   })
 
   it('still refuses a WRONG key, because presenting one is an operator attempt', async () => {
-    // Omitting the key is a signup; getting it wrong is someone probing the
-    // operator path, which is worth refusing and recording.
+    // No key is a sign-up. A wrong key is an attempt on the operator path.
     const res = await signUp({}, { 'x-super-admin-key': 'not-the-key' })
     expect(res.status).toBe(401)
     const row = await env.DB.prepare(`SELECT count(*) c FROM audit_log WHERE action = 'batch.create.denied'`)
@@ -340,9 +309,6 @@ describe('self-serve signup', () => {
   })
 
   it('REFUSES the same password for both roles', async () => {
-    // The door password is typed on volunteers' phones and grants check-in only.
-    // Reusing the officer password there hands full control of the election to
-    // anyone standing at the desk, which is the one boundary this system has.
     const res = await signUp({ officer_password: 'same-password-1', door_password: 'same-password-1' })
     expect(res.status).toBe(400)
     const row = await env.DB.prepare('SELECT count(*) c FROM batch').first<{ c: number }>()

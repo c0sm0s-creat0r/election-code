@@ -1,29 +1,24 @@
 /**
  * A society registering itself.
  *
- * **Nothing here verifies anyone.** The system sends no email, so it cannot, and
- * the screen says as much rather than implying the registration was approved.
- * What protects an election is not this form — it is that a new society starts
- * with an empty roll and can only enfranchise the members it imports.
+ * Nothing here verifies anyone, and the screen says so. A new society starts
+ * with an empty roll and can enfranchise only the members it imports.
  *
- * The two passwords are shown back once, because PBKDF2 makes them
- * unrecoverable and losing the officer one means losing the society.
+ * The two passwords are shown once: they cannot be recovered.
  *
- * **The logo goes up after the society exists.** The upload route needs an
- * officer session and a batch id, neither of which exist until registration
- * succeeds, so the screen signs in with the officer password just typed and
- * then uploads. A refused logo does not undo the registration: the society is
- * real either way, and the officer is told to add it from Appearance instead.
+ * The logo uploads after registration. The upload needs an officer session,
+ * so the screen signs in with the password just typed. A refused logo does
+ * not undo the registration.
  */
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { logoSrc, officerSignIn, signUpSociety, uploadLogo, type Batch } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
-/** Matches the API's floor in routes/batches.ts. */
+/** Matches the API's minimum in routes/batches.ts. */
 const PASSWORD_MIN = 6
 
-/** A usable slug from a society's name, so nobody has to guess the rules. */
+/** Derives a valid slug from the society's name. */
 const toSlug = (name: string): string =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
 

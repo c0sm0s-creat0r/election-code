@@ -1,24 +1,12 @@
 /**
  * The result of a sealed election.
  *
- * **No tally exists before `closed`.** Spec §4. This endpoint answers 409 on a
- * draft or open election — not a partial count, not an empty result. An officer
- * who can watch the result develop and choose when to stop makes every other
- * control decorative.
+ * - No tally before `closed`: a draft or open election gets a 409.
+ * - Voided ballots are sealed but not counted.
+ * - The count runs once and is stored. Later requests read the stored row.
+ *   An override writes a new row that supersedes it.
  *
- * **Voided ballots are sealed but not counted.** They stay in the table so the
- * digest covers them, and they are excluded from the count. That distinction is
- * the entire reason `ballot.voided` exists.
- *
- * **The count is computed once and stored.** A second request is served from
- * the stored `election_result` row. Recomputing would make the result depend on
- * the code that happened to be deployed rather than on a record — and Task 3's
- * override has to produce a *new versioned row*, not quietly change an old
- * answer.
- *
- * **This file contains no election logic.** `@election/core` counts; if a result
- * looks wrong the bug is there, where 135 tests and a differential against the
- * legacy implementation are waiting for it.
+ * All counting logic is in `@election/core`.
  */
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -35,9 +23,8 @@ export type SealedElection = {
 }
 
 /**
- * Loads an election that is closed AND sealed, or explains why not. Shared with
- * the override and export routes: every one of them is meaningless before the
- * box is sealed, and each should refuse for the same reason in the same words.
+ * Loads a closed, sealed election, or says why not. Shared by the result,
+ * override and export routes so their refusals match.
  */
 export async function loadSealed(
   db: D1Database,
@@ -61,10 +48,8 @@ export async function loadSealed(
   if (!row) return { error: 'not_found' }
   if (row.status !== 'closed') return { error: 'not_closed', status: row.status }
 
-  // Closed but unsealed is the retry window in routes/close.ts. Treat it as not
-  // yet closed rather than counting an unsealed box: with no digest there is
-  // nothing to seed a tie-break draw from, and nothing to prove later that these
-  // were the ballots.
+  // Closed but unsealed is the retry window in close.ts. With no digest there
+  // is no seed for a draw, so treat it as not yet closed.
   if (row.ballots_sha256 === null || row.ballots_sha256 === undefined) {
     return { error: 'not_closed', status: row.status }
   }
@@ -79,7 +64,7 @@ export async function loadSealed(
   }
 }
 
-/** The stored result currently in force: the one nothing else supersedes. */
+/** The stored result in force: the one no other row supersedes. */
 export async function currentResult(db: D1Database, electionId: string): Promise<ElectionResultRow | null> {
   return db
     .prepare(
@@ -92,7 +77,7 @@ export async function currentResult(db: D1Database, electionId: string): Promise
     .first<ElectionResultRow>()
 }
 
-/** The wire shape of a result document, shared with the export in Task 5. */
+/** The wire shape of a result document. The result.json export serves it too. */
 export const resultDocument = (
   sealed: SealedElection,
   row: ElectionResultRow,
@@ -114,11 +99,9 @@ export const resultDocument = (
 })
 
 /**
- * Runs the count over the sealed, non-voided ballots and stores it.
- *
- * `ballotsSha256` comes from the seal, which is what makes a seeded draw
- * reproducible: anyone holding the exported ballots can recompute the digest,
- * re-derive the seed and check the draw was not steered.
+ * Counts the sealed, non-voided ballots and stores the result. The draw seed
+ * derives from the seal's digest, so anyone can re-check the draw from the
+ * exported ballots.
  */
 export async function computeAndStore(
   db: D1Database,
@@ -133,8 +116,7 @@ export async function computeAndStore(
     db.prepare(`SELECT id, name FROM candidate WHERE election_id = ? ORDER BY ordinal`)
       .bind(electionId)
       .all<Pick<CandidateRow, 'id' | 'name'>>(),
-    // voided = 0: sealed, not counted. ORDER BY id for the same reason the seal
-    // has it — the count must not depend on storage order.
+    // ORDER BY id: the count must not depend on storage order.
     db.prepare(`SELECT id, preferences FROM ballot WHERE election_id = ? AND voided = 0 ORDER BY id`)
       .bind(electionId)
       .all<CountBallotRow>(),
@@ -175,7 +157,7 @@ export async function computeAndStore(
   return result
 }
 
-/** 409 or 404 for a load that failed, in one place so every route agrees. */
+/** 409 or 404 for a failed load. One place, so every route agrees. */
 export function sealedError(
   c: Context<AuthedEnv>,
   failure: { error: 'not_found' } | { error: 'not_closed'; status: ElectionRow['status'] },
@@ -205,8 +187,7 @@ result.get('/api/batches/:id/elections/:eid/result', requireRole('officer'), asy
   await computeAndStore(c.env.DB, batchId, sealed, {}, null)
 
   const stored = await currentResult(c.env.DB, electionId)
-  // The insert above just wrote it, inside a transaction that either committed
-  // or threw. A miss here is not a missing result, it is a broken invariant.
+  // Just written in a committed transaction. A miss is a broken invariant.
   if (!stored) throw new Error('stored result missing immediately after being written')
   return c.json(resultDocument(sealed, stored))
 })

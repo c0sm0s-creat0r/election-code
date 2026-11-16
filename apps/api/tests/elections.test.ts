@@ -207,7 +207,7 @@ describe('election lifecycle', () => {
     const otherCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/session`, {
       method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-2' }),
     })).headers.get('set-cookie')) ?? '').split(';')[0]!
-    // the other batch's officer, using their own batch's path, naming OUR election
+    // the other batch's officer, on their own batch's path, naming our election
     const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/elections/${eid}/open`, {
       method: 'POST', headers: { cookie: otherCookie },
     })

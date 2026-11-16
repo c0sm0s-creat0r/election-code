@@ -57,11 +57,7 @@ describe('validateBallot', () => {
   })
 
   it('never lets the minimum collapse to zero', () => {
-    // Without the floor of 1, seats = 0 or an empty candidate list makes the
-    // minimum 0, and validateBallot([], [], 1) answers ok - a ballot that
-    // ranks nobody, blessed as valid. `count` then carries it as a ballot for
-    // quota purposes while it votes for nobody. This library is meant to be
-    // usable standalone, so it refuses on its own rather than on the caller's.
+    // the floor of 1: a ballot ranking nobody is never valid
     expect(minimumPreferences(0, 5)).toBe(1)
     expect(minimumPreferences(3, 0)).toBe(1)
     expect(validateBallot([], [], 1).ok).toBe(false)

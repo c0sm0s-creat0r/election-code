@@ -2,22 +2,12 @@ import { count } from './count.js'
 import type { Candidate, CountBallot, CountResult } from './types.js'
 
 /**
- * A ballot as the export carries it: the count's view plus whether the ballot
- * was voided.
- *
- * `voided` is required rather than optional-defaulting-to-false on purpose.
- * This is the one format whose job is provenance — `ballots_sha256` is computed
- * over `id|preferences|voided` for every row — so a caller who omitted the
- * field would write `0` for a voided ballot and produce a file whose digest
- * silently disagrees with the seal it is supposed to prove.
+ * A ballot as exported. `voided` is required: the seal digest covers
+ * `id|preferences|voided`.
  */
 export type ExportBallot = CountBallot & { voided: boolean }
 
-/**
- * A parsed CSV row, carrying the 1-based ordinal of the row as it appears
- * in the file (the header is row 1, and blank rows are counted before they
- * are dropped) so that an error can point an auditor at the offending line.
- */
+/** `n` is the 1-based file row (the header is 1), for error messages. */
 type CsvRow = { n: number; fields: string[] }
 
 function corrupt(detail: string): Error {
@@ -25,20 +15,9 @@ function corrupt(detail: string): Error {
 }
 
 /**
- * Parse a whole CSV document into rows of fields, honouring double-quoted
- * fields that may contain commas, `\r\n` or `\n`, and `""`-escaped quote
- * characters - a row only ends on a newline seen outside quotes.
- *
- * This has to be a single pass over the whole text rather than
- * split-then-parse-each-line: splitting on newlines first would cut a
- * quoted field that itself contains a newline mid-value, silently
- * truncating it and misaligning every row after it.
- *
- * This is deliberately small and local to the ballot/candidate export
- * format this library produces (two simple columns). It is the same shape
- * as the tokenizer in usu-import.ts, which exists to cope with a malformed
- * third-party export - a different input with different failure modes.
- * Written separately here on purpose; do not import or share it.
+ * Single-pass CSV parse. Quoted fields may hold commas, newlines and `""`.
+ * Not shared with usu-import.ts: that parser recovers from a malformed file,
+ * this one fails closed.
  */
 function parseCsvRows(text: string): CsvRow[] {
   const rows: CsvRow[] = []
@@ -94,10 +73,7 @@ function parseCsvRows(text: string): CsvRow[] {
     }
   }
   if (inQuotes) {
-    // `recount` only ever reads this library's own export. An unterminated
-    // quote there means the file was truncated or tampered with - exactly
-    // the corruption a recount tool exists to catch. Fail closed rather
-    // than silently absorbing the rest of the file into one field.
+    // We only read our own export, so this is truncation or tampering.
     throw new Error(
       'recount: unterminated quoted field — the CSV is truncated or corrupt. No count was performed.',
     )
@@ -106,16 +82,8 @@ function parseCsvRows(text: string): CsvRow[] {
     endRow()
   }
 
-  // Drop rows that carry no content at all - every field blank. This has to
-  // look at *every* field, not just a single-field row: a bare `,` parses to
-  // `['', '']`, and a row of empty quoted fields to `['', '', '']`. Letting
-  // either through adds a phantom record, and for ballots that inflates
-  // `ballots.length`, which feeds the Droop quota directly - a blank line in
-  // the audit file would change who wins.
-  //
-  // Trimming here only decides whether a row is blank. Field values are
-  // never trimmed or otherwise rewritten, so a candidate named '  Alex  '
-  // survives with its spaces intact.
+  // Drop all-blank rows: a phantom ballot would change the quota. Field values
+  // are never trimmed.
   return rows.filter((r) => !r.fields.every((f) => f.trim() === ''))
 }
 
@@ -135,25 +103,15 @@ export function toCandidatesCsv(candidates: Candidate[]): string {
 }
 
 /**
- * Produce the `ballot_id,preferences,voided` CSV this library's `recount` reads
- * back, with preferences pipe-joined inside one quoted field. The inverse of
- * the ballots half of `recount`'s input.
- *
- * **The `voided` column is what makes the seal reproducible from this file.**
- * `election_seal.ballots_sha256` is SHA-256 over `id|preferences|voided` for
- * every ballot sorted by id, so a holder of this export can recompute the
- * digest and confirm these are the sealed ballots *before* recounting them.
- * Without the column the recount proved the arithmetic and not the provenance.
+ * The ballot CSV that `recount` reads. Preferences are pipe-joined in one
+ * field. The `voided` column lets a holder recompute `ballots_sha256` and
+ * check the file against the seal.
  */
 export function toBallotsCsv(ballots: ExportBallot[]): string {
   const lines = [BALLOT_HEADER.join(',')]
   for (const b of ballots) {
     for (const pref of b.preferences) {
-      // Preferences are pipe-joined into one field, so an id containing '|'
-      // splits into two on the way back and the file no longer describes the
-      // election it came from. Refuse to write it rather than leave "do not
-      // put a pipe in a candidate id" as a rule somebody downstream has to
-      // know.
+      // A '|' in an id would come back as two preferences.
       if (pref.includes('|')) {
         throw new Error(
           `toBallotsCsv: candidate id ${JSON.stringify(pref)} contains '|', ` +
@@ -168,16 +126,9 @@ export function toBallotsCsv(ballots: ExportBallot[]): string {
 }
 
 /**
- * Take the data rows of one of our two tables, refusing anything whose shape
- * the writers above could not have produced.
- *
- * `recount` reads only this library's own output, so the header is fixed and
- * every data row has exactly as many fields as that header. A missing header
- * would make `slice(1)` eat a real record - for ballots, one fewer ballot
- * changes the quota - and a row with the wrong field count means the line was
- * hand-edited. Neither is something to guess past. That includes a two-column
- * ballot file from before the `voided` column existed: such a file cannot be
- * checked against a seal, so it is refused rather than read optimistically.
+ * Data rows of one of our own tables. Requires the exact header and field
+ * count. A missing header would swallow a record; a two-column ballot file
+ * cannot be checked against a seal.
  */
 function dataRows(csv: string, header: readonly string[]): CsvRow[] {
   const rows = parseCsvRows(csv)
@@ -202,19 +153,8 @@ function dataRows(csv: string, header: readonly string[]): CsvRow[] {
 }
 
 /**
- * Re-run a count from the exported CSVs alone - no database, no network.
- *
- * This is what makes the audit story concrete: a challenged result can be
- * recomputed in front of whoever is challenging it, from files they hold.
- *
- * Every refusal below shares one rationale. The only input `recount` ever
- * reads is this library's own export, written by `toCandidatesCsv` /
- * `toBallotsCsv` from records that `validateBallot` already accepted. So a
- * malformation here cannot have come from us: the file was truncated,
- * hand-edited or tampered with, which is precisely the situation a recount
- * exists to detect. Silently dropping such a row is the same error as
- * silently keeping it - both hand back a confident result computed from a
- * file that is not what it claims to be.
+ * Re-run a count from the exported CSVs: no database, no network. Any
+ * malformation means the file was truncated or edited, so `recount` throws.
  */
 export async function recount(
   ballotsCsv: string,
@@ -231,8 +171,7 @@ export async function recount(
     if (id.trim() === '') {
       throw corrupt(`row ${row.n} has an empty candidate id`)
     }
-    // A repeat collapses in `count`'s maps but still appears twice in the round
-    // table and the continuing-candidate count.
+    // A repeat would appear twice in the round table.
     if (seenCandidateIds.has(id)) {
       throw corrupt(`row ${row.n} repeats candidate id ${JSON.stringify(id)}`)
     }
@@ -250,9 +189,7 @@ export async function recount(
     if (id.trim() === '') {
       throw corrupt(`row ${row.n} has an empty ballot id`)
     }
-    // Only the two values this library writes. Anything else - 'true', 'yes',
-    // '' - was hand-edited, and guessing at it would decide whether a ballot
-    // counts.
+    // Anything but the two values we write was hand-edited.
     if (voidedField !== '0' && voidedField !== '1') {
       throw corrupt(`row ${row.n} has voided=${JSON.stringify(voidedField)}, expected "0" or "1"`)
     }
@@ -261,8 +198,7 @@ export async function recount(
     }
     seenBallotIds.add(id)
 
-    // Not harmless: `ballots.length` is the Droop denominator, so a row ranking
-    // nobody raises the quota while contributing to no candidate.
+    // A ballot ranking nobody would still raise the quota.
     if (prefsField === '') {
       throw corrupt(`row ${row.n} has an empty preference list`)
     }
@@ -272,9 +208,7 @@ export async function recount(
       if (pref === '') {
         throw corrupt(`row ${row.n} has an empty preference`)
       }
-      // `count` would treat an unknown preference as non-continuing and exhaust
-      // the paper, so deleting one candidate line silently redistributes all of
-      // their votes.
+      // `count` would exhaust the paper and redistribute a deleted candidate's votes.
       if (!seenCandidateIds.has(pref)) {
         throw corrupt(`row ${row.n} lists preference ${JSON.stringify(pref)}, which is not a candidate`)
       }
@@ -284,11 +218,7 @@ export async function recount(
       seenPrefs.add(pref)
     }
 
-    // A voided ballot is validated like any other - it is part of the sealed
-    // file, and a preference naming nobody means the file does not describe
-    // this election whether that row counted or not - but it is not passed to
-    // `count`. It stays in the box and out of the tally, exactly as the
-    // database holds it.
+    // Voided ballots are validated like any other, then left out of the count.
     if (voidedField === '1') {
       voidedCount++
       continue
@@ -297,8 +227,6 @@ export async function recount(
     ballots.push({ id, preferences })
   }
 
-  // The Droop quota divides by the number of counted ballots, so an empty box
-  // is not a count with no winner - it is a file that cannot produce one.
   if (ballots.length === 0) {
     throw corrupt(
       voidedCount > 0

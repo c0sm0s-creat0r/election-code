@@ -9,7 +9,7 @@ beforeEach(async () => {
   for (const obj of (await env.LOGOS.list()).objects) await env.LOGOS.delete(obj.key)
 })
 
-/** A minimal but genuine PNG: signature + IHDR. */
+/** A minimal valid PNG: signature + IHDR. */
 const PNG = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -24,8 +24,8 @@ const WEBP = new Uint8Array([
 
 const upload = (bytes: Uint8Array, filename: string, cookie = f.officerCookie) => {
   const body = new FormData()
-  // .slice() hands File a view whose buffer is a plain ArrayBuffer, which is
-  // what BlobPart requires under @cloudflare/workers-types.
+  // .slice() gives File a view over a plain ArrayBuffer, which BlobPart
+  // requires under @cloudflare/workers-types.
   body.append('file', new File([bytes.slice()], filename))
   return SELF.fetch(`https://example.com/api/batches/${f.batchId}/logo`, {
     method: 'POST', headers: { cookie }, body,
@@ -94,9 +94,7 @@ describe('logo upload', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
     expect(res.headers.get('cache-control')).toMatch(/max-age=/)
-    // The route streams R2's body rather than buffering it, so the body has to
-    // be consumed here: an open stream outlives the test and trips the pool's
-    // isolated-storage stack.
+    // Consume the body, or the open stream trips the pool's isolated storage.
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG)
   })
 

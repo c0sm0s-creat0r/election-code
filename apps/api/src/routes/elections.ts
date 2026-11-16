@@ -1,20 +1,9 @@
 /**
- * Election lifecycle: draft -> open -> closed (closing is Plan 2c).
+ * Election lifecycle: draft -> open -> closed. Closing is in close.ts.
  *
- * Two rules carry the weight here, both from spec §4, and both are enforced by
- * the *database* rather than by a check-then-act in this file:
- *
- * **Candidates freeze at `open`.** The legacy `add_candidate` worked at any
- * time. Adding a candidate after fifty ballots means those fifty voters never
- * had the chance to rank them, and their ballots are silently incomparable
- * with every later one. Every candidate mutation therefore carries
- * `AND (SELECT status FROM election ...) = 'draft'` in its own WHERE clause: a
- * request that arrives while the election is being opened changes nothing.
- *
- * **No tally exists until `closed`.** Nothing in this file returns a count,
- * and the public listing returns five fields. The legacy hole spec §6 records
- * was a public route that returned every ballot and every attendee's name and
- * USU id.
+ * Candidates freeze at `open`. Every candidate mutation has the draft check
+ * in its WHERE clause, so there is no check-then-act. Nothing in this file
+ * returns a tally.
  */
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -27,8 +16,8 @@ import { pathParam } from '../http/params.js'
 
 const createElectionSchema = z.object({
   name: z.string().min(1).max(200),
-  // The CHECK constraint in 0001 says the same thing. Both: the constraint is
-  // the guarantee, this is the 400 that explains it.
+  // Migration 0001's CHECK constraint enforces this. This gives the 400 a
+  // message.
   seats: z.number().int().min(1).max(100),
 })
 
@@ -41,18 +30,10 @@ type PublicElection = Pick<ElectionRow, 'id' | 'name' | 'seats' | 'status'> & {
 
 export const elections = new Hono<AuthedEnv>()
 
-/**
- * Public. Returns `{id, name, seats, status, candidates}` and nothing else —
- * never a ballot, never an attendee, never a tally — and only for elections
- * that have been opened. A draft is not yet a fact about the world.
- */
+/** Public. Opened elections only: no draft, ballot, attendee or tally. */
 const publicElections = new Hono<{ Bindings: Env }>()
 
-/**
- * Lists a batch's elections with their candidates. `statuses` is what separates
- * the public listing from the officer's: the public one must never show a draft,
- * because a draft is not yet a fact about the world.
- */
+/** A batch's elections with their candidates. A public caller must never pass 'draft'. */
 async function listElections(
   db: D1Database,
   batchId: string,
@@ -101,12 +82,9 @@ publicElections.get('/api/batches/:id/elections', async (c) =>
 elections.route('/', publicElections)
 
 /**
- * The officer's own listing, drafts included.
- *
- * A separate authenticated path rather than a flag on the public route: a public
- * response whose body changes with a cookie is a caching hazard — a shared cache
- * can serve a draft-bearing copy to anyone. Without this an officer who reloads
- * the page cannot find the election they just created.
+ * The officer's listing, drafts included. A separate authenticated path, not
+ * a flag on the public route: a public response that varies by cookie can be
+ * cached and served to anyone.
  */
 elections.get('/api/batches/:id/officer/elections', requireRole('officer'), async (c) =>
   c.json(await listElections(c.env.DB, requireSession(c).batchId, ['draft', 'open', 'closed'])))
@@ -128,9 +106,8 @@ elections.post('/api/batches/:id/elections', requireRole('officer'), async (c) =
 })
 
 /**
- * Distinguishes "no such election in this batch" (404) from "the election is
- * no longer in draft" (409). Called only after a conditional write has already
- * reported zero rows, so it never races the write it explains.
+ * 404 for no such election, 409 for one no longer in draft. Called only
+ * after a conditional write changed zero rows, so it cannot race that write.
  */
 async function explainNoChange(
   c: Context<AuthedEnv>,
@@ -159,9 +136,8 @@ elections.post('/api/batches/:id/elections/:eid/candidates', requireRole('office
 
   const id = crypto.randomUUID()
 
-  // The draft check is part of the INSERT, not a step before it. `ordinal` is
-  // derived in the same statement so two candidates added concurrently cannot
-  // land on the same ballot position.
+  // The draft check and the `ordinal` are in the INSERT, so concurrent adds
+  // cannot share a ballot position.
   const result = await c.env.DB
     .prepare(
       `INSERT INTO candidate (id, election_id, name, ordinal)
@@ -226,11 +202,8 @@ elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), a
   const batchId = requireSession(c).batchId
   const electionId = pathParam(c, 'eid')
 
-  // One conditional UPDATE carries every precondition: the election is this
-  // batch's, it is still a draft, and it has at least as many candidates as
-  // seats. `minimumPreferences` is Math.max(1, ...) so the library is safe
-  // standalone, but an election with no candidates must never open — a voter
-  // would be handed a ballot they cannot fill in.
+  // One conditional UPDATE holds every precondition: this batch's election,
+  // still a draft, at least as many candidates as seats.
   const result = await c.env.DB
     .prepare(
       `UPDATE election SET status = 'open', opened_at = ?1
@@ -277,29 +250,17 @@ elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), a
 })
 
 /**
- * Delete an election — **only while no ballot has ever been cast in it.**
+ * Delete an election while it has no ballot (voided ballots count). An
+ * officer can remove a mistake, never a vote.
  *
- * The rule is one line and that is the point of it: an officer password can
- * remove a mistake, and can never remove a vote. A misnamed draft, an election
- * opened against the wrong roll, a test run before the meeting — all of those
- * have no ballots and are junk that the officer is currently stuck with. The
- * moment one person has voted, the election is a record of what they did, and
- * deleting it is not an officer's decision to make. A voided ballot still counts
- * here: the row stays in the table precisely so the seal covers it.
- *
- * `election_seal` and `election_result` are the two tables spec §2 deliberately
- * gave no `ON DELETE CASCADE`, so they are deleted explicitly and each carries
- * the no-ballot guard itself. That absence is a guard rail, not an oversight:
- * without these two statements a sealed election could not be deleted at all,
- * and nothing here removes that protection for an election that has ballots.
+ * `election_seal` and `election_result` have no `ON DELETE CASCADE`. They
+ * are deleted explicitly, and each statement has the no-ballot guard.
  */
 elections.delete('/api/batches/:id/elections/:eid', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
   const electionId = pathParam(c, 'eid')
 
-  // Read for the audit detail before the delete, since afterwards there is
-  // nothing left to read. Not a precondition — every statement below carries
-  // its own — so a status that changes underneath this is harmless.
+  // Read for the audit detail only. Each statement below has its own guard.
   const before = await c.env.DB
     .prepare(`SELECT status FROM election WHERE id = ? AND batch_id = ?`)
     .bind(electionId, batchId)
@@ -315,9 +276,7 @@ elections.delete('/api/batches/:id/elections/:eid', requireRole('officer'), asyn
     c.env.DB
       .prepare(`DELETE FROM election_seal WHERE election_id = ?1 AND ${NO_BALLOTS}`)
       .bind(electionId),
-    // Candidates, ballots and receipts cascade from this one. There are no
-    // ballots to cascade — that is what the guard means — and no receipts
-    // either, because a receipt is only ever written beside a ballot.
+    // Candidates cascade from this one. The guard means no ballots or receipts exist.
     c.env.DB
       .prepare(`DELETE FROM election WHERE id = ?1 AND batch_id = ?2 AND ${NO_BALLOTS}`)
       .bind(electionId, batchId),

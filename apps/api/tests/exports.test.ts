@@ -79,8 +79,8 @@ describe('exports', () => {
   it('LETS A THIRD PARTY RECOMPUTE THE SEAL from the export alone', async () => {
     await close()
     const text = await (await get(`/elections/${f.electionId}/ballots.csv`)).text()
-    // parse the export the way an outsider would, then rebuild the canonical
-    // serialisation spec §2 defines
+    // parse the export as an outsider would, then rebuild the serialisation
+    // spec §2 defines
     const rows = text.trim().split('\n').slice(1).map((line) => {
       const [id, prefs, voided] = line.split('","').map((field) => field.replace(/^"|"$/g, ''))
       return {
@@ -139,8 +139,7 @@ describe('exports', () => {
   })
 
   it('still lists who voted after the roll has been purged', async () => {
-    // the export is meant to be taken before the purge, but an inner join would
-    // return a header and no rows, which reads as "nobody voted"
+    // an inner join would return a header and no rows: "nobody voted"
     await closeAndCount()
     await env.DB.prepare('DELETE FROM check_in').run()
     await env.DB.prepare('DELETE FROM voter_roll').run()
@@ -166,7 +165,7 @@ describe('exports', () => {
     expect(text.split('\n')[0]).toBe('usu_id,first_name,last_name,voted_at,recast_count,added_at_door')
     const nina = text.split('\n').find((l) => l.includes('2400777'))
     expect(nina).toMatch(/"1"$/)
-    // and a member from the export is marked 0, so the column distinguishes
+    // a member from the export is marked 0
     const ada = text.split('\n').find((l) => l.includes('2400001'))
     expect(ada).toMatch(/"0"$/)
   })
@@ -200,8 +199,7 @@ describe('exports', () => {
   })
 
   it('exports everyone checked in, whether or not they voted', async () => {
-    // 2400001, 2400002 and 2400004 are checked in by setUp and all voted; the
-    // point is the file is the door's list, so check someone in who has not.
+    // setUp's three all voted, so check in someone who has not
     await SELF.fetch(`https://example.com/api/batches/${f.batchId}/check-in`, {
       method: 'POST', headers: { ...JSON_HEADERS, cookie: f.doorCookie },
       body: JSON.stringify({ usu_id: '2400006' }),

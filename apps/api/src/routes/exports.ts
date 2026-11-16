@@ -1,19 +1,12 @@
 /**
- * Everything a disputing party needs to check the work themselves.
+ * What a disputing party needs to check the count.
  *
- * - **attendance** is the roll mark-off: who voted, never what.
- * - **check-ins** is who was in the room, voted or not.
- * - **ballots** is the anonymous box. With the `voided` column it is now
- *   sufficient to recompute `ballots_sha256`, so a recipient can confirm these
- *   are the sealed ballots *before* recounting them — that was the gap spec §2
- *   used to record.
- * - **candidates** travels with the ballots because `recount` needs both halves:
- *   a preference naming an absent candidate is refused, so the ballot file alone
- *   cannot be replayed.
- * - **result.json** is the sealed count with every tie-break and its reasoning.
- *
- * `Content-Disposition` is already in Plan 2a's CORS `exposeHeaders`, so a
- * frontend can fetch these to a blob and read the filename off the response.
+ * - attendance: the roll mark-off. Who voted, never what.
+ * - check-ins: who was in the room, voted or not.
+ * - ballots: the anonymous box, with `voided`, so `ballots_sha256` can be
+ *   recomputed before recounting.
+ * - candidates: the rest of `recount`'s input.
+ * - result.json: the sealed count with every tie-break.
  */
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -23,13 +16,13 @@ import { pathParam } from '../http/params.js'
 import { loadSealed, currentResult, resultDocument, sealedError } from './result.js'
 import type { BallotRow, CandidateRow } from '../db/types.js'
 
-/** Quote every field: the reader in `@election/core` is quote-aware, and a society name can contain a comma. */
+/** Every field quoted: a society name can contain a comma. */
 const csvField = (value: string): string => `"${value.replace(/"/g, '""')}"`
 
 const csv = (header: readonly string[], rows: readonly string[][]): string =>
   [header.join(','), ...rows.map((r) => r.map(csvField).join(','))].join('\n') + '\n'
 
-/** A CSV response the browser saves rather than renders. */
+/** A CSV response the browser saves, not renders. */
 const csvResponse = (c: Context<AuthedEnv>, filename: string, body: string) =>
   c.body(body, 200, {
     'content-type': 'text/csv; charset=utf-8',
@@ -39,12 +32,8 @@ const csvResponse = (c: Context<AuthedEnv>, filename: string, body: string) =>
 export const exports_ = new Hono<AuthedEnv>()
 
 /**
- * Attendance for one election: the `vote_receipt` mark-off, with names from the
- * roll.
- *
- * LEFT JOIN, not an inner one. The post-AGM purge deletes `voter_roll`, and an
- * inner join would then return a header and no rows — which reads as "nobody
- * voted" rather than "the names are gone". Who voted is still a fact afterwards.
+ * Attendance for one election. LEFT JOIN: the post-AGM purge deletes
+ * `voter_roll`, and an inner join would then show nobody voted.
  */
 exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
@@ -74,10 +63,8 @@ exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('offi
   return csvResponse(
     c,
     `attendance-${electionId}.csv`,
-    // `added_at_door` is the provenance column. A door password can enrol a
-    // voter (routes/doorVoters.ts), so a committee reading this file must be
-    // able to see which voters came from the membership export and which did
-    // not. COALESCE because the LEFT JOIN yields NULL once the roll is purged.
+    // `added_at_door` marks voters a door volunteer enrolled. COALESCE because
+    // the roll may be purged.
     csv(
       ['usu_id', 'first_name', 'last_name', 'voted_at', 'recast_count', 'added_at_door'],
       results.map((r) => [
@@ -89,10 +76,9 @@ exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('offi
 })
 
 /**
- * Who voted, in every election in the batch, for the AGM minutes: one row per
- * member per election they voted in. The path keeps its old name so saved links
- * still work, but the file is not attendance — a member who was checked in and
- * did not vote is not in it. That is `check-ins.csv`.
+ * Who voted in each election in the batch, for the minutes. The path keeps
+ * its old name for saved links. A member who checked in and did not vote is
+ * in `check-ins.csv`, not here.
  */
 exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
@@ -129,11 +115,8 @@ exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c
 })
 
 /**
- * The anonymous ballot box, sealed and exported.
- *
- * `ORDER BY id` is explicit. `ballot` is `WITHOUT ROWID` so physical order is
- * already UUID order — which is exactly why it is written out, because spec §2
- * defines the digest as sorted by id and that must come from the query.
+ * The sealed ballot box. `ORDER BY id` because the digest is defined as
+ * sorted by id.
  */
 exports_.get('/api/batches/:id/elections/:eid/ballots.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
@@ -156,13 +139,7 @@ exports_.get('/api/batches/:id/elections/:eid/ballots.csv', requireRole('officer
   return csvResponse(c, `ballots-${electionId}.csv`, toBallotsCsv(ballots))
 })
 
-/**
- * Guests, as their own file.
- *
- * Not rows in `attendance.csv`, which is the `vote_receipt` mark-off and is
- * therefore about voting. A guest did not vote, and putting them in that file
- * would misrepresent both the guest and the turnout.
- */
+/** Guests get their own file: `attendance.csv` lists voters, and a guest did not vote. */
 exports_.get('/api/batches/:id/guests.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
   const { results } = await c.env.DB
@@ -178,13 +155,9 @@ exports_.get('/api/batches/:id/guests.csv', requireRole('officer'), async (c) =>
 })
 
 /**
- * Everyone checked in at the door: the room, not the ballot box.
- *
- * An inner join is safe here, unlike the voting exports: `check_in` has a
- * cascading foreign key to `voter_roll`, so no check-in outlives its roll row and
- * after the purge this is honestly empty. `eligible` travels with every row,
- * because a re-import can mark a checked-in member ineligible, and quorum counts
- * only the eligible ones.
+ * Everyone checked in at the door. An inner join is correct: `check_in`
+ * cascades from `voter_roll`, so this is empty after the purge. `eligible`
+ * is included because quorum counts eligible members only.
  */
 exports_.get('/api/batches/:id/check-ins.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
@@ -215,7 +188,7 @@ exports_.get('/api/batches/:id/check-ins.csv', requireRole('officer'), async (c)
   )
 })
 
-/** The other half of a recount's input. */
+/** The rest of a recount's input. */
 exports_.get('/api/batches/:id/elections/:eid/candidates.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
   const electionId = pathParam(c, 'eid')
@@ -231,7 +204,7 @@ exports_.get('/api/batches/:id/elections/:eid/candidates.csv', requireRole('offi
   return csvResponse(c, `candidates-${electionId}.csv`, toCandidatesCsv(results))
 })
 
-/** The sealed result document: the same shape the result endpoint serves. */
+/** The sealed result document, in the shape the result endpoint serves. */
 exports_.get('/api/batches/:id/elections/:eid/result.json', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
   const electionId = pathParam(c, 'eid')
@@ -240,8 +213,7 @@ exports_.get('/api/batches/:id/elections/:eid/result.json', requireRole('officer
   if ('error' in sealed) return sealedError(c, sealed)
 
   const stored = await currentResult(c.env.DB, electionId)
-  // Deliberately does not count on demand: an export is a copy of the record,
-  // and producing the record is the officer's decision at /result.
+  // An export copies the record. Only the officer, at /result, runs the count.
   if (!stored) {
     return c.json({ error: 'count the election before exporting its result', code: 'not_counted' }, 409)
   }

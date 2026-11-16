@@ -7,7 +7,6 @@ const t = (o: Record<string, number>) =>
 
 describe('bulkExclusionSet', () => {
   it('excludes only the lowest when bulk would be unsafe', () => {
-    // a=3, b=4: 3+4=7 > 8? no, 7 < 8 so both are safe... use a clearer case
     // a=5, b=6, c=7: 5+6=11 > 7, so b cannot join a
     expect(bulkExclusionSet(t({ a: 5, b: 6, c: 7 }), 2)).toEqual(['a'])
   })
@@ -28,8 +27,7 @@ describe('bulkExclusionSet', () => {
   })
 
   it('does NOT bulk-exclude tied candidates when unsafe', () => {
-    // a=5, b=5, c=8: 5+5=10 > 8. Excluding both could cut a candidate who
-    // would have overtaken c. This is the irv.py bug.
+    // a=5, b=5, c=8: 5+5=10 > 8, so only one may go. This is the irv.py bug.
     expect(bulkExclusionSet(t({ a: 5, b: 5, c: 8 }), 2)).toHaveLength(1)
   })
 })

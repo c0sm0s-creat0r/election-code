@@ -80,7 +80,7 @@ beforeEach(async () => {
   await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${closedElectionId}/open`, {
     method: 'POST', headers: { cookie: officerCookie },
   })
-  // closing is Plan 2c; for this task the state is what matters
+  // set directly; close.test.ts covers the route
   await env.DB.prepare(`UPDATE election SET status = 'closed', closed_at = ? WHERE id = ?`)
     .bind(Date.now(), closedElectionId).run()
 
@@ -228,8 +228,8 @@ describe('ballot submission', () => {
   })
 
   it('refuses a ballot in an election that closed after validation', async () => {
-    // the transaction's own eligibility clause requires status = 'open', so a
-    // close landing between the pre-check and the insert cannot let one through
+    // the insert's eligibility clause requires status = 'open', so a close
+    // between the pre-check and the insert blocks the ballot
     await env.DB.prepare(`UPDATE election SET status = 'closed' WHERE id = ?`).bind(electionId).run()
     const res = await submit(['a', 'b'])
     expect([403, 409]).toContain(res.status)

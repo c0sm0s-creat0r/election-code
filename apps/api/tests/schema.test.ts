@@ -2,11 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { env, applyD1Migrations } from 'cloudflare:test'
 
 beforeAll(async () => {
-  // `applyD1Migrations` validates its second argument at runtime as
-  // `D1Migration[]` ({ name, queries }[]) — a raw imported SQL string fails
-  // that check. `vitest.config.ts` reads migrations/0001_initial.sql on the
-  // Node side with `readD1Migrations` and injects the parsed result as the
-  // `TEST_MIGRATIONS` binding (see tests/env.d.ts for its type).
+  // Migrations come from the TEST_MIGRATIONS binding in vitest.config.ts.
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
 })
 
@@ -20,8 +16,6 @@ const sqlFor = async (table: string): Promise<string> => {
 
 describe('schema', () => {
   it('resolves the DB binding at runtime', async () => {
-    // Task 1 only asserted the D1 binding via wrangler.jsonc config; this
-    // proves env.DB actually resolves to a working database at test time.
     const row = await env.DB.prepare('SELECT 1 AS one').first<{ one: number }>()
     expect(row?.one).toBe(1)
   })
@@ -36,9 +30,8 @@ describe('schema', () => {
   })
 
   it('creates ballot WITHOUT ROWID', async () => {
-    // This clause is the entire basis of the secret-ballot guarantee: it makes
-    // physical row order follow the random UUID key rather than insertion order.
-    // Losing it silently reintroduces the ballot/roll correlation leak.
+    // The secret ballot depends on this: row order follows the random id, not
+    // insertion order.
     expect(await sqlFor('ballot')).toMatch(/WITHOUT\s+ROWID/i)
   })
 
@@ -51,16 +44,11 @@ describe('schema', () => {
   })
 
   it('gives voter_roll exactly the spec columns, nothing else', async () => {
-    // The roll holds 1,302 real people's names during an AGM and is purged
-    // afterwards; its shape is a data-minimisation control. This guards
-    // against a later migration silently adding a column (e.g. email) with
-    // nothing else to catch it.
+    // The roll's columns are a data-minimisation control. A new column (email,
+    // say) must fail here.
     const cols = await env.DB.prepare(`PRAGMA table_info(voter_roll)`).all<{ name: string }>()
     const names = cols.results.map((r) => r.name)
-    // added_at_door arrived in 0004. It is provenance, not personal data: it
-    // records that a volunteer created the row, never anything about the
-    // member. Everything the export actually carries -- email, payments, tags,
-    // officer notes, expiry dates -- still must never appear here.
+    // added_at_door (0004) is provenance, not personal data.
     expect(names.sort()).toEqual(
       ['batch_id', 'usu_id', 'first_name', 'last_name', 'eligible', 'added_at_door'].sort(),
     )

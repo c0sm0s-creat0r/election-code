@@ -33,7 +33,7 @@ describe('surplus transfers (IGM)', () => {
   })
 
   it('moves every paper at the same value, replacing its old weight', async () => {
-    // this is what makes IGM hand-checkable: ONE number per distribution
+    // IGM: one transfer value per distribution
     const r = await count(
       input({ ballots: ballots([[['a', 'b'], 9], [['c', 'b'], 3]]) }),
     )
@@ -52,47 +52,26 @@ describe('surplus transfers (IGM)', () => {
     expect(Number(last.nonTransferable)).toBeGreaterThan(0)
   })
 
-  // NOTE: no "conserves votes through a surplus transfer" test. recordRound()
-  // already refuses to record a round whose votes do not sum exactly, in
-  // bigint; the float restatement of it (toBeCloseTo(12, 3)) tolerated leakage
-  // of up to 5e-4 that the exact check catches, and could only run at all in
-  // the case where the exact check had already passed.
+  // No float conservation test: recordRound() checks it exactly, in bigint.
 })
 
 describe('a second surplus, over papers of mixed weight', () => {
   /*
-   * The case IGM's documented defect actually shows up in: a candidate elected
-   * AFTER receiving transfers, distributing a surplus over papers that arrived
-   * at three different values. Hand-computed in full below, because this is
-   * precisely the arithmetic a scrutineer would be checking on paper.
+   * A candidate elected after receiving transfers, distributing a surplus over
+   * papers that arrived at different values.
    *
-   * 21 ballots, 2 seats -> quota = floor(21/3) + 1 = 8.
-   *   a: 9 x ['a','b']      b: 6 x ['b','c']      c: 6 x ['c','b']
+   * 21 ballots, 2 seats, quota = floor(21/3) + 1 = 8:
+   *   9 x [a,b]   6 x [b,c]   6 x [c,b]
    *
-   * Round 1 - a holds 9.00000, surplus 1.00000 over 9 papers.
-   *   TV1 = 1/9 = 0.111111... -> 0.11111 truncated.
-   *   a retains 8.00000; b receives 9 papers worth 9 x 0.11111 = 0.99999,
-   *   reaching 6.99999. Loss by fraction 0.00001 books to non-transferable.
-   *
-   * Round 2 - nobody is at quota. c is lowest on 6.00000 (b is on 6.99999),
-   *   so c is excluded and its 6 papers move at their CURRENT value, 1.00000
-   *   each. b reaches 12.99999.
-   *
-   * Round 3 - b is elected. Surplus = 12.99999 - 8.00000 = 4.99999, held on
-   *   21 papers of three different weights: 6 of its own at 1.00000, 9 from
-   *   a's surplus at 0.11111, and 6 from c's exclusion at 1.00000.
-   *   TV2 = 4.99999 / 21 = 0.2380947... -> 0.23809 truncated.
-   *
-   *   THIS is the defect, made concrete: the 9 papers that arrived at 0.11111
-   *   each move onward at 0.23809 - more than double the value they came in
-   *   with. IGM divides the surplus by the NUMBER of papers, never by their
-   *   value, so a paper's weight is rewritten at every distribution. Accepted
-   *   deliberately (spec section 3) in exchange for one checkable number per
-   *   distribution.
-   *
-   *   Every paper exhausts (c is gone), so 21 x 0.23809 = 4.99989 goes to
-   *   non-transferable, plus 4.99999 - 4.99989 = 0.00010 loss by fraction and
-   *   round 1's 0.00001: 5.00000 exactly. 8 + 8 + 5 = 21.
+   * Round 1: a on 9.00000, surplus 1.00000 over 9 papers, TV 0.11111.
+   *   b receives 0.99999 and reaches 6.99999; 0.00001 is lost by fraction.
+   * Round 2: c (6.00000) is excluded and its 6 papers move at 1.00000.
+   *   b = 12.99999.
+   * Round 3: b is elected. Surplus 4.99999 over 21 papers, TV 0.23809.
+   *   The 9 papers that arrived at 0.11111 now move at 0.23809: this is the
+   *   known IGM cost (LIMITATIONS.md §5).
+   *   Every paper exhausts: 21 x 0.23809 = 4.99989, plus 0.00010 and round 1's
+   *   0.00001 lost by fraction, is 5.00000 non-transferable. 8 + 8 + 5 = 21.
    */
   const secondSurplus = () =>
     count(

@@ -1,48 +1,23 @@
 export type AuditEntry = {
   /**
-   * null only where the action genuinely has no batch -- a denied
-   * super-admin-key attempt on POST /api/batches. Every other caller must
-   * pass an id it has already loaded from the database: audit_log has no
-   * foreign key, so an unvalidated path parameter would sail straight in.
+   * Null only for an action with no batch (a denied super-admin-key attempt).
+   * Otherwise an id loaded from the database: audit_log has no foreign key.
    */
   batchId: string | null
-  /**
-   * `public` is an unauthenticated caller — currently only a society signing
-   * itself up. 0001's column comment predates it; `role` has no CHECK, so no
-   * migration is needed to add one.
-   */
+  /** `public` is an unauthenticated caller: a society signing up. */
   role: 'super' | 'public' | 'officer' | 'door' | 'voter'
   action: string
   detail?: AuditDetail
 }
 
 /**
- * What an audit row is allowed to record.
+ * What an audit row may record. An allow-list: audit_log has no foreign key
+ * to `batch` and outlives the roll purge and the society, so it holds nothing
+ * personal. An id here would also rebuild, through AUTOINCREMENT and `at`,
+ * the voter-to-ballot link the `ballot` table prevents.
  *
- * This is an allow-list, and deliberately so. `audit_log` is undeletable by
- * construction — it is the one table with no foreign key to `batch`, so it does
- * not cascade away with its subject and the operator's own delete route leaves
- * it standing — while the retention rule purges `voter_roll` and `check_in`
- * after the AGM and claims *that is all the personal data held*.
- *
- * (Until 2026-09-22 this comment said a batch could never be removed at all,
- * which `DELETE /api/batches/:id` makes untrue. What it was protecting is
- * unchanged: the audit rows survive the society they describe, and so they must
- * never have held anything personal in the first place.)
- *
- * Typing this `unknown` quietly broke two guarantees at once:
- *
- *  - The natural `POST /check-in {usu_id}` handler records the usu_id here,
- *    leaving identifiers in a table the purge cannot reach.
- *  - `audit_log.id` is AUTOINCREMENT and `at` is a timestamp, so a ballot
- *    audit row carrying a ballot id — or a usu_id beside a ballot event —
- *    rebuilds exactly the correlation that `WITHOUT ROWID` and the absent
- *    `ballot.cast_at` exist to prevent. The secret ballot, defeated through
- *    the audit log.
- *
- * So: **never a usu_id, never a ballot id, never a preference list.** Counts
- * and reasons, not identities. Adding a new audited action means adding a
- * variant here, which forces that decision to be made rather than defaulted.
+ * No usu_id, no ballot id, no preference list. Counts and reasons only. A new
+ * audited action needs a new variant here.
  */
 export type AuditDetail =
   | { kind: 'roll_import'; total: number; eligible: number; excluded: number; skipped: number }
@@ -51,18 +26,11 @@ export type AuditDetail =
   | { kind: 'election_close'; ballotCount: number }
   | { kind: 'count'; rounds: number; winners: number }
   | { kind: 'tie_override'; tieBreakId: string; reason: string }
-  // Counts, not identities — and no slug or society name either. An audit row
-  // outlives the society it describes, so it says what was destroyed and how
-  // much of it, never who was in it.
+  // Counts only. No slug or society name: the row outlives the society.
   | { kind: 'election_delete'; status: 'draft' | 'open' | 'closed' }
   | { kind: 'batch_delete'; elections: number; ballots: number; voters: number }
 
-/**
- * Builds (but does not run) the audit insert. Exposed so callers that need
- * the audit write to be atomic with another statement — e.g. batch creation
- * — can pass both to `db.batch([...])` in one transaction, the same pattern
- * spec §2 uses for the ballot/receipt pair.
- */
+/** Builds the audit insert without running it, for use in a `db.batch`. */
 export function auditLogStatement(db: D1Database, entry: AuditEntry): D1PreparedStatement {
   return db
     .prepare(`INSERT INTO audit_log (batch_id, role, action, detail, at) VALUES (?,?,?,?,?)`)

@@ -1,23 +1,15 @@
 /**
  * The voter app's shell: which society, which screen, which election.
  *
- * No router. The slug comes from the path (`vote.dalyell.com.au/<slug>`), so a
- * router would be a dependency earning nothing (spec §1.2). Screen state is a
- * discriminated union, which is what makes "show sign-in again but keep the
- * draft" expressible rather than a pile of booleans.
+ * No router. The slug is the first path segment, and screen state is a
+ * discriminated union.
  *
- * **The open-election list is polled, not snapshotted.** An AGM opens its
- * elections one at a time, as the agenda reaches them, and only an `open`
- * election is visible to a voter — a `draft` one must stay hidden (spec §6). So a
- * list read once at page load is the list for one agenda item, and treating the
- * end of it as the end of the meeting told voters they were finished while four
- * elections were still to come. Polling is also what spec §1 chose for live
- * counts: a room of a few hundred phones asking a cached D1 read every ten
- * seconds is negligible next to getting this wrong.
+ * The open-election list is polled. An AGM opens its elections one at a time
+ * and only `open` ones are visible, so one read at page load would show one
+ * agenda item. No screen may say voting is finished (LIMITATIONS.md §16).
  *
- * Each screen carries the election it is about, rather than an index into that
- * list. A list that changes underneath a voter must not change which ballot they
- * are filling in.
+ * Each screen holds its election, not an index into the list, so a list
+ * change cannot switch the ballot a voter is filling in.
  */
 import { useEffect, useState } from 'preact/hooks'
 import {
@@ -30,17 +22,13 @@ import { Agenda } from './screens/Agenda.js'
 import { Ballot } from './screens/Ballot.js'
 import { Receipt } from './screens/Receipt.js'
 
-/**
- * A society's own logo, or nothing at all — never a placeholder. `alt=""` because
- * the name is always beside it, and a screen reader should not read it twice.
- */
+/** The society's logo, or nothing. `alt=""`: the name is always beside it. */
 function Logo({ branding }: { branding: Branding | undefined }) {
   const src = branding === undefined ? '' : logoSrc(branding.logo_url)
   if (src === '') return null
   return <img class="society-logo" src={src} alt="" />
 }
 
-/** The society's logo and the title it chose, on every screen of the app. */
 function Masthead({ title, branding }: { title: string; branding: Branding | undefined }) {
   return (
     <div class="masthead">
@@ -54,16 +42,14 @@ function Masthead({ title, branding }: { title: string; branding: Branding | und
 const slugFromPath = (): string => (window.location.pathname.split('/')[1] ?? '').trim()
 
 /**
- * Ten seconds, and only while the page is visible. Fast enough that a voter
- * looking at the screen when the chair opens an election sees it without being
- * told to reload. It is not free: 300 phones is ~108,000 requests an hour, more
- * than the Workers free plan allows in a day.
+ * Only while the page is visible. 300 phones is ~108,000 requests an hour,
+ * more than the Workers free plan allows in a day.
  */
 const POLL_MS = 10_000
 
 type Screen =
-  // `resume` carries a ballot that was in progress when the session lapsed, so
-  // signing in again returns to it with the ranking intact.
+  // `resume` is a ballot in progress when the session expired. Restored after
+  // sign-in.
   | { kind: 'signIn'; resume?: { election: PublicElection; draft: string[] } }
   | { kind: 'agenda' }
   | { kind: 'ballot'; election: PublicElection; draft?: string[] }
@@ -82,8 +68,7 @@ export function App() {
   useEffect(() => {
     const slug = slugFromPath()
     if (slug === '') {
-      // No slug: offer the list rather than dead-ending on an error. A voter
-      // handed a bare domain has no other way through.
+      // No slug: list the societies.
       let listing = true
       listSocieties()
         .then((list) => { if (listing) setSocieties(list) })
@@ -96,8 +81,7 @@ export function App() {
         if (!live) return
         setBatch(loaded)
         setReceipts(readReceipts(loaded.id))
-        // The one runtime style mutation in the app, and it is a token rather than
-        // a style attribute: per-society colour with no per-society build.
+        // Per-society colour as a token. No per-society build.
         document.documentElement.style.setProperty('--accent', loaded.branding.accent_color)
         document.title = loaded.branding.title
       })
@@ -122,15 +106,12 @@ export function App() {
         setElections(listed.filter((e) => e.status === 'open'))
         setStale(false)
       } catch {
-        // A failed poll keeps the last good list. Dropping to "nothing is open"
-        // because one request timed out would be a lie a voter acts on.
+        // A failed poll keeps the last good list. Showing "nothing is open" after
+        // one timeout would send voters home.
         if (live) setStale(true)
       }
     }
-    // Only while the page is on screen. A locked phone or a background tab asks
-    // nothing: a room of phones left polling on the table is what spent the
-    // free plan's daily Worker requests and D1 reads. Coming back checks at
-    // once, so an election opened meanwhile is there without a ten-second wait.
+    // Poll only while the page is visible, and once on return.
     let timer: ReturnType<typeof setInterval> | undefined
     const start = () => {
       if (timer !== undefined) return
@@ -152,8 +133,6 @@ export function App() {
   }, [batch])
 
   const heading = batch?.branding.title ?? 'Vote'
-  // One masthead for every screen, so the society's own logo is on the page a
-  // voter is looking at when they rank a ballot — not only on the way in.
   const masthead = <Masthead title={heading} branding={batch?.branding} />
 
   if (loadError !== '') {
@@ -177,18 +156,13 @@ export function App() {
             <p>Choose your society.</p>
             <ul class="society-list plain-list">
               {societies.map((society) => (
-                // The whole card is the link: on a phone, a bare name is a small
-                // target inside a much larger row that does nothing.
+                // The whole card is the link: a larger tap target.
                 <li key={society.slug}>
                   <a class="society-card" href={`/${society.slug}`}>
                     <Logo branding={society.branding} />
                     <span class="society-text">
                       <span class="society-title">{society.name}</span>
-                      {/*
-                        Only when it says something the name does not. Most
-                        societies set both to the same string, and rendering it
-                        twice reads as a mistake — and is read out twice.
-                      */}
+                      {/* only when it differs from the name, or it would be shown twice */}
                       {society.branding.org_name !== society.name && (
                         <span class="muted society-slug">{society.branding.org_name}</span>
                       )}
@@ -212,11 +186,7 @@ export function App() {
 
       {batch === undefined && <p class="muted">Loading…</p>}
 
-      {/*
-        Before sign-in there is nothing to sign in *to* until an election opens,
-        so the wait is here rather than in the agenda. The poll turns this into
-        the sign-in form on its own — the voter is never asked to reload.
-      */}
+      {/* Before sign-in, wait here until an election opens. The poll swaps in the form. */}
       {batch !== undefined && !signedIn && (
         elections === undefined ? (
           <p class="muted">Checking for open elections…</p>
@@ -229,7 +199,7 @@ export function App() {
             batchId={batch.id}
             onSignedIn={(name) => {
               setFirstName(name)
-              // Back to the ballot they were on, with the ranking they had.
+              // Back to their ballot, with their ranking.
               setScreen(
                 screen.kind === 'signIn' && screen.resume
                   ? { kind: 'ballot', ...screen.resume }
@@ -259,8 +229,7 @@ export function App() {
             setReceipts(rememberReceipt(batch.id, screen.election.id, token))
             setScreen({ kind: 'receipt', token, election: screen.election })
           }}
-          // The draft travels with the lapsed session, so signing in again costs
-          // the voter nothing.
+          // the draft is kept through sign-in
           onSessionLost={(draft) => {
             setFirstName('')
             setScreen({ kind: 'signIn', resume: { election: screen.election, draft } })
@@ -274,8 +243,7 @@ export function App() {
           <Receipt
             token={screen.token}
             onVoided={() => {
-              // The ballot is no longer recorded, so the agenda must offer this
-              // election again — and the stored token now voids nothing.
+              // No longer recorded, so the agenda offers this election again.
               setReceipts(forgetReceipt(batch.id, screen.election.id))
               setScreen({ kind: 'ballot', election: screen.election })
             }}

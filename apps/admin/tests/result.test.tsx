@@ -40,8 +40,7 @@ describe('Result', () => {
   it('lists the winners', async () => {
     stub(200, document_)
     renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    // Alex appears in the winners list AND as a row header in the table, which
-    // is correct; this asserts the winners list specifically.
+    // Alex is also a row header in the table; this asserts the winners list.
     await waitFor(() => expect(screen.getByRole('heading', { name: /^elected$/i })).toBeTruthy())
     const winners = screen.getByRole('heading', { name: /^elected$/i }).nextElementSibling
     expect(winners?.tagName).toBe('OL')
@@ -59,8 +58,7 @@ describe('Result', () => {
   it('shows the quota on the table itself', async () => {
     stub(200, document_)
     renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    // The value also appears as Alex's round-1 total, which is the point of a
-    // quota — so this asserts the caption, where it is labelled.
+    // The value is also Alex's round-1 total, so assert the labelled caption.
     await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
     const caption = screen.getByRole('table').querySelector('caption')
     expect(caption?.textContent).toMatch(/quota/i)
@@ -80,8 +78,7 @@ describe('Result', () => {
   })
 
   it('OFFERS THE EXPORTS FOR THIS ELECTION, where the files are about this count', async () => {
-    // They used to sit on the election screen, one step away from the result they
-    // describe; the ballot CSV and the digest belong beside each other.
+    // the ballot CSV and the digest belong beside each other
     stub(200, document_)
     renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
     await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())

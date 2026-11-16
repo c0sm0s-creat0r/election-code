@@ -11,19 +11,14 @@ import {
 } from '../src/auth/session.js'
 
 const SECRET = 'test-session-secret-0123456789abcdef'
-// Typed to StaffSession rather than Session: `Partial<Session>` distributes
-// over the discriminated union, so spreading it produces a type the union
-// will not accept. Voter sessions are built explicitly below, which is the
-// point of the union — a voter session cannot be made by overriding a field.
+// StaffSession, because `Partial<Session>` does not spread cleanly over the union.
 const base = (over: Partial<StaffSession> = {}): Session => ({
   batchId: 'b1', role: 'officer', exp: 9_999_999_999, ...over,
 })
 
 /**
- * Mints a token with an arbitrary payload, bypassing the `Session` type, to
- * test what `verifySession` does with a shape our own code cannot produce.
- * This is not a forgery test — the signature is genuine — it is a test that
- * validation does not trust the payload just because the HMAC checked out.
+ * Mints a validly signed token with an arbitrary payload, to test that
+ * validation does not trust a payload because the HMAC verifies.
  */
 const enc = new TextEncoder()
 const b64url = (bytes: Uint8Array): string =>
@@ -82,7 +77,7 @@ describe('session tokens', () => {
   })
 
   it('never reports "expired" for a token whose signature does not verify', async () => {
-    // Otherwise the reason code leaks that a stale token was once genuine.
+    // Otherwise the reason code reveals that a stale token was once valid.
     const expired = await signSession(base({ exp: 1_000 }), SECRET)
     expect(await verifySessionResult(expired, 'a-different-secret-0123456789abc', 2_000))
       .toEqual({ ok: false, reason: 'invalid' })
@@ -99,18 +94,15 @@ describe('session tokens', () => {
 })
 
 describe('voter session subject', () => {
-  // Plan 2b's ballot handler reads `session.subject` as the voter's usu_id
-  // and binds it into a D1 statement. The type must make a missing subject
-  // impossible to construct, and verification must make one impossible to
-  // accept — a 500 on ballot submission is the one failure the system cannot
-  // absorb, because it happens mid-AGM on the endpoint that must not fail.
+  // The ballot handler binds `session.subject` into a query, so a voter token
+  // without one must not be mintable or accepted.
   const voter = { batchId: 'b1', role: 'voter', subject: '1234567', exp: future } as const
 
   it('round-trips a voter session with its subject intact', async () => {
     const t = await signSession(voter, SECRET)
     const s = await verifySession(t, SECRET)
     expect(s).toEqual(voter)
-    // The narrowing the whole union exists for:
+    // The narrowing the union exists for:
     expect(s?.role === 'voter' ? s.subject : null).toBe('1234567')
   })
 
@@ -145,12 +137,8 @@ describe('voter session subject', () => {
 })
 
 describe('SESSION_SECRET strength', () => {
-  // The token payload is plaintext base64url beside its signature, held on a
-  // volunteer's own phone. A short secret is brute-forceable offline with no
-  // rate limit and no detection, and recovering it mints an officer session
-  // for any batch. A *missing* secret already fails closed inside WebCrypto;
-  // this is the present-but-weak case, which otherwise works perfectly until
-  // it does not.
+  // A short secret can be brute-forced offline from any token, then used to
+  // mint an officer session.
   it('refuses to mint a token with a secret shorter than the minimum', async () => {
     for (const weak of ['', 'x', 'hunter2', 'test-secret-value', 'a'.repeat(MIN_SECRET_LENGTH - 1)]) {
       await expect(signSession(base(), weak)).rejects.toThrow(/SESSION_SECRET/)
@@ -178,10 +166,8 @@ describe('a weak SESSION_SECRET is refused on the verify side too', () => {
   const WEAK = 'short-secret'
 
   it('refuses a token even though its signature is genuine', async () => {
-    // Minted with the weak secret by bypassing signSession's own guard, so the
-    // signature really does verify. Without the verify-side check the API would
-    // accept *only* forgeries: signing already refuses a weak secret, so a
-    // misconfigured deployment issues no legitimate tokens at all.
+    // Signed with the weak secret, so the signature verifies. Verification must
+    // still refuse it.
     const payload = btoa(JSON.stringify(base()))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const key = await crypto.subtle.importKey(

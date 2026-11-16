@@ -1,6 +1,6 @@
 /**
  * Component classes for the admin app. Tokens and element defaults come from
- * @election/styles; nothing here redefines a token.
+ * @election/styles. Nothing here redefines a token.
  */
 
 .counts > li + li { margin-top: calc(var(--step) / 2); }
@@ -8,8 +8,7 @@
 
 .candidate-list > li + li { margin-top: var(--step); }
 
-/* A rule the officer must read before acting, not an incidental note. Also the
-   override form, which is the same affordance. */
+/* A rule the officer must read before acting. The override form uses it too. */
 .rule-note,
 .override {
   padding: calc(var(--step) * 1.5);
@@ -17,18 +16,16 @@
   /* background: var(--sunk); */
 }
 
-/* Closing is irreversible, so its confirmation is bordered in the danger colour
-   rather than the accent. */
+/* Closing is irreversible, so its confirmation uses the danger colour. */
 .confirm {
   padding: calc(var(--step) * 1.5);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
 }
 
-/* --- the result ------------------------------------------------------------ */
+/* Result */
 
-/* The table is the artifact a scrutineer checks by hand, so it scrolls rather
-   than wrapping: a wrapped figure column cannot be read down. */
+/* Scrolls, never wraps: a wrapped figure column cannot be read down. */
 .rounds-scroll { overflow-x: auto; }
 
 .rounds { border-collapse: collapse; width: 100%; }
@@ -54,7 +51,7 @@
 }
 
 
-/* --- the check-in desk (a phone, in a queue) -------------------------------- */
+/* Check-in desk (a phone, in a queue) */
 
 .roll-list > li + li { margin-top: var(--step); }
 
@@ -91,16 +88,16 @@
   text-decoration: none;
 }
 
-/* --- the officer shell ----------------------------------------------------- */
+/* Officer shell */
 
-/* Always on screen, so browser back is never the way to get around. */
+/* Always on screen, so nobody needs browser back to navigate. */
 .officer-header {
   padding-bottom: var(--step);
   margin-bottom: calc(var(--step) * 2);
   border-bottom: 1px solid var(--rule);
 }
 
-/* The society's name and the one way out, on one line. */
+/* The society's name and sign out, on one line. */
 .officer-title {
   display: flex;
   flex-wrap: wrap;
@@ -129,15 +126,13 @@
   color: var(--ink);
 }
 
-/* Where you are, marked from aria-current so the styling cannot drift from what
-   a screen reader is told. */
+/* Styled from aria-current, so it matches what a screen reader announces. */
 .officer-nav a[aria-current='page'] {
   background: var(--accent);
   color: var(--accent-ink);
 }
 
-/* Deliberately quiet: it is the one control here that loses work, so it does not
-   compete with the places an officer actually wants to go. */
+/* Quiet on purpose: it is the one control here that loses work. */
 .sign-out {
   min-height: var(--touch);
   padding: 0 calc(var(--step) * 1.5);
@@ -147,7 +142,7 @@
   color: var(--muted);
 }
 
-/* A link that is the main thing to do on the screen, so it looks like one. */
+/* A link that is the screen's primary action, styled as a button. */
 .centred { text-align: center; }
 
 .button-link {
@@ -162,12 +157,11 @@
   text-decoration: none;
 }
 
-/* --- the society list, on the landing and operator screens ------------------ */
+/* Society list (landing and operator screens) */
 
 .society-list > li + li { margin-top: var(--step); }
 
-/* The whole card is the link, not just the name: on a phone the name alone is a
-   thumb-sized target inside a much larger one that does nothing. */
+/* The whole card is the link: a larger tap target. */
 .society-card,
 .society-name {
   display: flex;
@@ -189,8 +183,7 @@
 
 .society-name { flex: 1 1 auto; }
 
-/* Contain, never cover: a society's logo is its identity and cropping it is not
-   ours to do. Fixed box so one tall logo cannot set the row height for the list. */
+/* Contain, never crop. The fixed box stops a tall logo setting the row height. */
 .society-logo {
   flex: 0 0 auto;
   width: calc(var(--step) * 6);
@@ -202,8 +195,7 @@
 .society-title { font-weight: 600; }
 .society-slug { font-size: 0.875rem; }
 
-/* Destructive, and styled to say so. Only ever on a control that has already
-   asked for confirmation. */
+/* Only on a control that has already asked for confirmation. */
 .danger {
   border-color: var(--danger);
   background: var(--danger);
@@ -212,8 +204,7 @@
 
 .danger:disabled { border-color: var(--rule); background: var(--rule); color: var(--muted); }
 
-/* A screen's title with its one primary action beside it, rather than a form
-   sitting open below the thing it acts on. */
+/* A screen's title with its one primary action beside it. */
 .screen-head {
   display: flex;
   flex-wrap: wrap;
@@ -224,10 +215,9 @@
 
 .screen-head h2 { margin: 0; }
 
-/* --- the roll note and the election walkthrough ------------------------- */
+/* Roll note and election walkthrough */
 
-/* Not a warning colour: an empty roll is the normal state of a new society, just
-   one that has to be fixed before the day. */
+/* Not a warning colour: an empty roll is normal for a new society. */
 .roll-missing {
   margin: 0;
   padding: calc(var(--step) * 1.5);
@@ -239,8 +229,7 @@
 
 .officer-actions { display: flex; align-items: baseline; gap: calc(var(--step) / 2); }
 
-/* Quiet, like sign out beside it, but underlined: it is the one thing on that
-   line a new officer should feel free to press. */
+/* Quiet like sign out, but underlined, so a new officer notices it. */
 .help-button {
   min-height: var(--touch);
   padding: 0 calc(var(--step) * 1.5);
@@ -250,8 +239,7 @@
   text-decoration: underline;
 }
 
-/* Anchored to the header, not the button, so it opens across the width available
-   rather than off the edge of a phone. */
+/* Anchored to the header, not the button, so it stays on a phone's screen. */
 .help-panel {
   position: absolute;
   z-index: 10;

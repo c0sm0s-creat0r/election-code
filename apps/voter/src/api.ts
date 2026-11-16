@@ -1,20 +1,16 @@
 /**
- * The five endpoints this app touches, over `fetch`.
+ * The endpoints this app calls, over `fetch`. Not shared with the admin app
+ * (see apps/admin/src/api.ts).
  *
- * Deliberately not shared with the admin app — see the note in
- * `apps/admin/src/api.ts` for the reasoning.
- *
- * Every failure reaches a screen as an `ApiError` carrying the API's own `code`
- * when there is one, so screens map a code to a remedy rather than printing a
- * message they did not write (spec §3).
+ * Every failure is an `ApiError` with the API's `code` when there is one, so
+ * screens map a code to a remedy.
  */
 
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787'
 
 /**
- * `status` 0 means the request never completed — a phone losing wifi — which the
- * ballot screen must treat differently from every HTTP status, because the vote
- * may have been recorded anyway (spec §4.4).
+ * `status` 0 means the request never completed. The ballot screen handles
+ * that separately: the vote may have been recorded.
  */
 export class ApiError extends Error {
   constructor(
@@ -30,17 +26,13 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    // `credentials: 'include'` is not optional. Without it the browser never
-    // sends the session cookie, and every authenticated call fails in a way
-    // indistinguishable from a CORS misconfiguration (spec §1).
+    // Without `credentials: 'include'` the session cookie is not sent.
     res = await fetch(`${BASE}${path}`, { credentials: 'include', ...init })
   } catch {
     throw new ApiError(0, 'network', 'We could not reach the server.')
   }
 
-  // Every API failure is JSON — the API's app.onError guarantees it — but a
-  // proxy or gateway in front of it may not be, so a parse failure must not
-  // become a different error than the status it arrived with.
+  // The API always answers JSON. A proxy in front of it may not.
   const body = (await res.json().catch(() => undefined)) as
     | { error?: string; code?: string }
     | undefined
@@ -72,7 +64,7 @@ export type PublicElection = {
   candidates: { id: string; name: string }[]
 }
 
-/** Slug, name and branding only. Used to let a voter pick their society. */
+/** Slug, name and branding only. For the society picker. */
 export const listSocieties = () => request<Omit<Batch, 'id'>[]>('/api/batches')
 
 export const getBatchBySlug = (slug: string) =>
@@ -82,13 +74,9 @@ export const getElections = (batchId: string) =>
   request<PublicElection[]>(`/api/batches/${batchId}/elections`)
 
 /**
- * Where to point an `<img>` at a society's logo.
- *
- * **A stored `logo_url` is root-relative** (`/api/logos/batches/<id>/<hash>.png`)
- * because that is what the upload route returns. Putting it straight in a `src`
- * resolves it against *this app's* origin, which in production is a different
- * host from the API — so the image silently 404s, and nothing in the console says
- * why. Absolute `https://` values are left alone; empty means no logo.
+ * The `src` for a society's logo. A stored `logo_url` is root-relative, so it
+ * needs the API base: this app is on another origin. `https://` values pass
+ * through. Empty means no logo.
  */
 export const logoSrc = (logoUrl: string): string =>
   logoUrl === '' || /^https:\/\//i.test(logoUrl) ? logoUrl : `${BASE}${logoUrl}`
@@ -99,17 +87,14 @@ export const voterSignIn = (batchId: string, usuId: string, surname: string) =>
     postJson({ usu_id: usuId, surname }),
   )
 
-/**
- * The voter's `usu_id` is carried by the session cookie and never appears in the
- * body (spec §5), so a caller cannot nominate whose ballot this is.
- */
+/** The usu_id comes from the session cookie, never the body. */
 export const submitBallot = (batchId: string, electionId: string, preferences: string[]) =>
   request<{ receipt_token: string }>(
     `/api/batches/${batchId}/elections/${electionId}/ballots`,
     postJson({ preferences }),
   )
 
-/** Inclusion only. The API does not return preferences, so there are none to render. */
+/** Inclusion only. The API does not return preferences. */
 export const getReceipt = (token: string) =>
   request<{ status: 'recorded' | 'voided'; election_name: string }>(
     `/api/receipts/${encodeURIComponent(token)}`,

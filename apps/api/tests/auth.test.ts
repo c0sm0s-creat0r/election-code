@@ -50,7 +50,7 @@ describe('sign-in', () => {
   })
 
   it('does NOT accept the door password on the officer route', async () => {
-    // the whole point of two passwords: a door volunteer cannot become an officer
+    // two passwords: a door volunteer cannot become an officer
     expect((await signIn('officer', 'door-password-1')).status).toBe(401)
   })
 
@@ -107,10 +107,7 @@ describe('requireRole middleware (via the officer test-seam route)', () => {
   })
 
   it('401s with no session cookie at all, with a machine-readable code', async () => {
-    // Changed from 403 in the whole-branch review: "we do not know who you
-    // are" is an authentication failure. A 403 here tells a frontend the
-    // caller is not allowed, so it shows a permission error where it should
-    // show a sign-in prompt.
+    // 401, not 403: the frontend shows a sign-in prompt.
     const res = await ping('')
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ error: 'unauthenticated', code: 'no_session' })
@@ -124,14 +121,9 @@ describe('requireRole middleware (via the officer test-seam route)', () => {
   })
 
   it('rejects a validly-signed officer session for a different batch id', async () => {
-    // A forged/foreign token cannot be smuggled in by hitting a different
-    // batch's route with a cookie whose batchId doesn't match the route.
+    // A validly signed token for another batch, sent under this batch's cookie name.
     const otherId = crypto.randomUUID()
     const token = await signSession({ batchId: otherId, role: 'officer', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)
-    // Hit the *real* batch's route while carrying a cookie sent under that
-    // batch's own cookie name, but whose signed payload names otherId — the
-    // browser would never construct this, but the middleware's explicit
-    // batchId comparison must not rely solely on the cookie name matching.
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {
       headers: { cookie: `es_officer_${batchId}=${token}` },
     })
@@ -139,16 +131,14 @@ describe('requireRole middleware (via the officer test-seam route)', () => {
   })
 
   it('401s a tampered/garbage cookie value', async () => {
-    // Also changed from 403: a token that fails its signature identifies
-    // nobody, so there is no authority to forbid. It is still refused.
+    // A token with a bad signature identifies nobody: 401, not 403.
     const res = await ping(`es_officer_${batchId}=not-a-real-token`)
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ error: 'unauthenticated', code: 'invalid' })
   })
 
   it('401s an expired but validly-signed officer session, distinguishably', async () => {
-    // The AGM case: the volunteer's hour is up mid-queue. The tablet must be
-    // able to tell "sign in again" from "you are not allowed".
+    // An expired door cookie must read as "sign in again".
     const token = await signSession(
       { batchId, role: 'officer', exp: Math.floor(Date.now() / 1000) - 1 },
       SECRET,
@@ -198,9 +188,8 @@ describe('sign-out', () => {
     const cookie = cookieFrom(await signIn('officer', 'officer-password-1'))
     expect((await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, { headers: { cookie } })).status).toBe(200)
     await signOut('officer', cookie)
-    // The browser drops the cookie on Max-Age=0; the server cannot revoke a
-    // signed token, so this asserts the instruction was issued, and that the
-    // route still gates correctly once the cookie is gone.
+    // The server cannot revoke a signed token. Check the cookie was cleared and
+    // the route gates without it.
     expect((await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/ping`, {})).status).toBe(401)
   })
 
@@ -235,18 +224,9 @@ describe('sign-out', () => {
 })
 
 describe('the other-role lookup verifies what the cookie name claims', () => {
-  /*
-   * When there is no cookie for the requested role, requireRole checks whether
-   * the caller holds a session for this batch under a DIFFERENT role, and
-   * answers 403 rather than 401 — a door volunteer tapping an officer route is
-   * authenticated and simply not authorised, and "sign in again" would send
-   * their tablet round a loop it cannot win.
-   *
-   * The cookie NAME is not covered by the signature, so a hand-forged Cookie
-   * header can file any token under any name. These two cases pin that the
-   * lookup verifies role and batch on what it finds, instead of treating any
-   * verifiable token as proof of a session it never was.
-   */
+  // With no cookie for the requested role, a valid session under another role
+  // gets 403. The cookie name is not signed, so these cases check role and
+  // batch on the token found.
 
   it('401s when the token under the door cookie name belongs to another batch', async () => {
     const other = await SELF.fetch('https://example.com/api/batches', {
@@ -259,7 +239,7 @@ describe('the other-role lookup verifies what the cookie name claims', () => {
     })
     const otherId = (await other.json() as { id: string }).id
 
-    // A genuine door session for the OTHER batch, filed under THIS batch's name.
+    // A real door session for the other batch, under this batch's cookie name.
     const token = await signSession(
       { batchId: otherId, role: 'door', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)
 
@@ -292,18 +272,8 @@ describe('the other-role lookup verifies what the cookie name claims', () => {
 
 
 describe('a misconfigured deployment', () => {
-  /**
-   * A missing or short SESSION_SECRET is refused deliberately — it is the whole
-   * door → officer boundary. What matters here is that it is refused *legibly*:
-   * until 2026-09-22 this threw into app.onError and came back as an opaque 500
-   * `{error:'internal'}`, so the only clue was a line in the Worker's log, while
-   * the comment beside it claimed the response said "this server is not
-   * configured".
-   *
-   * Invoked through the worker directly rather than `SELF`, because that is the
-   * only way to hand it a different env: `SELF` always uses the configured
-   * bindings, and mutating the imported `env` does not reach it.
-   */
+  // A short SESSION_SECRET returns 503, not a 500. Called on the worker
+  // directly because `SELF` always uses the configured env.
   const withShortSecret = async (path: string, body: unknown): Promise<Response> => {
     const request = new Request(`https://example.com${path}`, {
       method: 'POST',

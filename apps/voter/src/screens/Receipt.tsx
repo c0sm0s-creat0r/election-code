@@ -1,12 +1,7 @@
 /**
- * The receipt: confirmation that a ballot of yours is recorded.
- *
- * **It never shows preferences**, and there is nothing to show — the API does not
- * return them. Australia deliberately has no voter receipt, because one that
- * proves *how* you voted lets you be paid or pressured for it, and society
- * elections with factions are not immune (spec §4). Confirming inclusion keeps
- * the "my vote wasn't counted" dispute solvable while remaining useless to a
- * coercer.
+ * The receipt: confirmation that your ballot is recorded. It never shows
+ * preferences (the API does not return them), so it cannot prove how someone
+ * voted.
  */
 import { useEffect, useState } from 'preact/hooks'
 import { ApiError, getReceipt, voidReceipt } from '../api.js'

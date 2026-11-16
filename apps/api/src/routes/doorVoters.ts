@@ -1,21 +1,10 @@
 /**
- * Adding a member the membership export missed.
+ * Adding a member the export missed: the door creates their roll row and
+ * checks them in.
  *
- * Someone joined last week, the CSV is stale, and they are standing at the desk.
- * The door creates their roll row and checks them in, and they can then sign in
- * and vote like anyone else.
- *
- * **This is a real weakening of the integrity story, and the flag is what makes
- * it survivable.** A door password can now enrol a voter, so "eligibility
- * derives from the USU membership export" becomes "derives from the export, plus
- * N people the door staff added". N must never be hidden: `added_at_door` is
- * reported by `GET /quorum` beside the totals and carried as a column in both
- * attendance exports, so a committee reading the file sees which voters came
- * from the export and which did not.
- *
- * The roll row and the check-in are one transaction: the volunteer's intent is
- * "this person is here and needs to vote", and a roll row with no check-in is a
- * member who still cannot.
+ * So a door password can enrol a voter (LIMITATIONS.md §12). The control is
+ * the `added_at_door` flag: `GET /quorum` reports it, both attendance exports
+ * include it, and nothing clears it.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -26,8 +15,7 @@ import { pathParam } from '../http/params.js'
 import type { VoterRollRow } from '../db/types.js'
 
 const doorVoterSchema = z.object({
-  // The USU "Net Id" is 7 digits; 8 is accepted because the legacy app did and
-  // a volunteer reading a card should not be refused over a format guess.
+  // The Net Id is 7 digits. 8 is accepted because the legacy app accepted it.
   usu_id: z.string().regex(/^\d{7,8}$/, 'usu_id must be 7 or 8 digits'),
   first_name: z.string().trim().min(1).max(200),
   last_name: z.string().trim().min(1).max(200),
@@ -47,9 +35,8 @@ doorVoters.post(
     }
     const { usu_id: usuId, first_name: firstName, last_name: lastName } = parsed.data
 
-    // Conditional insert, so the "already on the roll" test cannot be raced by a
-    // second tablet adding the same person at the same moment. Not an upsert:
-    // see rule 2 above.
+    // A conditional insert, not an upsert: a second tablet cannot race it, and
+    // an existing member's row is not changed.
     const inserted = await c.env.DB
       .prepare(
         `INSERT INTO voter_roll (batch_id, usu_id, first_name, last_name, eligible, added_at_door)
@@ -60,8 +47,6 @@ doorVoters.post(
       .run()
 
     if (inserted.meta.changes === 0) {
-      // Return before writing anything else: an existing member's row must not
-      // be touched, and no check-in should appear for a refused request.
       return c.json(
         {
           error: 'that USU id is already on the roll — search for them and check them in instead',
@@ -93,8 +78,8 @@ doorVoters.delete('/api/batches/:id/voters/:usuId', requireRole('door'), async (
   const batchId = requireSession(c).batchId
   const usuId = pathParam(c, 'usuId')
 
-  // Both refusals live in the WHERE clause, so a ballot cast between a check and
-  // a delete cannot slip through the gap.
+  // Both refusals are in the WHERE clause, so a ballot cast in between is
+  // caught.
   const guard = `
     added_at_door = 1
     AND NOT EXISTS (
@@ -103,9 +88,7 @@ doorVoters.delete('/api/batches/:id/voters/:usuId', requireRole('door'), async (
        WHERE e.batch_id = ?1 AND vr.usu_id = ?2
     )`
 
-  // check_in first. It has a foreign key onto voter_roll and ON DELETE CASCADE
-  // would handle it, but the cascade is the database's safety net rather than
-  // something to lean on for ordering.
+  // check_in first. Do not rely on the cascade for ordering.
   const [, deleted] = await c.env.DB.batch([
     c.env.DB
       .prepare(`DELETE FROM check_in WHERE batch_id = ?1 AND usu_id = ?2
@@ -117,7 +100,7 @@ doorVoters.delete('/api/batches/:id/voters/:usuId', requireRole('door'), async (
   ])
 
   if ((deleted?.meta.changes ?? 0) === 0) {
-    // Nothing deleted: absent (idempotent 204), from the export, or they voted.
+    // Nothing deleted: absent (idempotent 204), from the export, or already voted.
     const row = await c.env.DB
       .prepare(`SELECT added_at_door FROM voter_roll WHERE batch_id = ? AND usu_id = ?`)
       .bind(batchId, usuId)

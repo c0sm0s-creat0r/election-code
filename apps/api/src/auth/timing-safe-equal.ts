@@ -1,8 +1,4 @@
-/**
- * Constant-time byte comparison. Never short-circuit on the first differing
- * byte — used everywhere a secret (password hash, session signature, the
- * super-admin key) is compared against attacker-supplied input.
- */
+/** Constant-time byte comparison. Use for any comparison against a secret. */
 export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false
   let diff = 0

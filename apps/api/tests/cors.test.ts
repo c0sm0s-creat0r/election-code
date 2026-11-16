@@ -30,9 +30,7 @@ describe('CORS', () => {
   })
 
   it('sends NO Access-Control-Allow-Origin at all for an unlisted origin', async () => {
-    // Not a header saying "denied" — the absence of the header is what makes
-    // the browser refuse. A reflected origin here would be the legacy
-    // `CORS(app)` hole rebuilt.
+    // The header is absent, which is what makes the browser refuse.
     const res = await get('https://evil.example')
     expect(res.headers.get('access-control-allow-origin')).toBeNull()
   })
@@ -83,8 +81,8 @@ describe('CORS', () => {
   })
 
   it('still serves the route itself — CORS gates the browser, not the API', async () => {
-    // A non-browser caller (curl, another Worker) sends no Origin and must be
-    // unaffected: CORS is not an authentication mechanism.
+    // A non-browser caller sends no Origin and is unaffected: CORS is not
+    // authentication.
     const res = await get()
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ status: 'ok' })

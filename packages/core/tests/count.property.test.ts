@@ -8,15 +8,7 @@ function lcg(seed: number) {
   return () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648)
 }
 
-/**
- * Fisher-Yates, driven by the same lcg so failures stay reproducible.
- *
- * This replaces `[...candidates].sort(() => rnd() - 0.5)`, which is not a
- * shuffle at all: an inconsistent comparator leaves V8's sort near the
- * identity permutation, so "200 random elections" were 200 near-identical
- * ballot papers and the space these properties claim to explore was mostly
- * unvisited.
- */
+/** Fisher-Yates on the same lcg. (`sort(() => rnd() - 0.5)` is not a shuffle.) */
 function shuffle<T>(items: readonly T[], rnd: () => number): T[] {
   const out = [...items]
   for (let i = out.length - 1; i > 0; i--) {
@@ -71,9 +63,7 @@ describe('count - properties', () => {
   })
 
   it('never lets the non-transferable total go down', async () => {
-    // Votes only ever leave the count: a paper exhausts, or a fraction is lost
-    // to truncation. Nothing ever comes back out of non-transferable, so a
-    // decrease would mean the count had found votes from somewhere.
+    // Votes only ever leave the count: by exhaustion or by truncation.
     for (let seed = 1; seed <= 200; seed++) {
       const r = await count(randomElection(seed))
       let previous = 0n
@@ -86,9 +76,8 @@ describe('count - properties', () => {
   })
 
   it('elects every winner either on quota or by the fill rule', async () => {
-    // The only two ways the spec allows a seat to be filled (section 3): the
-    // candidate reached the quota, or the continuing field had shrunk to the
-    // number of seats left and everyone still standing was elected.
+    // A seat is filled only at quota, or by the fill rule once the continuing
+    // field has shrunk to the seats left.
     for (let seed = 1; seed <= 200; seed++) {
       const r = await count(randomElection(seed))
       const quota = fx(r.quota)
@@ -98,14 +87,12 @@ describe('count - properties', () => {
         for (const e of round.elected) {
           declared.push(e.candidateId)
           const held = round.counts.find((c) => c.candidateId === e.candidateId)!
-          // An elected candidate's pile is cut back to exactly the quota once
-          // their surplus is distributed, so the total they actually held when
-          // elected is the recorded votes plus the recorded surplus.
+          // The pile is cut back to the quota at distribution, so the total at
+          // election is the recorded votes plus the recorded surplus.
           const atElection = fx(held.votes) + fx(e.surplus)
           if (atElection >= quota) continue
 
-          // Below quota: only the fill rule can do that, and it fills every
-          // remaining seat at once in the final round.
+          // below quota: only the fill rule, in the final round
           expect(e.surplus).toBe('0.00000')
           expect(e.transferValue).toBe('0.00000')
           expect(index).toBe(r.rounds.length - 1)
@@ -119,26 +106,9 @@ describe('count - properties', () => {
   })
 
   it('never ends a round with a continuing candidate sitting on a quota', async () => {
-    /*
-     * Commonwealth Electoral Act s273(8) elects a candidate who equals or
-     * exceeds the quota AT THAT COUNT, and s273(1) then stops them being a
-     * "continuing candidate", so a later surplus must skip them.
-     *
-     * There is exactly one lawful way for a round table to show a continuing
-     * candidate at or above quota, and it is worth stating precisely rather
-     * than asserting the blanket "never", which is FALSE on a correct count:
-     * an EXCLUSION's papers can lift somebody to quota, and that candidate is
-     * elected at the NEXT count. (The existing exclusion test is exactly that
-     * shape.) What may never happen is a round in which candidates were
-     * elected and a surplus was distributed, yet somebody is left continuing
-     * on a quota - that is the signature of a surplus poured onto a candidate
-     * an earlier surplus in the same round had already lifted to quota, which
-     * manufactures a surplus and redistributes it by the wrong candidate's
-     * preferences.
-     *
-     * Against the pre-fix code, where statuses were frozen for the whole
-     * distribution loop, this fails.
-     */
+    // A continuing candidate may sit at or above quota only after an exclusion
+    // round, and is then elected at the next count. A round that elected and
+    // distributed must leave nobody continuing on a quota (CEA s273(8)).
     for (let seed = 1; seed <= 200; seed++) {
       const r = await count(randomElection(seed))
       const quota = fx(r.quota)
@@ -152,8 +122,7 @@ describe('count - properties', () => {
         const where = `seed ${seed}, round ${round.n}: ` +
           `${stranded.map((c) => `${c.candidateId}=${c.votes}`).join(', ')} >= ${r.quota}`
 
-        // A round that elected anybody ran the elect step after its last
-        // transfer, so nobody can still be standing on a quota.
+        // so this must have been an exclusion round
         expect(round.elected, where).toEqual([])
 
         // and the exclusion that put them there elects them at the next count

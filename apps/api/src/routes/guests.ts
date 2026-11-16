@@ -1,18 +1,10 @@
 /**
- * Guests: someone in the room who is not on the membership roll.
+ * Guests: people in the room who are not on the roll, recorded for the
+ * head-count and the minutes.
  *
- * An observer, a partner organisation, a member of staff, a member's guest.
- * They are recorded so the room's head-count is right and the minutes are
- * accurate — **not** so they can cast a ballot.
- *
- * **A guest cannot vote, and it is the schema that stops them.** `guest` has no
- * `usu_id`, so the eligibility clause in `routes/ballots.ts` — which joins
- * `voter_roll` to `check_in` by `(batch_id, usu_id)` — has nothing to match.
- * There is no check in this file preventing a guest from voting, because there
- * is nothing for a check to operate on. Do not add a `usu_id` to that table, and
- * do not resolve a guest into `voter_roll`: a member the export missed is a
- * different action, in `routes/doorVoters.ts`.
- *
+ * A guest cannot vote: `guest` has no `usu_id`, so the eligibility clause in
+ * ballots.ts cannot match. Never add one, and never move a guest into
+ * `voter_roll`. A member the export missed goes through doorVoters.ts.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -23,8 +15,7 @@ import { pathParam } from '../http/params.js'
 import type { GuestRow } from '../db/types.js'
 
 const guestSchema = z.object({
-  // Trimmed before the length check, so "   " is a missing name rather than a
-  // three-character one.
+  // Trimmed first, so "   " is missing.
   name: z.string().trim().min(1).max(200),
   note: z.string().trim().max(500).optional(),
 })
@@ -61,11 +52,7 @@ guests.get('/api/batches/:id/guests', requireRole('door'), async (c) => {
   return c.json(results)
 })
 
-/**
- * Idempotent, like un-check-in: 204 whether or not a row matched. The commonest
- * guest error is a mistaken tap, and a volunteer must be able to undo it without
- * finding an officer.
- */
+/** Idempotent, like un-check-in, so a volunteer can undo a tap. */
 guests.delete('/api/batches/:id/guests/:guestId', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
   const guestId = pathParam(c, 'guestId')

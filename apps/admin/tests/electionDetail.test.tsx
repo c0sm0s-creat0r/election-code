@@ -50,8 +50,7 @@ describe('deleting an election', () => {
   })
 
   it('SHOWS THE API\'S REFUSAL when ballots exist, with the count in it', async () => {
-    // The guarantee is the API's, not this screen's: an officer password removes
-    // a mistake and never a vote.
+    // the API enforces it: an officer can remove a mistake, never a vote
     stub(409, {
       error: 'this election has 12 ballot(s) in it and cannot be deleted.',
       code: 'has_ballots',
@@ -129,8 +128,7 @@ describe('ElectionDetail', () => {
     stub(200, turnout)
     const { container } = show('open')
     await waitFor(() => expect(screen.getByText(/12/)).toBeTruthy())
-    // A candidate name followed by a number is exactly the thing that must not
-    // exist on this screen: that is a tally, and closing is what releases it.
+    // a candidate name followed by a number would be a tally
     expect(container.textContent).not.toMatch(/Alex\s*[:\-–]?\s*\d/)
     expect(container.textContent).not.toMatch(/Bo\s*[:\-–]?\s*\d/)
     expect(container.textContent).not.toMatch(/quota|winner|round|elected/i)
@@ -172,7 +170,7 @@ describe('ElectionDetail', () => {
   })
 })
 
-/** jsdom's page is always visible; this is how a background tab looks to the app. */
+/** jsdom's page is always visible. This simulates a background tab. */
 const setVisibility = (state: 'visible' | 'hidden') => {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
   Object.defineProperty(document, 'hidden', { value: state === 'hidden', configurable: true })
@@ -180,9 +178,8 @@ const setVisibility = (state: 'visible' | 'hidden') => {
 }
 
 /**
- * Each turnout poll reads the whole roll twice, every check-in and every ballot.
- * One officer tab left open on this screen spent the free plan's 5 million daily
- * D1 row reads in a couple of hours, so the poll stops when nobody is looking.
+ * Each turnout poll costs D1 row reads, so the poll stops when nobody is
+ * looking.
  */
 describe('turnout polling', () => {
   afterEach(() => {

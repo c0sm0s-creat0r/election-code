@@ -1,19 +1,12 @@
 /**
  * Routing.
  *
- * **The split that matters: the door and the officer screens are both lazy, and
- * neither is in the entry chunk.** A door volunteer works from their own phone in
- * a queue. Making only the door lazy is not enough — that puts the door in its own
- * chunk but leaves the officer screens in the entry bundle, which every route
- * loads, so the phone parses the rounds table and the exports anyway. A test
- * asserts it against the built output.
+ * Every screen is lazy, so the entry chunk holds neither door nor officer
+ * code. tests/codeSplit.test.ts checks this.
  *
- * **Officer routes are nested under one layout** so the session gate and the nav
- * bar exist once. Screens read the society from the router's outlet context
- * instead of a prop threaded through a render callback.
- *
- * The batch comes from the path (`/b/:slug/...`) because this is operator tooling:
- * one deployment serves every society.
+ * Officer routes nest under one layout, which owns the session gate and the
+ * nav. Screens read the society from the outlet context. The batch comes
+ * from the path (`/b/:slug/...`): one deployment serves every society.
  */
 import { Suspense, lazy, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useOutletContext, useParams } from 'react-router'
@@ -21,8 +14,8 @@ import { OfficerLayout, type OfficerContext } from './OfficerLayout.js'
 import { getBatchBySlug, type Batch } from './api.js'
 import { useEffect } from 'react'
 
-// Keep every one of these a dynamic import. A static import anywhere in this file
-// pulls that screen back into the entry chunk and silently undoes the split.
+// Keep each of these a dynamic import. A static import puts that screen in
+// the entry chunk.
 const DoorRoute = lazy(() => import('./door/index.js').then((m) => ({ default: m.DoorRoute })))
 const RollImport = lazy(() => import('./screens/RollImport.js').then((m) => ({ default: m.RollImport })))
 const Exports = lazy(() => import('./screens/Exports.js').then((m) => ({ default: m.Exports })))
@@ -31,7 +24,7 @@ const Result = lazy(() => import('./screens/Result.js').then((m) => ({ default: 
 const Elections = lazy(() => import('./screens/Elections.js').then((m) => ({ default: m.Elections })))
 const SignUp = lazy(() => import('./screens/SignUp.js').then((m) => ({ default: m.SignUp })))
 const Landing = lazy(() => import('./screens/Landing.js').then((m) => ({ default: m.Landing })))
-// Deliberately unlinked. See the note on the route below.
+// Unlinked on purpose. See the note on the route below.
 const Operator = lazy(() => import('./screens/Operator.js').then((m) => ({ default: m.Operator })))
 
 const useBatch = () => useOutletContext<OfficerContext>().batch
@@ -45,20 +38,13 @@ export function App() {
           <Route path="/new" element={<Lazily><SignUp /></Lazily>} />
 
           {/*
-            The operator's own screen: deleting a society. **Nothing links to it**,
-            on purpose — it is the one capability that can destroy a sealed result,
-            and it has no business on an officer's screen. The path is not the
-            control: every request it makes carries SUPER_ADMIN_KEY, which the API
-            checks in constant time. A test asserts that no link to it exists,
-            because adding one to the nav would otherwise look like a tidy-up.
+            The operator's screen: deleting a society. Nothing links to it,
+            and a test checks that. The API checks SUPER_ADMIN_KEY on every
+            request.
           */}
           <Route path="/operator" element={<Lazily><Operator /></Lazily>} />
 
-          {/*
-            Outside the officer layout on purpose: a different password, a
-            different chunk, and a volunteer who should never be offered the
-            officer nav.
-          */}
+          {/* Outside the officer layout: its own password and chunk, no officer nav. */}
           <Route path="/b/:slug/door" element={<Lazily><DoorScreen /></Lazily>} />
 
           <Route path="/b/:slug" element={<OfficerLayout />}>
@@ -103,9 +89,8 @@ function SettingsScreen() {
 }
 
 /**
- * The door desk loads its own society: it is outside the officer layout, so it
- * cannot read the outlet context, and it must not trigger an officer session
- * probe on a volunteer's phone.
+ * The door desk loads its own society. It is outside the officer layout and
+ * must not probe for an officer session on a volunteer's phone.
  */
 function DoorScreen() {
   const { slug } = useParams()

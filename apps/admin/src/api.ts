@@ -1,15 +1,11 @@
 /**
- * The admin app's API client.
- *
- * Deliberately not shared with the voter app. The two overlap on one endpoint out
- * of thirty-five (spec §1.1), so a common package would couple their release
- * cycles to save thirty lines. The `ApiError`/`request` pair below is duplicated
- * on purpose, and that duplication is the cheaper of the two costs.
+ * The admin app's API client. Not shared with the voter app: a common
+ * package would couple two release cycles.
  */
 
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787'
 
-/** `status` 0 means the request never completed — no HTTP status ever arrived. */
+/** `status` 0 means the request never completed. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -24,8 +20,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    // Without `credentials: 'include'` the session cookie is never sent and every
-    // authenticated call fails in a way that looks like a CORS problem (spec §1).
+    // Without `credentials: 'include'` the session cookie is not sent.
     res = await fetch(`${BASE}${path}`, { credentials: 'include', ...init })
   } catch {
     throw new ApiError(0, 'network', 'We could not reach the server.')
@@ -48,7 +43,7 @@ const patchJson = (payload: unknown): RequestInit => ({ ...postJson(payload), me
 export type Branding = { title: string; org_name: string; accent_color: string; logo_url: string }
 export type Batch = { id: string; slug: string; name: string; branding: Branding }
 
-/** Slug, name and branding only — never anything about a society's members. */
+/** Slug, name and branding only. Nothing about members. */
 export const listSocieties = () => request<Omit<Batch, 'id'>[]>('/api/batches')
 
 export type SignUp = {
@@ -60,12 +55,8 @@ export type SignUp = {
 }
 
 /**
- * A society signing itself up. No key: spec §1's self-serve non-goal was
- * overridden on 2026-09-22.
- *
- * Nothing verifies that a society is who it says it is — the system sends no
- * email, so it cannot — which is why the signup screen says so rather than
- * implying the registration was approved.
+ * A society signing itself up, with no key. Nothing verifies who it is, so
+ * the sign-up screen must not imply approval.
  */
 export const signUpSociety = (body: SignUp) => request<Batch>('/api/batches', postJson(body))
 
@@ -73,14 +64,9 @@ export const getBatchBySlug = (slug: string) =>
   request<Batch>(`/api/batches/by-slug/${encodeURIComponent(slug)}`)
 
 /**
- * Is this session still live?
- *
- * The answer belongs to the server, not to React state: a reload, a browser back
- * or a new tab all discard component state while the cookie is still perfectly
- * valid. Asking is what stops the app demanding a password it does not need.
- *
- * Officer only. The door deliberately does not probe: it asks for its password
- * every time, because it is the one device that gets handed round a desk.
+ * Is this officer session still live? Asks the server: a reload or new tab
+ * loses component state while the cookie is still valid. The door does not
+ * probe. It asks for its password every time.
  */
 export const probeOfficer = (batchId: string) =>
   request<{ ok: true }>(`/api/batches/${batchId}/officer/ping`)
@@ -99,7 +85,7 @@ export const doorSignIn = (batchId: string, password: string) =>
 
 export { BASE as API_BASE }
 
-// --- roll ------------------------------------------------------------------
+// Roll
 
 export type RollPreview = {
   total: number
@@ -119,12 +105,12 @@ const uploadRoll = (batchId: string, path: string, file: File) => {
 export const previewRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll/preview', file)
 export const commitRoll = (batchId: string, file: File) => uploadRoll(batchId, '/roll', file)
 
-/** Counts only: enough to tell an officer the roll is missing, never who is on it. */
+/** Counts only: whether a roll exists, never who is on it. */
 export type RollSummary = { total: number; eligible: number }
 export const getRollSummary = (batchId: string) =>
   request<RollSummary>(`/api/batches/${batchId}/officer/roll/summary`)
 
-// --- elections -------------------------------------------------------------
+// Elections
 
 export type ElectionStatus = 'draft' | 'open' | 'closed'
 export type { Candidate } from '@election/core'
@@ -137,7 +123,7 @@ export type AdminElection = {
   candidates: import('@election/core').Candidate[]
 }
 
-/** Drafts included — the public listing hides them by design. */
+/** Drafts included. The public listing hides them. */
 export const listElections = (batchId: string) =>
   request<AdminElection[]>(`/api/batches/${batchId}/officer/elections`)
 
@@ -165,8 +151,8 @@ export const removeCandidate = (batchId: string, electionId: string, candidateId
   })
 
 /**
- * Delete an election. The API refuses the moment one ballot exists in it
- * (`409 has_ballots`), so this removes a mistake and never a vote.
+ * Delete an election. The API refuses once a ballot exists
+ * (`409 has_ballots`): this removes a mistake, never a vote.
  */
 export const deleteElection = (batchId: string, electionId: string) =>
   request<void>(`/api/batches/${batchId}/elections/${electionId}`, { method: 'DELETE' })
@@ -183,12 +169,7 @@ export const closeElection = (batchId: string, electionId: string) =>
     { method: 'POST' },
   )
 
-/**
- * Turnout, and only turnout. Three counts plus the provenance of the fourth.
- * There is deliberately no per-candidate figure here and there must never be
- * one: an officer who can watch the result develop makes every other control
- * decorative (spec §4).
- */
+/** Turnout only. Never a per-candidate figure (spec §4). */
 export type Turnout = {
   ballots_cast: number
   voters_checked_in: number
@@ -199,12 +180,11 @@ export type Turnout = {
 export const getTurnout = (batchId: string, electionId: string) =>
   request<Turnout>(`/api/batches/${batchId}/elections/${electionId}/turnout`)
 
-// --- result ----------------------------------------------------------------
+// Result
 
 /**
- * The stored result document. `rounds`, `winners` and `tie_breaks` are typed from
- * `@election/core`'s own exports, so a change to what the count produces is a
- * compile error here rather than a silently wrong table.
+ * The stored result document, typed from `@election/core`, so a change to
+ * the count's output is a compile error here.
  */
 export type ResultDocument = {
   election: { id: string; name: string; seats: number }
@@ -230,7 +210,7 @@ export const overrideTieBreak = (batchId: string, electionId: string, body: Over
     postJson(body),
   )
 
-// --- branding and logo ------------------------------------------------------
+// Branding and logo
 
 export const updateBranding = (batchId: string, branding: Branding) =>
   request<Branding>(`/api/batches/${batchId}/branding`, patchJson(branding))
@@ -242,25 +222,19 @@ export const uploadLogo = (batchId: string, file: File) => {
 }
 
 /**
- * Where to point an `<img>` at a society's logo.
- *
- * **A stored `logo_url` is root-relative** (`/api/logos/batches/<id>/<hash>.png`)
- * because that is what the upload route returns. Putting it straight in a `src`
- * resolves it against *this app's* origin, which in production is a different
- * host from the API — so the image silently 404s, and nothing in the console says
- * why. Absolute `https://` values (a society hosting its own logo) are left
- * alone. Empty means no logo, and the caller renders nothing.
+ * The `src` for a society's logo. A stored `logo_url` is root-relative, so it
+ * needs the API base: this app is on another origin. `https://` values pass
+ * through. Empty means no logo.
  */
 export const logoSrc = (logoUrl: string): string =>
   logoUrl === '' || /^https:\/\//i.test(logoUrl) ? logoUrl : `${BASE}${logoUrl}`
 
-// --- operator ---------------------------------------------------------------
+// Operator
 
 /**
- * Delete a society and everything in it. Irreversible, operator-key only, and
- * the slug has to be typed back — see `apps/api/src/routes/batches.ts`.
- *
- * The key is passed in per call and is never stored anywhere by this client.
+ * Delete a society and everything in it. Irreversible. Operator key only
+ * (see apps/api/src/routes/batches.ts). The key is passed per call and never
+ * stored.
  */
 export const deleteSociety = (batchId: string, slug: string, superAdminKey: string) =>
   request<void>(`/api/batches/${batchId}`, {
@@ -269,7 +243,7 @@ export const deleteSociety = (batchId: string, slug: string, superAdminKey: stri
     body: JSON.stringify({ confirm_slug: slug }),
   })
 
-// --- door -------------------------------------------------------------------
+// Door
 
 export type RollEntry = {
   usu_id: string
@@ -311,11 +285,7 @@ export const addGuest = (batchId: string, name: string, note?: string) =>
 export const removeGuest = (batchId: string, guestId: string) =>
   request<void>(`/api/batches/${batchId}/guests/${guestId}`, { method: 'DELETE' })
 
-/**
- * A member the export missed. Separate from `addGuest` on purpose — this one can
- * vote and that one cannot, and one endpoint doing both would let a UI grant a
- * vote by accident (spec §0.2).
- */
+/** A member the export missed, who can vote. A guest (`addGuest`) cannot. */
 export const addDoorVoter = (batchId: string, usuId: string, firstName: string, lastName: string) =>
   request<{ usu_id: string; first_name: string; last_name: string }>(
     `/api/batches/${batchId}/voters`,

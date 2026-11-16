@@ -1,9 +1,6 @@
 /**
- * Officer sign-in.
- *
- * The password grants full control of an election, and it is typed on a laptop in
- * a hall with people standing behind it — so the field is `type="password"` and
- * its value never reaches an error message or the DOM after a failure.
+ * Officer sign-in. The password is typed with people standing behind the
+ * laptop, so it never appears in an error message or stays in state.
  */
 import { useState, type FormEvent } from 'react'
 import { officerSignIn } from '../api.js'
@@ -26,8 +23,7 @@ export function OfficerSignIn({ batchId, onSignedIn }: OfficerSignInProps) {
     setError('')
     try {
       await officerSignIn(batchId, password)
-      // Cleared before handing control on: nothing downstream needs it, and it
-      // should not sit in state for the rest of the session.
+      // Cleared before moving on. Nothing downstream needs it.
       setPassword('')
       onSignedIn()
     } catch (caught) {

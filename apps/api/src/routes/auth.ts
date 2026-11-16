@@ -1,12 +1,6 @@
 /**
- * Officer and door sign-in.
- *
- * Each batch has two independent password hashes. The officer password
- * grants full control; the door password grants check-in only. A door
- * volunteer must never be able to become an officer, so each route verifies
- * the supplied password against its own column only — never both — and an
- * unknown batch id is answered identically to a wrong password (401) so a
- * caller cannot enumerate which batches exist.
+ * Officer and door sign-in. Each route verifies against its own hash column.
+ * An unknown batch id gets the same 401 as a wrong password.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -28,26 +22,19 @@ import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
 
 const signInSchema = z.object({ password: z.string().min(1) })
 
-// Officer and door TTLs, decided for Task 6: an AGM runs long, so forcing an
-// officer to re-authenticate mid-count is worse than a longer session on a
-// laptop they control. The door cookie lives on a volunteer's phone and
-// should lapse sooner.
+// The officer's laptop is their own and an AGM runs long. The door cookie is
+// on a volunteer's phone, so it expires sooner.
 const TTL_SECONDS = { officer: 8 * 60 * 60, door: 60 * 60 } as const
 
 type SignInRole = keyof typeof TTL_SECONDS
 
-// A fixed, validly-formatted hash to run through verifyPassword when the
-// batch does not exist, so an unknown batch id and a wrong password take a
-// comparable code path rather than returning early with no PBKDF2 work done
-// at all — belt-and-braces alongside the identical 401 status. Its iteration
-// count must match password.ts: above 100,000 production throws instantly and
-// verifyPassword swallows it, which silently reopens the timing gap.
+// Verified against when the batch does not exist, so an unknown id costs the
+// same PBKDF2 work as a wrong password. The iteration count must match
+// password.ts.
 const DUMMY_HASH = 'pbkdf2-sha256$100000$BwcHBwcHBwcHBwcHBwcHBw==$xl+cmf7KzCjhMIgwm24j5zJdLtkUvSCoFpYH1NYVjrg='
 
 async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
-  // Before any password work or batch lookup: a misconfigured deployment must
-  // fail on the first attempt rather than issue tokens signed with a secret a
-  // laptop can crack overnight.
+  // Checked first: a misconfigured deployment issues no weakly signed token.
   if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
 
   const batchId = c.req.param('id')
@@ -60,14 +47,12 @@ async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
     .bind(batchId)
     .first<Pick<BatchRow, 'id' | 'officer_hash' | 'door_hash'>>()
 
-  // Verify against this role's column only — never the other one.
+  // this role's column only
   const hash = row ? (role === 'officer' ? row.officer_hash : row.door_hash) : DUMMY_HASH
   const ok = await verifyPassword(parsed.data.password, hash)
 
   if (!row || !ok) {
-    // Only ever pass a batch id into recordAudit that we actually loaded
-    // from the database — audit_log.batch_id has no foreign key, so an
-    // unvalidated path param would sail straight through.
+    // audit_log has no foreign key. Use only a batch id loaded from the database.
     if (row) {
       await recordAudit(c.env.DB, { batchId: row.id, role, action: `session.${role}.fail` })
     }
@@ -84,30 +69,23 @@ async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
 }
 
 /**
- * Sign-out. A volunteer handing a phone back at the end of their shift
- * otherwise leaves a live door session on it for up to an hour, on a device
- * nobody owns.
- *
- * Deliberately *not* behind `requireRole`: the commonest reason to sign out
- * is that something is wrong, and a session that has expired or been
- * tampered with must still be clearable. It is therefore idempotent and
- * always succeeds — clearing a cookie that is not there is not an error.
+ * Sign-out. Not behind `requireRole`: an expired or tampered session must
+ * still clear. Idempotent.
  */
 async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
   const batchId = c.req.param('id')
 
   if (batchId) {
     const token = getCookie(c, cookieName(batchId, role))
-    // Audit only a session we can actually verify, and attribute it to the
-    // batch id inside our own signature rather than the raw path parameter —
-    // audit_log has no foreign key to catch a typo'd id.
+    // Audit only a session that verifies, under the batch id in the signature,
+    // not the path parameter.
     if (token && isUsableSecret(c.env.SESSION_SECRET)) {
       const session = await verifySession(token, c.env.SESSION_SECRET)
       if (session && session.role === role && session.batchId === batchId) {
         await recordAudit(c.env.DB, { batchId: session.batchId, role, action: `session.${role}.signout` })
       }
     }
-    // Same attributes as the cookie was set with, or the browser keeps it.
+    // Same attributes as when the cookie was set, or the browser keeps it.
     deleteCookie(c, cookieName(batchId, role), { path: '/', secure: true, sameSite: 'Strict' })
   }
 
@@ -116,11 +94,7 @@ async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
 
 export const auth = new Hono<AuthedEnv>()
 
-// The limiter is composed FIRST, so a 429 costs no PBKDF2 and writes no audit
-// row. These two routes are unauthenticated, run ~100k iterations per call and
-// append to `audit_log` on every failure, which makes them both a billable-CPU
-// amplifier and a way to bury the audit trail an anonymous caller should not
-// be able to touch.
+// The limiter runs first: a 429 costs no PBKDF2 and writes no audit row.
 const staffSignInLimit = rateLimit(RATE_LIMITS.staffSignIn)
 
 auth.post('/api/batches/:id/officer/session', staffSignInLimit, (c) => handleSignIn(c, 'officer'))
@@ -130,12 +104,7 @@ auth.delete('/api/batches/:id/officer/session', (c) => handleSignOut(c, 'officer
 auth.delete('/api/batches/:id/door/session', (c) => handleSignOut(c, 'door'))
 
 /**
- * Is this session still valid? A frontend can ask cheaply instead of waiting for
- * the first real request to 401.
- *
- * It was added as a test seam, and the auth suite still uses it as the one gated
- * route that needs no setup — which is why it stays: every alternative requires a
- * body or an election, and the auth tests would then be testing two things.
- * Returns nothing but `ok`.
+ * Is this session still valid? A frontend can ask before its first request
+ * 401s. The auth tests also use it as a gated route with no setup.
  */
 auth.get('/api/batches/:id/officer/ping', requireRole('officer'), (c) => c.json({ ok: true }))

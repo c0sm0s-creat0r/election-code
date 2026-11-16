@@ -78,8 +78,6 @@ describe('SignUp', () => {
   })
 
   it('REFUSES the same password for both roles', () => {
-    // The door password is typed on volunteers' phones. Reusing the officer
-    // password there hands full control to anyone at the desk.
     const spy = vi.fn()
     vi.stubGlobal('fetch', spy)
     renderRouted(<SignUp />)

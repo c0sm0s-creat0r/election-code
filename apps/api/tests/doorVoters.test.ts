@@ -128,7 +128,7 @@ describe('adding a member the export missed', () => {
 
   it('keeps the flag when a corrected export later includes them', async () => {
     await addVoter(NEW_MEMBER)
-    // exactly the upsert routes/roll.ts runs
+    // the upsert routes/roll.ts runs
     await env.DB.prepare(
       `INSERT INTO voter_roll (batch_id, usu_id, first_name, last_name, eligible) VALUES (?,?,?,?,1)
        ON CONFLICT(batch_id, usu_id) DO UPDATE SET

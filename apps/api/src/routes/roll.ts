@@ -1,17 +1,11 @@
 /**
  * USU member-roll import: preview, then commit.
  *
- * **Why two steps.** The officer sees "1,298 eligible, 4 excluded, 0 skipped"
- * before anything is written. A third-party export that silently drops members
- * is the failure this exists to catch — `parseUsuExport` counts `skipped` for
- * exactly that reason, and a preview is the only place a human can notice the
- * number is wrong while it is still cheap to fix.
+ * Two steps, so the officer sees the counts ("1,298 eligible, 4 excluded, 0
+ * skipped") before anything is written.
  *
- * **What is stored is the whole privacy posture.** The export carries email
- * addresses, membership payments, event payments, tags, officer notes and
- * expiry dates. `voter_roll` has five columns and none of them is any of that.
- * Spec §2's retention claim — that `voter_roll` and `check_in` are all the
- * personal data held — is only true because this route throws the rest away.
+ * Only id, names and eligibility are stored. Emails, payments, tags and notes
+ * are discarded here. Spec §2's retention claim depends on it.
  */
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -19,15 +13,13 @@ import { parseUsuExport, type RollMember } from '@election/core'
 import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 
-/** The real export is ~256 KB. A ceiling, not a target. */
+/** The real export is ~256 KB. */
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 /**
- * D1 caps statements per `batch()` call, and the real roll is 1,302 rows, so
- * the import is chunked. Each chunk is its own transaction: a failure part-way
- * leaves a partially imported roll. That is acceptable *because the import is
- * idempotent* — the officer re-uploads the same file and the upsert converges.
- * A corrupt file, by contrast, is rejected before any chunk runs at all.
+ * D1 caps statements per `batch()`, so the import is chunked. Each chunk is
+ * its own transaction. A partial failure is recoverable: the upsert is
+ * idempotent and the officer can re-upload.
  */
 const CHUNK = 100
 
@@ -39,11 +31,7 @@ type Preview = {
   shifted: boolean
 }
 
-/**
- * `ImportResult` has no `total`: it is the number of rows actually importable,
- * reported beside `skipped` rather than having it folded in, so "6 of 7 rows"
- * cannot be read as "7 members".
- */
+/** `total` is importable rows only. `skipped` is reported separately. */
 const toPreview = (r: { members: RollMember[]; eligible: number; excluded: number; skipped: number; shifted: boolean }): Preview => ({
   total: r.members.length,
   eligible: r.eligible,
@@ -73,18 +61,14 @@ roll.post('/api/batches/:id/roll/preview', requireRole('officer'), async (c) => 
   try {
     return c.json(toPreview(parseUsuExport(upload.text)))
   } catch (err) {
-    // parseUsuExport throws only on a structurally unusable file — a missing
-    // header, or a quoted field that never closes. That is a 400 about the
-    // officer's file, not a 500 about ours. Its message already says no roll
-    // was imported, and it names no member, so it is safe to return.
+    // parseUsuExport throws only on an unusable file. Answer 400. Its message
+    // names no member.
     return c.json({ error: err instanceof Error ? err.message : 'could not read the export' }, 400)
   }
 })
 
 roll.post('/api/batches/:id/roll', requireRole('officer'), async (c) => {
-  // Taken from the verified session, not from the path: requireRole has
-  // already proved the two match, and `param('id')` is `string | undefined`
-  // while a session's batchId is not.
+  // From the session, not the path. requireRole has checked they match.
   const batchId = requireSession(c).batchId
   const upload = await readUpload(c)
   if (!upload.ok) return c.json({ error: upload.message }, 400)
@@ -96,9 +80,8 @@ roll.post('/api/batches/:id/roll', requireRole('officer'), async (c) => {
     return c.json({ error: err instanceof Error ? err.message : 'could not read the export' }, 400)
   }
 
-  // Upsert, not insert: a second import of a corrected export must update
-  // eligibility rather than fail or leave a departed member voting. The
-  // officer will re-import — the AGM is the one day the roll is edited.
+  // Upsert: re-importing a corrected export updates eligibility. The SET list
+  // must never include `added_at_door` (migration 0004).
   const statements = parsed.members.map((m) =>
     c.env.DB
       .prepare(
@@ -135,9 +118,8 @@ roll.post('/api/batches/:id/roll', requireRole('officer'), async (c) => {
 })
 
 /**
- * Whether a roll exists yet, for the officer's election screen: without one,
- * nobody can be checked in and so nobody can vote. Counts only — the names stay
- * behind the door role, which is the only one that needs them.
+ * Whether a roll exists yet, for the officer's election screen. Counts only;
+ * names stay behind the door role.
  */
 roll.get('/api/batches/:id/officer/roll/summary', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId

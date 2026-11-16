@@ -1,36 +1,21 @@
 import { defineConfig } from '@playwright/test'
 
 /**
- * Boots the real API and the real voter app, on localhost, where all three parties
- * share a registrable domain and the session cookie behaves as it will in
- * production (spec §1). The API's ALLOWED_ORIGINS includes the Vite origin, so the
- * run exercises the genuine credentialed cross-origin request rather than hiding
- * it behind a dev proxy.
+ * Boots the real API and voter app on localhost, where they share a
+ * registrable domain and the cookie behaves as in production. No dev proxy:
+ * the request is credentialed and cross-origin.
  */
 export default defineConfig({
   testDir: '.',
-  // One test, and it must not be flaky-retried into looking healthy.
+  // One test. A retry would hide a flaky failure.
   retries: 0,
   reporter: [['list']],
   globalSetup: './seed.ts',
   use: { baseURL: 'http://localhost:5173' },
   webServer: [
     {
-      /**
-       * `--persist-to` gives the run its **own** database, separate from the one
-       * `npm run dev` uses.
-       *
-       * Without it the smoke test registers a society in the dev database, and
-       * since societies are now listed publicly, every run left another `e2e`
-       * entry on the landing page. Isolating the state is better than deleting
-       * rows afterwards or filtering them out of a production endpoint: the test
-       * data never exists anywhere a developer or a voter can see.
-       *
-       * It also settles a confusion worth knowing about: with the default path,
-       * `wrangler dev` and `wrangler d1 execute --local` resolve to two different
-       * sqlite files, so anything done through one is invisible to the other.
-       * Naming the path explicitly means both commands below agree.
-       */
+      // `--persist-to` gives the run its own database, separate from dev. It also
+      // makes `wrangler dev` and `wrangler d1 execute --local` use the same file.
       command:
         'npx wrangler d1 migrations apply election --local --persist-to .wrangler-e2e'
         + ' && npx wrangler dev --port 8787 --persist-to .wrangler-e2e'

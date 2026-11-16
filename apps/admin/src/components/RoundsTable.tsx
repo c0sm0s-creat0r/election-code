@@ -1,14 +1,7 @@
 /**
- * The round-by-round count, as a table worth printing.
- *
- * IGM was chosen over WIGM precisely so that a scrutineer can check a printed
- * round table by hand (spec §3): one transfer value per distribution rather than
- * one per weight class. That choice only pays off if the table is actually
- * legible on paper, so figures are tabular and right-aligned, one column per
- * round, one row per candidate, with the non-transferable total kept in view.
- *
- * Typed from `@election/core`'s own `Round`, so a change to what the count emits
- * is a compile error here rather than a quietly wrong column.
+ * The round-by-round count, as a table a scrutineer can check on paper: one
+ * column per round, one row per candidate, figures tabular and right-aligned,
+ * with the non-transferable total. Typed from `@election/core`'s `Round`.
  */
 import type { Round } from '@election/core'
 
@@ -18,8 +11,7 @@ export function RoundsTable({ rounds, quota }: RoundsTableProps) {
   const first = rounds[0]
   if (!first) return <p className="muted">This count produced no rounds.</p>
 
-  // Candidate order is fixed by the first round, so a candidate stays on the same
-  // row all the way across — which is what makes the table readable sideways.
+  // The first round fixes the order, so each candidate keeps one row.
   const order = first.counts.map((count) => ({ id: count.candidateId, name: count.name }))
   const valueIn = (round: Round, candidateId: string) =>
     round.counts.find((count) => count.candidateId === candidateId)

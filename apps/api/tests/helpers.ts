@@ -1,10 +1,6 @@
 /**
- * Shared setup for the result-path tests.
- *
- * Plan 2b's test files each grew their own copy of this: provision a batch,
- * sign in, import the roll, create an election, check voters in, vote. By
- * Plan 2c that is six routes deep and four files would repeat it, so it lives
- * here once — after the third copy, not before the first.
+ * Shared setup for the API tests: provision a batch, sign in, import the
+ * roll, create and open an election, check voters in.
  */
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import csv from './fixtures/usu-sample.csv?raw'
@@ -118,9 +114,8 @@ export const submitBallot = (
   })
 
 /**
- * A batch with an imported roll and one open single-seat election, plus the
- * given members checked in and signed in as voters. No ballots are cast —
- * each test decides what the box contains.
+ * A batch with an imported roll and one open single-seat election, with the
+ * given members checked in and signed in as voters. No ballots are cast.
  */
 export async function setUp(usuIds: readonly string[] = ['2400001', '2400002', '2400004']): Promise<Fixture> {
   await resetDatabase()
@@ -145,7 +140,7 @@ export async function setUp(usuIds: readonly string[] = ['2400001', '2400002', '
   return { batchId, officerCookie, doorCookie, electionId, candidateIds, voterCookies }
 }
 
-/** sha256 hex, the same digest the seal and the receipt hash use. */
+/** sha256 hex, as the seal and the receipt hash use. */
 export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')

@@ -1,11 +1,8 @@
 /**
  * Importing the USU member export: preview, then commit.
  *
- * The preview exists so a human sees the counts *before* anything is written. A
- * third-party export that silently drops members is the failure it catches —
- * which is why `skipped` is shown even when it is zero, and raised as a warning
- * when it is not. A number that only appears when it is bad is a number nobody
- * learns to look for.
+ * The preview shows the counts before anything is written. `skipped` is
+ * shown even at zero, so officers learn to check it.
  */
 import { useState } from 'react'
 import { previewRoll, commitRoll, type RollPreview } from '../api.js'

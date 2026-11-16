@@ -135,8 +135,8 @@ describe('receipts', () => {
   })
 
   it('keeps the mark-off on the roll after a void', async () => {
-    // deleting the receipt would let the voter cast again AND erase the record
-    // that they had voted at all
+    // deleting the receipt would let the voter cast again and erase the record
+    // that they voted
     const token = await castAndGetToken()
     await voidBallot(token)
     const row = await env.DB.prepare('SELECT usu_id FROM vote_receipt').first<{ usu_id: string }>()
@@ -190,7 +190,7 @@ describe('receipts', () => {
     const first = await castAndGetToken()
     await voidBallot(first)
     await submit(['b', 'a'])
-    // the voided token is still voided; voiding it again must not free a slot
+    // the token is still voided; voiding it again must not free a slot
     expect((await voidBallot(first)).status).toBe(409)
     const live = await env.DB.prepare('SELECT count(*) c FROM ballot WHERE voided = 0').first<{ c: number }>()
     expect(live!.c).toBe(1)
@@ -235,8 +235,8 @@ describe('receipts', () => {
   })
 
   it('voiding one voter\'s ballot cannot free another voter to cast twice', async () => {
-    // the receipt row is found THROUGH the hash, so a void always clears the
-    // true owner's mark-off -- never the caller's
+    // the receipt row is found through the hash, so a void clears the owner's
+    // mark-off, never the caller's
     const mine = await castAndGetToken()
     await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
       method: 'POST', headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: '2400002' }),
@@ -245,12 +245,12 @@ describe('receipts', () => {
       method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400002', surname: 'Turing' }),
     }))
     await submit(['b', 'a'], other)
-    // the other voter voids MY token, then tries to cast a second ballot
+    // the other voter voids my token, then tries to cast a second ballot
     await voidBallot(mine)
     expect((await submit(['a', 'b'], other)).status).toBe(409)
     const live = await env.DB.prepare('SELECT count(*) c FROM ballot WHERE voided = 0').first<{ c: number }>()
     expect(live!.c).toBe(1)
-    // and the true owner can cast again, because their own mark-off was cleared
+    // the owner can cast again: their mark-off was cleared
     expect((await submit(['b', 'a'])).status).toBe(201)
   })
 
@@ -260,8 +260,7 @@ describe('receipts', () => {
     const rows = await env.DB.prepare(`SELECT batch_id, detail FROM audit_log WHERE action = 'ballot.void'`).all<{ batch_id: string | null; detail: string | null }>()
     expect(rows.results).toHaveLength(1)
     expect(rows.results[0]!.detail).toBeNull()
-    // attributed to the owning batch, so the void shows up in that batch's
-    // audit export rather than only in a global one
+    // attributed to the owning batch
     expect(rows.results[0]!.batch_id).toBe(batchId)
   })
 

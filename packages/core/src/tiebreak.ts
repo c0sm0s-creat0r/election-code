@@ -5,12 +5,9 @@ import type { TieBreakKind } from './types.js'
 export type History = Map<string, Fixed>[]
 
 /**
- * Australian tie rule, step 1: compare totals at the most recent earlier
- * round where they differed. For an exclusion the lower candidate loses;
- * for election order the higher goes first.
- *
- * Returns null when the candidates were level at every round, which is when
- * the seeded draw takes over.
+ * Tie rule, step 1: compare totals at the latest earlier round where they
+ * differed. Exclusion: the lowest loses. Election order: the highest goes
+ * first. Null when level at every round.
  */
 export function countback(
   tied: string[],
@@ -27,16 +24,16 @@ export function countback(
       a.votes === b.votes ? a.id.localeCompare(b.id) : a.votes < b.votes ? -1 : 1,
     )
 
-    // Check that the extreme is unique before returning
+    // The extreme must be unique, or this round does not settle it.
     if (kind === 'exclusion') {
       const minVotes = sorted[0]!.votes
       const countAtMin = sorted.filter((t) => t.votes === minVotes).length
-      if (countAtMin > 1) continue // Still tied at the minimum
+      if (countAtMin > 1) continue
       return { winner: sorted[0]!.id, atRound: i + 1 }
     } else {
       const maxVotes = sorted[sorted.length - 1]!.votes
       const countAtMax = sorted.filter((t) => t.votes === maxVotes).length
-      if (countAtMax > 1) continue // Still tied at the maximum
+      if (countAtMax > 1) continue
       return { winner: sorted[sorted.length - 1]!.id, atRound: i + 1 }
     }
   }
@@ -50,12 +47,11 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 /**
- * seed = sha256(electionId || ballotsSha256 || tieBreakId)
+ * seed = sha256(electionId | ballotsSha256 | tieBreakId)
  *
- * Derived from the SEALED ballots, so anyone can re-derive it and verify the
- * draw, and it cannot be steered without changing the ballots and breaking
- * the seal. The tie-break id is included so two ties within one count do not
- * resolve to the same index.
+ * Derived from the sealed ballots: anyone can re-derive it, and nobody can
+ * steer it without breaking the seal. The tie-break id gives each tie in a
+ * count its own draw.
  */
 export function deriveSeed(
   electionId: string,
@@ -66,9 +62,8 @@ export function deriveSeed(
 }
 
 /**
- * Australian tie rule, step 2: a draw. Candidate ids are sorted
- * lexicographically first so the caller's ordering cannot influence the
- * outcome. index = first 8 bytes of the seed, big-endian, mod n.
+ * Tie rule, step 2: a draw. Ids are sorted first, so caller order has no
+ * effect. index = first 8 bytes of the seed, big-endian, mod n.
  */
 export async function seededDraw(tied: string[], seedHex: string): Promise<string> {
   const sorted = [...tied].sort((a, b) => a.localeCompare(b))

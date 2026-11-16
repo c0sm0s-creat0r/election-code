@@ -1,18 +1,10 @@
 /**
- * The entire design system, today.
- *
- * Values only. Nothing here selects an element or a component — that is what
- * base.css and each app's app.css are for. The reason for the split is the
- * upgrade path: restyling either app should mean editing this file, or adding
- * rules beside it, and never touching a component.
- *
- * The rule that keeps that true lives in the markup: semantic class names only,
- * no utility classes and no inline style attributes. The legacy apps cannot be
- * restyled without editing JSX, because their styling *is* JSX.
+ * Design tokens. Values only, no selectors. Restyle either app here: the
+ * markup uses semantic class names, no utility classes, no inline styles.
  */
 :root {
   /* colour */
-  --accent: #2563eb;          /* overwritten per society at runtime, from the API */
+  --accent: #2563eb;          /* set per society at runtime, from the API */
   --accent-ink: #ffffff;      /* text on accent */
   --ink: #111111;
   --muted: #666666;
@@ -22,7 +14,7 @@
   --danger: #b00020;
   --ok: #1b5e20;
 
-  /* space — one scale, used as calc(var(--step) * n) */
+  /* space: one scale, used as calc(var(--step) * n) */
   --step: 0.5rem;
 
   /* type */
@@ -33,19 +25,11 @@
   --radius: 6px;
   --measure: 34rem;           /* one readable column */
 
-  /*
-   * Minimum interactive target. 44px is Apple's floor and close to Material's
-   * 48dp; below it, a thumb in a queue misses. Every button, input and row
-   * control in both apps is at least this tall.
-   */
+  /* Minimum touch target (Apple's floor). */
   --touch: 44px;
 }
 
-/**
- * Dark mode is here not for its own sake but because it is the cheapest possible
- * proof that the token layer works: a component that hardcodes #111 is invisible
- * until something redefines the token.
- */
+/* Dark mode also shows up any hardcoded colour. */
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #f2f2f2;

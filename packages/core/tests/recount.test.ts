@@ -150,9 +150,7 @@ describe('recount', () => {
       ballotsSha256: 'ee'.repeat(8),
     })
 
-    // 'c' (unaffected by the embedded newline in 'b') must still parse with
-    // its own id and name, proving the row after the multi-line field did
-    // not drift.
+    // the row after the multi-line field must not drift
     const cRound = viaCsv.rounds[0]?.counts.find((r) => r.candidateId === 'c')
     expect(cRound?.name).toBe('Cass')
     const bRound = viaCsv.rounds[0]?.counts.find((r) => r.candidateId === 'b')
@@ -199,18 +197,15 @@ describe('recount', () => {
 })
 
 /**
- * A blank row is a row where every field is blank - not only a row with one
- * blank field. The distinction decides an election: a bare `,` parses to
- * `['', '']`, and one extra ballot moves the Droop quota.
+ * A blank row is one where every field is blank. A bare `,` parses to
+ * `['', '']`, and one phantom ballot moves the Droop quota.
  */
 describe('recount: blank rows with more than one field', () => {
   const twoCandidates = 'candidate_id,name\n"a","Alex"\n"b","Bo"\n'
   const threeBallots = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","b","0"\n'
 
   it('does not let a bare comma row in ballotsCsv change the quota', async () => {
-    // floor(3 / (1 + 1)) + 1 = 2. A phantom fourth ballot would make it 3,
-    // which is the whole danger: a blank line in the audit file deciding
-    // who won.
+    // floor(3 / 2) + 1 = 2. A phantom fourth ballot would make it 3.
     const clean = await recount(threeBallots, twoCandidates, 1, 'e1', 'ee'.repeat(8))
     expect(clean.quota).toBe('2.00000')
 
@@ -235,8 +230,7 @@ describe('recount: blank rows with more than one field', () => {
   })
 
   it('drops a row of several empty quoted fields rather than refusing it', async () => {
-    // All-blank means blank, whatever the field count - so this is dropped
-    // as a blank line, not rejected as a three-field row.
+    // All-blank is dropped as a blank line, not rejected as a three-field row.
     const withEmptyQuoted = 'candidate_id,name\n"a","Alex"\n"","",""\n"b","Bo"\n'
 
     const r = await recount(threeBallots, withEmptyQuoted, 1, 'e1', 'ee'.repeat(8))
@@ -277,9 +271,7 @@ describe('recount: blank rows with more than one field', () => {
   })
 
   it('never trims an id it keeps: whitespace-padded ids stay distinct from bare ones', async () => {
-    // '  a  ' and 'a' are different ids. If either were trimmed on the way
-    // in they would collide, and the ballot for 'a' would land in the wrong
-    // pile.
+    // '  a  ' and 'a' are different ids; trimming would make them collide
     const padded = 'candidate_id,name\n"  a  ","Padded"\n"a","Alex"\n'
     const ballots = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","  a  ","0"\n'
 
@@ -292,8 +284,7 @@ describe('recount: blank rows with more than one field', () => {
 
 /**
  * Everything `recount` refuses. It reads only this library's own output, so
- * any of these means the file was truncated, hand-edited or tampered with -
- * and silently dropping such a row is the same error as silently keeping it.
+ * any of these means the file was truncated or edited.
  */
 describe('recount: fails closed on a corrupt row', () => {
   const twoCandidates = 'candidate_id,name\n"a","Alex"\n"b","Bo"\n'
@@ -336,8 +327,8 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws when the header row is missing, rather than eating the first record', async () => {
-    // Without the header check, slice(1) would discard ballot x1 and the
-    // quota would be computed from one ballot fewer.
+    // Without the header check, slice(1) would discard ballot x1 and lower the
+    // quota.
     const headerless = '"x1","a","0"\n"x2","b","0"\n'
     await expect(recount(headerless, twoCandidates, ...args)).rejects.toThrow(
       'recount: expected a "ballot_id,preferences,voided" header row — the CSV is corrupt. No count was performed.',
@@ -372,8 +363,8 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws on a preference naming a candidate absent from candidatesCsv', async () => {
-    // Deleting one candidate line would otherwise silently exhaust every
-    // paper that ranked them, redistributing their votes with no warning.
+    // otherwise deleting a candidate line would exhaust every paper that ranked
+    // them
     const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","z|b","0"\n'
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
       'recount: row 3 lists preference "z", which is not a candidate — the CSV is corrupt. No count was performed.',
@@ -402,10 +393,7 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('refuses to write a candidate id containing the preference separator', () => {
-    // Preferences are pipe-joined into one CSV field, so an id with a '|' in
-    // it splits into two on the way back and the file no longer describes the
-    // election it came from. Enforced at the writer rather than left as a
-    // naming rule somebody downstream has to know.
+    // an id containing '|' would come back as two preferences
     expect(() => toBallotsCsv([{ id: 'x1', preferences: ['a|b', 'c'], voided: false }])).toThrow(
       /contains '\|'/,
     )
@@ -413,20 +401,8 @@ describe('recount: fails closed on a corrupt row', () => {
   })
 
   it('throws on a ballot whose preferences field is empty', async () => {
-    // This test previously asserted the OPPOSITE, on the reasoning that "a
-    // ballot ranking nobody is a well-formed empty list, not a malformation".
-    // That reasoning was wrong, and wrong by recount's own standard. recount
-    // reads nothing but this library's own export, written from records that
-    // validateBallot already accepted - and validateBallot rejects an empty
-    // list outright (spec section 3: a ballot must rank at least `seats`
-    // candidates). So an empty preferences field is exactly as impossible as
-    // 'a||b', which the neighbouring tests already require it to refuse.
-    //
-    // It is not inert, either: `count` divides by `ballots.length` for the
-    // Droop quota, so each such row lifts the quota while putting no vote on
-    // anybody. Five candidates, 2 seats, 23 ballots elects {a,b} at a quota of
-    // 8; append four rows ranking nobody and the quota becomes 10 and the
-    // winners become {b,d}. A hand-added blank field would change the result.
+    // Our export never contains an empty list (validateBallot rejects it). Such
+    // a row would raise the quota while voting for nobody.
     const csv = 'ballot_id,preferences,voided\n"x1","a","0"\n"x2","a","0"\n"x3","","0"\n'
 
     await expect(recount(csv, twoCandidates, ...args)).rejects.toThrow(
@@ -490,17 +466,14 @@ describe('voided ballots in the CSV round trip', () => {
   })
 
   it('still validates a voided ballot rather than waving it through', async () => {
-    // A voided row is not counted, but it is still part of the sealed file: a
-    // preference naming nobody means the file does not describe this election,
-    // whether that row was counted or not.
+    // a voided row is not counted but is still validated
     const csv = 'ballot_id,preferences,voided\n"b1","a","0"\n"b2","ghost","1"\n'
     await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
       .rejects.toThrow(/not a candidate/i)
   })
 
   it('refuses a file of nothing but voided ballots', async () => {
-    // Zero counted ballots is not a count, it is a file that cannot produce
-    // one -- droopQuota would divide an empty box.
+    // every ballot voided: nothing to count
     const csv = toBallotsCsv([{ id: 'b1', preferences: ['a'], voided: true }])
     await expect(recount(csv, toCandidatesCsv(candidates), 1, 'e', 'ff'.repeat(32)))
       .rejects.toThrow()

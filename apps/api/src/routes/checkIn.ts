@@ -1,12 +1,9 @@
 /**
- * Door check-in and quorum. The `door` role reaches these four routes and
- * nothing else — no elections, no candidates, no tally of any kind (spec §4).
+ * Door check-in and quorum. The `door` role reaches these routes only: no
+ * election, candidate or tally.
  *
- * **Why the roll is fetched whole.** ~1,300 rows at roughly 40 bytes is ~50 KB.
- * The door app fetches it once and filters client-side on every keystroke, so
- * search is instant and keeps working if venue wifi drops mid-queue. A server
- * round-trip per keystroke is the wrong shape for a queue of 1,300 people.
- *
+ * The roll (~1,300 rows, ~50 KB) is fetched whole. The door app filters it
+ * client-side, so search works if venue wifi drops.
  */
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -24,11 +21,7 @@ type RollEntry = Pick<VoterRollRow, 'usu_id' | 'first_name' | 'last_name' | 'eli
 
 export const checkIn = new Hono<AuthedEnv>()
 
-/**
- * Spec §6 names "roll lookup" as one of three surfaces that must be limited.
- * It is authenticated, but a 50 KB response is the largest thing a door tablet
- * can ask for in a loop.
- */
+/** Rate limited though authenticated: this is the largest response in the API. */
 checkIn.get(
   '/api/batches/:id/roll',
   requireRole('door'),
@@ -55,10 +48,8 @@ checkIn.post('/api/batches/:id/check-in', requireRole('door'), async (c) => {
   if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
   const usuId = parsed.data.usu_id
 
-  // The roll check is folded INTO the insert rather than run before it. A
-  // separate SELECT would be a read-then-write: the same shape as the legacy
-  // `attendee.voted` race, where two tablets both read "eligible" and both
-  // proceed. Here the database decides, once.
+  // The roll check is in the insert, not a SELECT before it, so two tablets
+  // cannot both read "eligible" and proceed.
   const result = await c.env.DB
     .prepare(
       `INSERT INTO check_in (batch_id, usu_id, checked_in_at)
@@ -73,9 +64,7 @@ checkIn.post('/api/batches/:id/check-in', requireRole('door'), async (c) => {
     .run()
 
   if (result.meta.changes === 0) {
-    // Zero rows means one of three things, and a volunteer at the door needs
-    // to be told which: an unknown id is a typo, an ineligible member is a
-    // membership question, and an already-checked-in member is simply done.
+    // Say which: a typo, a membership question, or already done.
     const row = await c.env.DB
       .prepare(`SELECT eligible FROM voter_roll WHERE batch_id = ? AND usu_id = ?`)
       .bind(batchId, usuId)
@@ -90,12 +79,10 @@ checkIn.post('/api/batches/:id/check-in', requireRole('door'), async (c) => {
 })
 
 /**
- * Un-check-in. Idempotent: 204 whether or not a row was there, because the
- * door's intent ("this person is not here") is satisfied either way.
+ * Un-check-in. Idempotent: 204 whether or not a row existed.
  *
- * This route is why a voter's session cookie can never be treated as proof of
- * eligibility — see routes/ballots.ts. An officer may un-check someone in
- * *after* their cookie was issued, and the cookie stays valid for its full TTL.
+ * It can run after a voter's cookie was issued, which is why the cookie does
+ * not prove eligibility (see ballots.ts).
  */
 checkIn.delete('/api/batches/:id/check-in/:usuId', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
@@ -115,10 +102,8 @@ checkIn.delete('/api/batches/:id/check-in/:usuId', requireRole('door'), async (c
 checkIn.get('/api/batches/:id/quorum', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
 
-  // Two counts, one round trip. `checked_in` counts only rows that still join
-  // to an eligible roll member, so a member marked ineligible by a re-import
-  // stops counting toward quorum without anyone having to remember to
-  // un-check them in.
+  // `checked_in` counts only rows that still join to an eligible member. A
+  // re-import marking someone ineligible removes them from quorum.
   const row = await c.env.DB
     .prepare(
       `SELECT
@@ -132,12 +117,8 @@ checkIn.get('/api/batches/:id/quorum', requireRole('door'), async (c) => {
     .bind(batchId)
     .first<{ eligible: number; checked_in: number; guests: number; added_at_door: number }>()
 
-  // `guests` is reported beside the ratio and never summed into it: spec §4
-  // defines quorum as checked_in / eligible against the roll, and a guest is
-  // not an eligible member.
-  // `added_at_door` travels with the totals, never separately: a door-added
-  // voter counts in `eligible` and `checked_in` like any other member, and the
-  // number must never be presented without its provenance. See migration 0004.
+  // `guests` is reported beside the ratio, never added to it. `added_at_door`
+  // is always returned with the totals.
   return c.json({
     checked_in: row?.checked_in ?? 0,
     eligible: row?.eligible ?? 0,

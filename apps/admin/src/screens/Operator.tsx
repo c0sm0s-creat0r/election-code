@@ -1,23 +1,14 @@
 /**
- * The operator's own screen: delete a society, and everything in it.
+ * The operator's screen: delete a society and everything in it.
  *
- * **Nothing links here.** It is mounted at `/operator` and reachable only by
- * typing that path, which is not a security control on its own — the control is
- * `SUPER_ADMIN_KEY`, checked by the API on every request — but it keeps the most
- * destructive capability in the system off every officer's screen. A test asserts
- * that no link to it exists, because a well-meaning "add it to the nav" would
- * otherwise pass review.
+ * Nothing links here, and a test checks that. The control is
+ * `SUPER_ADMIN_KEY`, which the API checks on every request. The missing link
+ * only keeps this off officers' screens.
  *
- * **The key is held in component state for the length of one visit and written
- * nowhere else.** Not `localStorage`, not `sessionStorage`, not a cookie, not a
- * URL. This is the credential that can mint an officer session for every society
- * in the system, so it is typed when it is used and gone when the tab closes. The
- * field is a password input so it does not sit on screen in a projector-lit room.
+ * The key is held in component state for one visit: no storage, no cookie,
+ * no URL.
  *
- * The slug has to be typed back before the button does anything, and the API
- * requires it again in the body — a UUID is not something anyone proofreads, and
- * the difference between deleting the right society and the wrong one should not
- * be one click.
+ * The slug must be typed back, and the API requires it again in the body.
  */
 import { useEffect, useState } from 'react'
 import { ApiError, deleteSociety, getBatchBySlug, listSocieties, type Batch } from '../api.js'
@@ -55,13 +46,12 @@ export function Operator() {
     setBusy(true)
     setError('')
     try {
-      // `GET /api/batches` returns no ids — spec §6 narrowed it to slug, name and
-      // branding — so the id comes from the public by-slug lookup. Resolving it
-      // here also means the slug shown is the slug deleted.
+      // `GET /api/batches` returns no ids, so resolve the id from the slug. The
+      // slug shown is then the slug deleted.
       const { id } = await getBatchBySlug(selected.slug)
       await deleteSociety(id, selected.slug, key)
       setSocieties((list) => list.filter((s) => s.slug !== selected.slug))
-      // `choose` clears the notices, so the outcome is set after it, not before.
+      // `choose` clears the notices, so set the outcome after it.
       choose(undefined)
       setDone(`${selected.name} and everything in it is gone.`)
     } catch (caught) {

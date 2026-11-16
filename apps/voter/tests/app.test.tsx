@@ -9,7 +9,7 @@ afterEach(() => {
   setVisibility('visible')
 })
 
-/** jsdom's page is always visible; this is how a locked phone looks to the app. */
+/** jsdom's page is always visible. This simulates a locked phone. */
 const setVisibility = (state: 'visible' | 'hidden') => {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
   Object.defineProperty(document, 'hidden', { value: state === 'hidden', configurable: true })
@@ -26,7 +26,7 @@ const election = (id: string, name: string) => ({
   candidates: [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }],
 })
 
-/** Routes stubbed responses by URL, the way the app actually calls them. */
+/** Routes stubbed responses by URL. */
 const stubRoutes = (
   elections: unknown[],
   extra: (url: string) => Response | undefined = () => undefined,
@@ -50,11 +50,9 @@ const signedInAs = (firstName: string) => (url: string) =>
   url.includes('voter/session') ? new Response(JSON.stringify({ first_name: firstName }), json) : undefined
 
 /**
- * The test environment's `localStorage` is a stub with no methods, so a test that
- * needs storage brings its own. That every other test here passes without one is
- * the point: `readReceipts`/`rememberReceipt` guard every access, because Safari
- * private mode and an exhausted quota throw, and a voter must never lose a ballot
- * to browser storage.
+ * The test environment's `localStorage` is a stub with no methods, so a test
+ * that needs storage supplies its own. The rest pass without one because
+ * every storage access is guarded.
  */
 const stubStorage = (initial: Record<string, string> = {}) => {
   const store = new Map(Object.entries(initial))
@@ -68,10 +66,9 @@ const stubStorage = (initial: Record<string, string> = {}) => {
 }
 
 /**
- * Preact flushes effects on an animation frame, which the fake clock also fakes,
- * so advancing by 0 never runs them. Three frames, because the load is a chain:
- * fetch the society, which starts the election poll, which renders the list.
- * Well under POLL_MS, so this never stands in for a poll tick.
+ * Preact flushes effects on an animation frame, which the fake clock also
+ * fakes. Three frames: fetch the society, start the poll, render the list.
+ * Well under POLL_MS, so this is never a poll tick.
  */
 const settle = async () => {
   for (let frame = 0; frame < 3; frame++) await vi.advanceTimersByTimeAsync(20)
@@ -86,23 +83,19 @@ const signIn = async () => {
 
 describe('App', () => {
   it('LISTS SOCIETIES when the path has no slug, rather than dead-ending', async () => {
-    // A voter handed a bare domain has no other way through: the slug is the only
-    // route into an election.
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify([{ slug: 's', name: 'Soc', branding: BATCH.branding }]),
       { status: 200, headers: { 'content-type': 'application/json' } },
     )))
     atSlug('')
     render(<App />)
-    // The whole card is one link, not just the name: a bare name is a small
-    // target inside a much larger row that does nothing.
+    // the whole card is one link
     await waitFor(() => expect(screen.getByRole('link', { name: 'Soc' })).toBeTruthy())
     expect(screen.getByRole('link', { name: 'Soc' }).getAttribute('href')).toBe('/s')
   })
 
   it('does not repeat the society name as its own subtitle', async () => {
-    // org_name is usually the same string as name; printing both reads as a bug,
-    // and a screen reader says it twice.
+    // org_name usually equals name; showing both looks like a bug
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify([
         { slug: 's', name: 'Soc', branding: BATCH.branding },
@@ -117,9 +110,7 @@ describe('App', () => {
   })
 
   it('SHOWS THE SOCIETY LOGO, resolved against the API and not this app', async () => {
-    // A stored logo_url is root-relative to the *API*. Rendering it as-is points
-    // the browser at the voter app's own origin, which in production is a
-    // different host, and the image 404s with nothing in the console to say why.
+    // A stored logo_url is root-relative to the API, a different origin.
     stubRoutes([], () => undefined, {
       ...BATCH.branding, logo_url: '/api/logos/batches/b1/abc.png',
     })
@@ -201,9 +192,7 @@ describe('App', () => {
   })
 
   it('KEEPS THE DRAFT when a session lapses mid-ballot, and returns to it', async () => {
-    // The path that matters: a voter mid-ballot must not lose their ranking
-    // because a cookie expired. Sign in, rank, get a 401 on submit, sign in
-    // again, and the ranking is still there.
+    // Sign in, rank, get a 401 on submit, sign in again: the ranking is still there.
     let sessionCalls = 0
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.includes('by-slug')) {
@@ -239,7 +228,7 @@ describe('App', () => {
     // thrown back to sign-in by the 401
     await waitFor(() => expect(screen.getByLabelText(/usu id/i)).toBeTruthy())
     await signIn()
-    // ...straight back into the ballot, not via the agenda
+    // ...back into the ballot, not via the agenda
 
     // ...and the ranking survived
     await waitFor(() => expect(screen.getByTestId('ranked-0').textContent).toContain('Bo'))
@@ -247,9 +236,7 @@ describe('App', () => {
   })
 
   it('NEVER TELLS A VOTER THE MEETING IS OVER, only that nothing is open now', async () => {
-    // The defect this screen exists to prevent: elections open one at a time, so
-    // running out of open ones is not the end of the AGM. The app said "that is
-    // every election. Thank you for voting." after item 4 of 8, and voters left.
+    // Elections open one at a time. No open elections is not the end of the AGM.
     stubRoutes([election('e1', 'President')], (url) => {
       if (url.includes('voter/session')) return new Response(JSON.stringify({ first_name: 'Ada' }), json)
       if (url.includes('/ballots')) return new Response(JSON.stringify({ receipt_token: 'tok-1' }), json)
@@ -276,9 +263,7 @@ describe('App', () => {
   })
 
   it('SHOWS AN ELECTION OPENED AFTER LOAD, without a reload', async () => {
-    // The other half: the voter keeps the page open and the next agenda item
-    // appears on its own. A `draft` election is invisible to a voter by design
-    // (spec §6), so polling is the only way it can ever arrive.
+    // A draft is hidden from voters, so the next item arrives only by polling.
     vi.useFakeTimers()
     let open = [election('e1', 'President')]
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -320,8 +305,7 @@ describe('App', () => {
   })
 
   it('KEEPS THE LAST LIST when a poll fails, rather than emptying the agenda', async () => {
-    // Dropping to "nothing is open" because one request timed out is a lie a
-    // voter acts on by leaving.
+    // one timed-out request must not show "nothing is open"
     vi.useFakeTimers()
     let failing = false
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -346,8 +330,7 @@ describe('App', () => {
   })
 
   it('STOPS CHECKING while the screen is off or the tab is in the background', async () => {
-    // A room of phones left on the table, each asking every ten seconds, is
-    // what spends the free plan's daily Worker requests and D1 reads.
+    // locked phones must not keep polling
     vi.useFakeTimers()
     const spy = vi.fn(async (url: string) => {
       if (url.includes('by-slug')) return new Response(JSON.stringify(BATCH), json)
@@ -377,8 +360,7 @@ describe('App', () => {
     await settle()
     setVisibility('hidden')
 
-    // Opened while the phone was locked. Waiting up to ten seconds after
-    // unlocking would look like the app had missed it.
+    // Opened while the phone was locked: poll at once on unlock.
     open = [election('e1', 'President')]
     setVisibility('visible')
     await settle()
@@ -386,10 +368,7 @@ describe('App', () => {
   })
 
   it('MARKS AN ELECTION VOTED ACROSS A RELOAD, and still offers the receipt', async () => {
-    // The receipt token is shown once and never stored server-side (spec §4), so
-    // the device is the only place it can live. It is also the only way the app
-    // can know this voter has already voted — there is deliberately no
-    // "have I voted?" endpoint.
+    // The stored token is how the app knows this voter has voted.
     stubStorage({ 'election:receipts:b1': JSON.stringify({ e1: 'tok-1' }) })
     stubRoutes([election('e1', 'President')], (url) => {
       if (url.includes('voter/session')) return new Response(JSON.stringify({ first_name: 'Ada' }), json)

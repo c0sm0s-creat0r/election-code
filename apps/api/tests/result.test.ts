@@ -99,8 +99,8 @@ describe('result', () => {
   it('never returns a ballot id or a voter id', async () => {
     await close()
     const text = await (await getResult()).text()
-    // Checked against the real ids rather than a 7-digit shape: the document
-    // legitimately carries `computed_at` and `closed_at`, which are 13 digits.
+    // Checked against the real ids, not a 7-digit shape: `computed_at` and
+    // `closed_at` are 13 digits.
     for (const usuId of Object.keys(f.voterCookies)) expect(text).not.toContain(usuId)
     const ballots = await env.DB.prepare('SELECT id FROM ballot').all<{ id: string }>()
     for (const b of ballots.results) expect(text).not.toContain(b.id)
@@ -117,7 +117,7 @@ describe('result', () => {
   })
 
   it('seeds a draw from the sealed digest rather than from the digest itself', async () => {
-    // a two-two tie so the count has to resolve something
+    // a two-two tie, so the count must resolve one
     const f2 = await setUp(['2400001', '2400002'])
     const { a, b } = f2.candidateIds
     await submitBallot(f2.batchId, f2.electionId, f2.voterCookies['2400001']!, [a, b])

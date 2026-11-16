@@ -1,11 +1,4 @@
-/**
- * The way in: register a society, or pick one you already run.
- *
- * `GET /api/batches` returns slug, name and branding for every society and
- * nothing else — spec §6 narrowed it to exactly that, because the legacy version
- * listed every tenant with far more. Listing them here is what removes the need
- * to know a slug by heart.
- */
+/** Register a society, or pick one you run. */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listSocieties, type Batch } from '../api.js'

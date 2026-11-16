@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-// Bundled with `?raw`, not read with node:fs: these tests execute inside the
-// workers runtime, which has no access to the host filesystem.
+// `?raw`, because the workers runtime cannot read the host filesystem.
 import csv from './fixtures/usu-sample.csv?raw'
 
 const KEY = 'super-secret-test-key'
@@ -75,16 +74,14 @@ describe('roll import', () => {
   it('stores only id and name — no email, no membership data', async () => {
     await upload('/roll')
     const cols = await env.DB.prepare('PRAGMA table_info(voter_roll)').all<{ name: string }>()
-    // added_at_door (migration 0004) is provenance, not personal data: it
-    // records that a volunteer created the row, not anything about the member.
-    // Everything else the USU export carries -- email, payments, tags, officer
-    // notes, expiry dates -- still must never appear here.
+    // added_at_door (0004) is provenance, not personal data. Nothing else from
+    // the export may appear.
     expect(cols.results.map((r) => r.name).sort())
       .toEqual(['added_at_door', 'batch_id', 'eligible', 'first_name', 'last_name', 'usu_id'])
   })
 
   it('writes no email address anywhere in the database', async () => {
-    // the export carries one per member; none of it may land
+    // the export has one per member; none may be stored
     await upload('/roll')
     const rows = await env.DB.prepare('SELECT * FROM voter_roll').all()
     expect(JSON.stringify(rows.results)).not.toMatch(/@example\.com/)
@@ -141,8 +138,7 @@ describe('roll import', () => {
   })
 
   it('imports a roll of 1,300 rows in one request', async () => {
-    // the real export is 1,302 members; D1 caps statements per batch() call,
-    // so this is the test that the chunking exists at all
+    // more rows than one D1 batch() allows, to exercise chunking
     const header = csv.split('\n')[0]!
     const template = csv.split('\n')[1]!
     const rows = Array.from({ length: 1300 }, (_, i) =>

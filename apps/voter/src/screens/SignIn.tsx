@@ -1,10 +1,6 @@
 /**
- * Voter sign-in: USU id and surname, both matching the roll.
- *
- * Both are required because looking a voter up by a seven-digit id alone and
- * echoing their name back would be an enumeration oracle over the whole roll
- * (spec §4). Nothing on this screen ever renders a name that came from a failed
- * attempt — a test asserts it.
+ * Voter sign-in: USU id and surname, both matching the roll. A lookup by id
+ * alone would map ids to names, so a failed attempt renders no name.
  */
 import { useState } from 'preact/hooks'
 import { voterSignIn } from '../api.js'
@@ -25,8 +21,7 @@ export function SignIn({ batchId, onSignedIn }: SignInProps) {
 
   const submit = async (event: Event) => {
     event.preventDefault()
-    // Guarded as well as disabled: the form can also be submitted by the phone
-    // keyboard's Go key, which does not consult a button's disabled attribute.
+    // The keyboard's Go key submits even when the button is disabled.
     if (!ready || busy) return
     setBusy(true)
     setError('')
@@ -46,8 +41,7 @@ export function SignIn({ batchId, onSignedIn }: SignInProps) {
 
       <div class="field">
         <label for="usu-id">USU ID</label>
-        {/* inputMode numeric opens the number pad; the value stays a string,
-            because the API takes a string and leading zeros must survive. */}
+        {/* numeric keypad; the value stays a string, so leading zeros survive */}
         <input
           id="usu-id"
           name="usu-id"

@@ -43,10 +43,8 @@ describe('OfficerSignIn', () => {
   })
 
   it('never puts the password into the error message', async () => {
-    // The value stays in the masked field after a failure, deliberately: an
-    // officer mistyping one character of a long password should not have to
-    // retype all of it. What must never happen is the password reaching text
-    // that is rendered unmasked — an error, a log line, a heading.
+    // The value stays in the masked field after a failure, so a typo does not
+    // mean retyping it. It must never appear in unmasked text.
     stub(401, { error: 'unauthorized' })
     render(<OfficerSignIn batchId="b1" onSignedIn={vi.fn()} />)
     signIn('hunter2-very-distinctive')
@@ -55,8 +53,7 @@ describe('OfficerSignIn', () => {
   })
 
   it('clears the password once it has been accepted', async () => {
-    // After a successful sign-in the cookie is the credential and the password
-    // has no further use, so it should not sit in state for the rest of an AGM.
+    // after sign-in the cookie is the credential; the password must not stay in state
     stub(200, { ok: true, role: 'officer' })
     render(<OfficerSignIn batchId="b1" onSignedIn={vi.fn()} />)
     signIn('officer-password-1')

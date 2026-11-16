@@ -1,10 +1,7 @@
 /**
- * Plan 2b's cross-cutting success criteria, as assertions over a database that
- * has been through a whole election rather than over the source of one route.
- *
- * Every other test file checks its own route. These checks are the ones that
- * can only fail in combination — an audit row written by one handler carrying
- * an identifier that another handler's purge cannot reach.
+ * Privacy checks over a database that has been through a whole election.
+ * These catch failures that span handlers, such as one handler's audit row
+ * surviving another's purge.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
@@ -27,7 +24,7 @@ beforeEach(async () => {
   }
 })
 
-/** Provision, import, check in, open, vote, void, recast — the whole path. */
+/** Provision, import, check in, open, vote, void, recast. */
 async function runWholeElection() {
   const created = await SELF.fetch('https://example.com/api/batches', {
     method: 'POST', headers: { ...json, 'x-super-admin-key': KEY },
@@ -99,14 +96,11 @@ async function runWholeElection() {
       method: 'POST', headers: json, body: JSON.stringify({ usu_id: usuId, surname }),
     })))
   }
-  // A wrong surname, which deliberately writes NO audit row: this route is
-  // limited at 300/10min because CGNAT makes one IP a whole room, so auditing
-  // every wrong guess would let an anonymous caller bury the trail.
+  // a wrong surname, which writes no audit row (see routes/voter.ts)
   await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
     method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400001', surname: 'Wrong' }),
   })
-  // A refusal that names a real roll member, which DOES audit: Grace Hopper
-  // carries "Left Group" = 1 in the fixture.
+  // a refusal for a real but ineligible member, which does audit
   await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
     method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400003', surname: 'Hopper' }),
   })
@@ -122,9 +116,8 @@ async function runWholeElection() {
   await SELF.fetch(`https://example.com/api/receipts/${first}/void`, { method: 'POST' })
   await submit(voters[0]!, [candidates[1]!, candidates[0]!])
 
-  // A guest and a member the export missed (Plan 2d). Both before the purge, or
-  // the inventory below would not see their actions at all. The door-added
-  // member is then removed again, so both of that pair's actions are exercised.
+  // A guest and a door-added member, before the purge so the inventory sees
+  // them. The member is removed again to run both actions.
   await SELF.fetch(`https://example.com/api/batches/${batchId}/guests`, {
     method: 'POST', headers: { ...json, cookie: doorCookie },
     body: JSON.stringify({ name: 'Jo Verydistinctiveguest', note: 'observer' }),
@@ -137,9 +130,8 @@ async function runWholeElection() {
     method: 'DELETE', headers: { cookie: doorCookie },
   })
 
-  // ...and on through the result path: close, seal, count, edit the branding,
-  // then purge. Every audited action Plans 2c and 2d added runs here, which is
-  // what makes the inventory below a check rather than a snapshot of one half.
+  // Then close, count, edit branding, purge. Every audited action must run in
+  // this scenario for the inventory to see it.
   const officer = { cookie: officerCookie }
   await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/close`, {
     method: 'POST', headers: officer,
@@ -210,9 +202,8 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
   })
 
   it('never records a guest name or a door-added usu_id in the audit log', async () => {
-    // For a guest the name IS the payload, and a door-added member's usu_id is
-    // the one identifier that action could leak. audit_log cannot be purged, so
-    // neither may ever appear in it.
+    // A guest's name and a door-added usu_id must not reach audit_log, which is
+    // never purged.
     await runWholeElection()
     const rows = await env.DB.prepare('SELECT * FROM audit_log').all()
     const text = JSON.stringify(rows.results)
@@ -261,8 +252,7 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
   })
 
   it('holds no ballot-to-voter link once the election is closed', async () => {
-    // Plan 2b's live_receipt_hash is cleared at close and the purge cannot
-    // reintroduce it. This is the bound on the exposure that column accepts.
+    // live_receipt_hash is cleared at close. The purge must not restore it.
     await runWholeElection()
     const row = await env.DB
       .prepare('SELECT count(*) c FROM vote_receipt WHERE live_receipt_hash IS NOT NULL')
@@ -271,7 +261,7 @@ describe('privacy and secret-ballot invariants after a whole election', () => {
   })
 
   it('keeps the audit record while holding no member names', async () => {
-    // What the retention rule is for: a checkable count, and none of the names.
+    // The retention rule: a checkable count and no names.
     await runWholeElection()
     for (const table of ['voter_roll', 'check_in']) {
       const row = await env.DB.prepare(`SELECT count(*) c FROM ${table}`).first<{ c: number }>()

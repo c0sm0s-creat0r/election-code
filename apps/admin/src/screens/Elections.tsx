@@ -1,9 +1,6 @@
 /**
  * The officer's election list: create one, pick one, or see its result.
- *
- * Drafts come from the officer-only listing. The public route hides them, so
- * without that endpoint an officer who reloaded could not find the election they
- * had just created.
+ * Drafts come from the officer-only listing. The public route hides them.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useOutletContext } from 'react-router'
@@ -23,12 +20,10 @@ export function Elections() {
   const [seats, setSeats] = useState('1')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  // The form is a disclosure, not a permanent fixture. Creating an election is a
-  // once-per-office act; the list is what an officer comes back to.
+  // A disclosure: officers create elections rarely and return to the list often.
   const [creating, setCreating] = useState(false)
-  // Only ever `true` once the server has said the roll is empty. Unknown — still
-  // loading, or the request failed — shows nothing: a warning that flashes up and
-  // disappears on every visit is one officers learn to ignore.
+  // True only once the server says the roll is empty. Unknown shows nothing,
+  // so the warning does not flash.
   const [rollMissing, setRollMissing] = useState(false)
 
   const reload = useCallback(async () => {
@@ -87,8 +82,7 @@ export function Elections() {
 
       {error !== '' && <p className="error" role="alert">{error}</p>}
 
-      {/* Without a roll nobody can be checked in, and without a check-in nobody
-          can vote — so this is worth saying before the day, not at the door. */}
+      {/* no roll means no check-ins and no votes; say so before the day */}
       {rollMissing && (
         <p className="roll-missing" role="status">
           !!! No members have been imported yet. <Link to={`/b/${slug}/roll`}>Upload the member roll</Link>{' '}!!!.

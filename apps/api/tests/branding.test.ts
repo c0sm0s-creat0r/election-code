@@ -40,7 +40,7 @@ describe('branding', () => {
   })
 
   it('rejects a javascript: logo URL', async () => {
-    // the same allow-list the provisioning path uses, not a second copy of it
+    // the same allow-list as sign-up, not a second copy
     expect((await patch({ ...validBranding, logo_url: 'javascript:alert(1)' })).status).toBe(400)
   })
 
@@ -54,9 +54,7 @@ describe('branding', () => {
   })
 
   it('rejects a partial body rather than merging it', async () => {
-    // PATCH here replaces the whole branding object. A partial merge would let
-    // a missing accent_color silently keep an old value the officer thought
-    // they had cleared, and branding is one small object edited as a whole.
+    // PATCH replaces the whole object, so a partial body is refused.
     expect((await patch({ title: 'Only a title' })).status).toBe(400)
   })
 

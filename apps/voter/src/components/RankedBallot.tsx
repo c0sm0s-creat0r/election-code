@@ -1,21 +1,10 @@
 /**
- * The ranked ballot.
+ * The ranked ballot. The rank number is always visible. Removing a preference
+ * renumbers the rest and discards none.
  *
- * **What the legacy app got wrong.** `toggleRank` appended clicks to an array, so
- * rank came from the order you happened to tap, no ordinal was ever shown, and
- * changing preference 2 meant unticking everything after it. Spec §4 requires
- * this rebuilt rather than ported. So: the ordinal is always visible, removing a
- * preference renumbers the rest and discards nothing, and order is explicit.
- *
- * **Reordering is arrows, and there is no drag.** Spec §4 says "arrows or drag".
- * Drag is fiddly with a thumb, and it needs a keyboard-accessible equivalent
- * built anyway — which is arrows. Building both doubles the work on the harder
- * interaction. The boundary arrows are **disabled, not hidden**, so a row never
- * reflows under a thumb already moving toward it.
- *
- * **Every control's accessible name includes the candidate.** A button labelled
- * only "▲" is unusable with a screen reader, and it forces tests to find rows by
- * index rather than by what they are.
+ * Reordering is by arrows, never drag. Boundary arrows are disabled, not
+ * hidden, so rows do not reflow. Every control's accessible name includes
+ * the candidate.
  */
 import { useState } from 'preact/hooks'
 import { minimumPreferences } from '@election/core'
@@ -27,10 +16,7 @@ export type RankedBallotProps = {
   seats: number
   onSubmit: (preferences: string[]) => void
   submitting: boolean
-  /**
-   * A draft handed back after a session lapsed mid-ballot. A voter who has to
-   * sign in again must not lose their ranking (spec §4.4).
-   */
+  /** A draft restored after the session expired mid-ballot. */
   initialRanking?: string[]
 }
 
@@ -39,7 +25,7 @@ export function RankedBallot({
 }: RankedBallotProps) {
   const [ranking, setRanking] = useState<string[]>(initialRanking ?? [])
 
-  // The same function the API calls, so the two cannot disagree.
+  // The same function the API calls, so the two agree.
   const minimum = minimumPreferences(seats, candidates.length)
   const nameOf = new Map(candidates.map((c) => [c.id, c.name]))
   const unranked = candidates.filter((c) => !ranking.includes(c.id))
@@ -47,7 +33,7 @@ export function RankedBallot({
 
   const addPreference = (id: string) => setRanking((current) => [...current, id])
 
-  /** Removing renumbers the rest, and discards nothing. */
+  /** Removing renumbers the rest and discards none. */
   const removePreference = (id: string) =>
     setRanking((current) => current.filter((existing) => existing !== id))
 
@@ -63,8 +49,7 @@ export function RankedBallot({
     })
 
   const submit = () => {
-    // Guarded here as well as by the disabled attribute: a disabled button is a
-    // presentation detail, and this is the rule.
+    // The rule. The disabled attribute only presents it.
     if (!complete || submitting) return
     onSubmit(ranking)
   }
@@ -142,10 +127,7 @@ export function RankedBallot({
         </section>
       )}
 
-      {/*
-        A live region, so a screen reader hears the gate rather than discovering a
-        dead button. role="status" is polite: it does not interrupt.
-      */}
+      {/* role="status", so a screen reader announces why the button is disabled */}
       <p class="progress muted" role="status">
         {ranking.length} of {minimum} required preference{minimum === 1 ? '' : 's'} ranked
         {complete ? 'Ready to submit' : ''}

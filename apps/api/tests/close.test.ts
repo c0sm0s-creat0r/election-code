@@ -20,13 +20,13 @@ const close = (cookie = f.officerCookie, electionId = f.electionId) =>
     method: 'POST', headers: { cookie },
   })
 
-/** Void the first voter's ballot, via the receipt they were handed. */
+/** Void the first voter's ballot. */
 const voidOneBallot = async () => {
   const hash = await env.DB
     .prepare('SELECT live_receipt_hash FROM vote_receipt WHERE usu_id = ?')
     .bind('2400001').first<{ live_receipt_hash: string }>()
-  // the test holds the hash, not the token, so void directly — the route is
-  // covered by receipts.test.ts
+  // The test holds the hash, not the token, so void directly.
+  // receipts.test.ts covers the route.
   await env.DB.prepare('UPDATE ballot SET voided = 1 WHERE receipt_hash = ?').bind(hash!.live_receipt_hash).run()
   await env.DB.prepare('UPDATE vote_receipt SET live_receipt_hash = NULL WHERE usu_id = ?').bind('2400001').run()
 }
@@ -113,9 +113,8 @@ describe('close and seal', () => {
   })
 
   it('CLEARS the ballot-to-voter link on every receipt — HANDOFF §2', async () => {
-    // While an election is open, live_receipt_hash joins a usu_id to that
-    // ballot's preferences. Nothing can be voided after close, so the link has
-    // no remaining purpose and must not outlive the count.
+    // While open, live_receipt_hash joins a usu_id to a ballot. It must not
+    // outlive close.
     const before = await env.DB
       .prepare('SELECT count(*) c FROM vote_receipt WHERE live_receipt_hash IS NOT NULL')
       .first<{ c: number }>()

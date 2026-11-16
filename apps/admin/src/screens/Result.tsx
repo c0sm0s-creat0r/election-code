@@ -1,11 +1,9 @@
 /**
- * The sealed result: winners, the round-by-round table, every tie-break, and the
+ * The sealed result: winners, the round table, every tie-break, and the
  * digest that ties it to the exported ballots.
  *
- * There is no "compute" button. The count runs when the result is first
- * requested and is then stored, so this screen renders a record rather than an
- * opinion — which is also what makes an override a *new* versioned row instead
- * of a silent change to an old answer.
+ * No "compute" button. The count runs on first request and is stored. An
+ * override adds a new version.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getResult, overrideTieBreak, type OverrideRequest, type ResultDocument } from '../api.js'
@@ -44,7 +42,7 @@ export function Result({ batchId, electionId, slug }: ResultProps) {
     }
   }
 
-  // The only screen deep enough to need one; everywhere else the nav is enough.
+  // the only screen deep enough to need a back link
   const back = <p><Link to={`/b/${slug}/elections`}>← All elections</Link></p>
 
   if (error !== '') {
@@ -59,8 +57,7 @@ export function Result({ batchId, electionId, slug }: ResultProps) {
 
   if (!result) return <p className="muted">Loading the result…</p>
 
-  // Candidate list for the tie-break labels, taken from the count's own first
-  // round so it matches exactly what was counted.
+  // From the count's first round, so the labels match what was counted.
   const candidates = (result.rounds[0]?.counts ?? []).map((count) => ({
     id: count.candidateId,
     name: count.name,

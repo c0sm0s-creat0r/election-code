@@ -6,11 +6,7 @@ const mockFetch = (status: number, body: unknown) =>
     status, headers: { 'content-type': 'application/json' },
   })))
 
-/**
- * A spy whose parameters are declared, so `mock.calls[0]` is a real tuple. A
- * bare `vi.fn(async () => …)` types its calls as `[]`, and every assertion about
- * what was sent becomes a type error.
- */
+/** Parameters are declared so `mock.calls[0]` is a typed tuple. */
 const spyFetch = (respond: () => Response) =>
   vi.fn(async (_url: string, _init?: RequestInit) => respond())
 

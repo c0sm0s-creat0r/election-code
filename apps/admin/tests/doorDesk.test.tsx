@@ -13,7 +13,7 @@ const quorum = { checked_in: 1, eligible: 2, guests: 3, added_at_door: 1 }
 
 let fetchSpy: ReturnType<typeof vi.fn>
 
-/** Routes by URL, the way the component actually calls the API. */
+/** Routes stubbed responses by URL. */
 const stubApi = (over: (url: string) => unknown = () => undefined) => {
   fetchSpy = vi.fn(async (url: string) => {
     const custom = over(url)
@@ -32,16 +32,14 @@ const stubApi = (over: (url: string) => unknown = () => undefined) => {
 }
 
 /**
- * Spies rather than inspection. This environment's `localStorage` is a bare stub
- * with no methods, so reading `.length` would assert nothing — and a spy is the
- * stronger test regardless: it catches a write whatever backs the store.
+ * Spies, not inspection: this environment's `localStorage` is a stub with no
+ * methods, and a spy catches a write whatever backs the store.
  */
 let writes: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   writes = vi.fn()
-  // stubGlobal replaces the binding. Assigning onto the environment's own
-  // storage object fails: it is a locked proxy whose set trap refuses writes.
+  // stubGlobal: the environment's storage object refuses assignment
   const fake = () => ({
     setItem: writes, getItem: () => null, removeItem: () => {}, clear: () => {},
     key: () => null, length: 0,
@@ -99,16 +97,14 @@ describe('DoorDesk', () => {
   })
 
   it('NEVER writes the roll to browser storage', async () => {
-    // 1,300 members' names and USU ids on a volunteer's personal device would sit
-    // outside the post-AGM purge, which is the thing that makes the retention
-    // claim true. LIMITATIONS.md §10 accepts losing the roll on reload instead.
+    // Names on a volunteer's device would survive the purge (LIMITATIONS.md §10).
     stubApi(); await show()
     search('lovel')
     expect(writes).not.toHaveBeenCalled()
   })
 
   it('does NOT refetch the whole roll to check someone in', async () => {
-    // ~50 KB per tap over venue wifi, 1,300 times, is the cost this avoids.
+    // Reloading would cost ~50 KB per tap over venue wifi, 1,300 times.
     stubApi(); await show()
     const rollFetches = () =>
       fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith('/roll')).length
@@ -127,10 +123,7 @@ describe('DoorDesk', () => {
   })
 
   it('HANDS BACK to the sign-in form on a 403, instead of stranding the volunteer', async () => {
-    // requireRole answers 403 for a valid session of the wrong role — an officer
-    // opening the check-in desk. The desk used to render and then fail every request
-    // with "that session does not have permission to do this", with nothing to
-    // click. Now it returns to the password form.
+    // 403 is a valid session of the wrong role, e.g. an officer opening the desk.
     stubApi((url) => (url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined))
     renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
     await waitFor(() => expect(onSessionLost).toHaveBeenCalled())

@@ -1,16 +1,8 @@
 export type BallotCheck = { ok: true } | { ok: false; reason: string }
 
 /**
- * Senate-style minimum: rank at least as many candidates as there are seats.
- * Capped at the candidate count, because demanding 5 preferences in a
- * 4-candidate field is unsatisfiable.
- *
- * Floored at 1. Without the floor, `seats = 0` or an empty candidate list
- * collapses the minimum to 0 and `validateBallot([], [], 1)` returns ok - a
- * ballot that ranks nobody, accepted as valid. `count` then carries it as a
- * ballot for quota purposes while it votes for no one. Callers inside this
- * repo never pass those values, but this library is meant to be usable
- * standalone, so it refuses on its own rather than on their discipline.
+ * Minimum preferences: the number of seats, capped at the candidate count.
+ * Never below 1, so an empty ballot is invalid.
  */
 export function minimumPreferences(seats: number, candidateCount: number): number {
   return Math.max(1, Math.min(seats, candidateCount))

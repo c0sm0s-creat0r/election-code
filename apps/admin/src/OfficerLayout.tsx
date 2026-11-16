@@ -1,15 +1,9 @@
 /**
- * Everything every officer screen shares: the society, the session gate, and a
- * nav bar that is always on screen.
+ * Shared by every officer screen: the society, the session gate, and a nav
+ * of router `Link`s, so navigation does not reload the app.
  *
- * The nav is the answer to "there are no back arrows". With every destination one
- * tap away and always visible, browser back stops being the way to get around —
- * and because these are router `Link`s rather than `<a href>`, navigating does not
- * reload the app, so nothing is thrown away and nothing is re-fetched.
- *
- * The gate lives here rather than on the home screen, so a direct link or an
- * expired session shows a password form on any officer route instead of a 401
- * that reads as "wrong password".
+ * The gate is here so a direct link or an expired session shows the password
+ * form on any officer route.
  */
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useParams } from 'react-router'
@@ -19,7 +13,7 @@ import { ElectionHelp } from './components/ElectionHelp.js'
 
 const OfficerSignIn = lazy(() => import('./screens/OfficerSignIn.js').then((m) => ({ default: m.OfficerSignIn })))
 
-/** Available to every officer screen through the router's outlet context. */
+/** Passed to every officer screen through the outlet context. */
 export type OfficerContext = { batch: Batch }
 
 const NAV = [
@@ -67,12 +61,7 @@ export function OfficerLayout() {
   return (
     <>
       <header className="officer-header">
-        {/*
-          Sign out sits with the society's name rather than in the nav. It is not a
-          destination, and a row of places to go with one way out on the end of it
-          invites the tap that ends the session by accident — on a phone the nav
-          wraps, so which row it lands on is not predictable.
-        */}
+        {/* Sign out sits with the society's name, not in the nav: it is not a destination. */}
         <div className="officer-title">
           <h1>
             <Link to={base}>{batch.branding.title}</Link>
@@ -101,8 +90,7 @@ export function OfficerLayout() {
               )
             })}
             <li>
-              {/* A full navigation on purpose: the check-in desk is a separate chunk
-                  and a separate password, so it is a departure rather than a tab. */}
+              {/* a full navigation: the check-in desk is a separate chunk and password */}
               <a href={`${base}/door`}>Check-in desk</a>
             </li>
 

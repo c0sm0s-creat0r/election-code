@@ -21,10 +21,7 @@ import { doorVoters } from './routes/doorVoters.js'
 
 export type Env = {
   DB: D1Database
-  /**
-   * Rate-limit bindings, one per budget. Configuration, not a dependency — see
-   * src/middleware/rateLimit.ts for why the numbers are as loose as they are.
-   */
+  /** One binding per budget. The numbers are in wrangler.jsonc. */
   BATCH_CREATE_LIMITER: RateLimit
   STAFF_SIGNIN_LIMITER: RateLimit
   VOTING_LIMITER: RateLimit
@@ -33,9 +30,8 @@ export type Env = {
   SUPER_ADMIN_KEY: string
   SESSION_SECRET: string
   /**
-   * Comma-separated exact origins allowed to make credentialed requests —
-   * e.g. `https://admin.dalyell.com.au,https://vote.dalyell.com.au`.
-   * Scheme and host, no trailing slash, no wildcards.
+   * Comma-separated exact origins allowed to send credentials, e.g.
+   * `https://admin.dalyell.com.au,https://vote.dalyell.com.au`. No wildcards.
    */
   ALLOWED_ORIGINS: string
 }
@@ -50,16 +46,9 @@ const allowedOrigins = (raw: string | undefined): string[] =>
 
 app.use('/api/*', (c, next) =>
   cors({
-    /**
-     * **Never `origin: '*'`, and never reflect the request's Origin.** Both look
-     * like the fix when authenticated requests fail, and neither is: `*` is
-     * rejected by browsers alongside credentials, and reflection is `*` with
-     * extra steps. When requests fail opaquely, check the deployment hostnames
-     * first — docs/EXECUTION.md §1.
-     *
-     * Returning null omits the header entirely, which is what makes the browser
-     * refuse, rather than a header saying "denied".
-     */
+    // Never `*`, never the reflected Origin: browsers reject `*` with
+    // credentials. Null omits the header. If authenticated requests fail
+    // opaquely, check the hostnames first (docs/EXECUTION.md §1).
     origin: (origin) => {
       const list = allowedOrigins(c.env.ALLOWED_ORIGINS)
       return list.includes(origin) ? origin : null
@@ -67,9 +56,7 @@ app.use('/api/*', (c, next) =>
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['content-type', 'x-super-admin-key'],
-    // The attendance and ballot CSV exports are cross-origin under spec §1.
-    // A frontend that fetches one to a blob cannot read its filename without
-    // this; an <a download> navigation would work, a fetch would not.
+    // Lets a frontend read a CSV export's filename.
     exposeHeaders: ['content-disposition'],
     maxAge: 600,
   })(c, next),
@@ -98,16 +85,8 @@ app.route('/', doorVoters)
 
 app.notFound((c) => c.json({ error: 'not found' }, 404))
 
-/**
- * Every route in this API answers JSON, including its failures. Hono's default
- * handler returns a text/plain "Internal Server Error", so a frontend calling
- * res.json() throws on the parse and surfaces a parse error instead of the 500
- * that actually happened — the sort of thing that wastes an hour at an AGM.
- *
- * The error itself is logged, never returned: assertUsableSecret and similar
- * guards throw messages about configuration that a caller has no business
- * reading.
- */
+// Failures are JSON, so a frontend's res.json() does not throw on a 500. The
+// error is logged, not returned: it may describe configuration.
 app.onError((err, c) => {
   console.error('unhandled error', err)
   return c.json({ error: 'internal' }, 500)

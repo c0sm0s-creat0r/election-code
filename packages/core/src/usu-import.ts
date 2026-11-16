@@ -9,13 +9,9 @@ export type ImportResult = {
   members: RollMember[]
   eligible: number
   excluded: number
-  /** true when the export had the 29-column defect */
+  /** True when the export had the 29-column defect. */
   shifted: boolean
-  /**
-   * Rows present in the file but not imported: a blank Net Id, or a field
-   * count that is neither 28 nor 29 (malformed - realignment cannot be
-   * safely guessed, so the row is dropped rather than misread).
-   */
+  /** Rows dropped: blank Net Id, or a field count that is neither 28 nor 29. */
   skipped: number
 }
 
@@ -23,21 +19,8 @@ const HEADER_COLUMNS = 28
 const SHIFT_AT = 10 // an extra source-type-text field appears here
 
 /**
- * Parse an entire CSV document into rows of fields.
- *
- * Quote state is tracked across the WHOLE character stream, not line by
- * line - a quoted field containing a literal newline (plausible in the
- * free-text "Officer  Notes" column) does not fracture one logical row
- * into fragments. A row ends only on a newline (\r\n or bare \n)
- * encountered OUTSIDE quotes. `""` inside a quoted field is an escaped
- * literal quote. A trailing newline at end of file does not produce an
- * extra empty row.
- *
- * Throws if the file ends while still inside a quoted field: an unclosed
- * quote can silently merge multiple logical rows into one oversized field,
- * which would otherwise be reported as a single malformed/skipped row
- * while the true number of lost members goes uncounted. A corrupt file is
- * refused outright rather than partially imported.
+ * Single-pass CSV parse, so a quoted newline does not split a row. Throws on
+ * an unterminated quote: rows have merged and `skipped` would undercount.
  */
 function parseCsvRows(csv: string): string[][] {
   const rows: string[][] = []
@@ -82,14 +65,6 @@ function parseCsvRows(csv: string): string[][] {
     i++
   }
 
-  // Tracking quotes across the whole file (rather than line by line) is
-  // what lets a genuine embedded newline survive intact - but it also means
-  // a single stray unescaped `"` no longer runs away to the end of one
-  // line; it swallows every following newline and row until another `"`
-  // closes it, or until EOF. If we reach EOF still inQuotes, rows have
-  // already been silently merged and any field count / skipped count
-  // computed from them would understate how many members were actually
-  // lost. Refuse to guess: the whole file is untrustworthy.
   if (inQuotes) {
     throw new Error(
       'parseUsuExport: unterminated quoted field — the export is corrupt. ' +
@@ -97,7 +72,7 @@ function parseCsvRows(csv: string): string[][] {
     )
   }
 
-  // flush a final row that wasn't terminated by a trailing newline
+  // Flush a final row with no trailing newline.
   if (started || cur.length > 0 || row.length > 0) {
     row.push(cur)
     rows.push(row)
@@ -109,21 +84,13 @@ function parseCsvRows(csv: string): string[][] {
 /**
  * Parse a USU member export into roll entries.
  *
- * The export is malformed: 28 header columns but 29 per data row, with an
- * unnamed source-type-text field at index 10 shifting everything after it.
- * Net Id, First Name and Last Name sit BEFORE the shift and parse either
- * way. "Left Group" sits after it - read from the header position it is 0
- * for every row, which silently grants departed members voting rights.
+ * The export has 28 header columns but 29 per data row: an unnamed field at
+ * index 10 shifts the rest. Read at its header position, "Left Group" is 0
+ * for every row, which would give departed members a vote. The offset comes
+ * from each row's field count. Rows that are neither 28 nor 29 wide are
+ * skipped and counted.
  *
- * The shift offset is derived from each row's own field count
- * (`cells.length - HEADER_COLUMNS`), not assumed to always be exactly one.
- * A row whose field count is neither 28 nor 29 is malformed - its
- * alignment cannot be safely guessed, so it is skipped and counted rather
- * than silently misread.
- *
- * Only four columns are imported. Email, membership dates and the other two
- * identifiers are deliberately discarded: the roll holds an id and a name
- * and nothing else.
+ * Keeps id, names and eligibility. Discards email and everything else.
  */
 export function parseUsuExport(csv: string): ImportResult {
   const rows = parseCsvRows(csv).filter((r) => !(r.length === 1 && (r[0] ?? '').trim() === ''))
@@ -148,7 +115,6 @@ export function parseUsuExport(csv: string): ImportResult {
     const offset = cells.length - HEADER_COLUMNS
 
     if (offset !== 0 && offset !== 1) {
-      // neither 28 nor 29 fields: alignment cannot be safely guessed
       skipped++
       continue
     }

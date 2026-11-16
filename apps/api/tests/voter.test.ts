@@ -92,8 +92,8 @@ describe('voter sign-in', () => {
   })
 
   it('refuses an ineligible member even once checked in', async () => {
-    // the door refuses to check them in, so force the row to prove sign-in
-    // does not rely on that refusal being the only gate
+    // the door refuses to check them in, so force the row: sign-in must not
+    // depend on that refusal
     await env.DB.prepare('INSERT INTO check_in (batch_id, usu_id, checked_in_at) VALUES (?,?,?)')
       .bind(batchId, INELIGIBLE_USU_ID, Date.now()).run()
     const res = await voterSignIn(INELIGIBLE_USU_ID, INELIGIBLE_SURNAME)
@@ -136,13 +136,7 @@ describe('voter sign-in', () => {
   })
 
   it('does NOT audit an unauthenticated miss', async () => {
-    // Deliberate, and the opposite of staff sign-in. This route is limited at
-    // 300/10min -- loose because CGNAT means one IP is a whole room, and it
-    // cannot be tightened without locking out the queue. Auditing every wrong
-    // guess therefore lets an anonymous caller write thousands of rows into the
-    // one table the retention rule cannot purge, burying the real entries in
-    // the artifact the audit design exists to produce. The rate limiter bounds
-    // guessing; the audit log is not the place to count it.
+    // Auditing every wrong guess would let an anonymous caller flood audit_log.
     await voterSignIn('9999999', 'Nobody')
     await voterSignIn('2400001', 'Wrong')
     const row = await env.DB.prepare(`SELECT count(*) c FROM audit_log WHERE action LIKE 'session.voter%'`).first<{ c: number }>()
@@ -150,9 +144,7 @@ describe('voter sign-in', () => {
   })
 
   it('DOES audit a refusal that names a real roll member', async () => {
-    // Bounded by the roll (a caller must already have a valid id AND surname),
-    // and the one an officer actually needs: it means someone is at the door
-    // with a membership problem, or trying ids they have somehow collected.
+    // Bounded by the roll: the caller already has a valid id and surname.
     await env.DB.prepare('INSERT INTO check_in (batch_id, usu_id, checked_in_at) VALUES (?,?,?)')
       .bind(batchId, INELIGIBLE_USU_ID, Date.now()).run()
     await voterSignIn(INELIGIBLE_USU_ID, INELIGIBLE_SURNAME)

@@ -1,17 +1,9 @@
 /**
- * Provisions the one election the smoke test needs, through the real API.
+ * Creates the one election the smoke test needs, through the real API.
+ * `apps/api` has no seeding endpoint and must never get one.
  *
- * **Deliberately not a seeding endpoint.** A route in `apps/api` that provisions
- * voters would be the single worst thing that could exist in this codebase, and
- * "it's only enabled in dev" is exactly how such a thing reaches production. This
- * uses only the documented endpoints.
- *
- * **Idempotent, because the database persists.** The run has its own database
- * (`--persist-to .wrangler-e2e`, see playwright.config.ts) rather than the one
- * `npm run dev` uses, so its data is never visible on the society list — but that
- * database survives between runs. So this tolerates the society already existing,
- * closes any election a previous run left open, and opens a fresh one. One
- * society, one open election, however many times it runs.
+ * Idempotent: the run's database (`.wrangler-e2e`) persists. It tolerates an
+ * existing society, closes any open election, and opens a new one.
  */
 const API = 'http://localhost:8787'
 
@@ -27,7 +19,7 @@ const SUPER_KEY = 'e2e-super-admin-key'
 const json = { 'content-type': 'application/json' }
 const cookieOf = (res: Response) => (res.headers.get('set-cookie') ?? '').split(';')[0] ?? ''
 
-/** Just enough of a USU export to import one eligible member. */
+/** The minimum USU export that imports one eligible member. */
 const rollCsv = [
   '"User Identifier","Net Id","Member Identifier","First Name","Last Name","Email","Year Of Graduation","Member Type","Officer","Source Type","Membership End Date","Signup Date","Membership Payments","Events Payments","Member Tags","Sub-Groups Tags","User Tags","Officer  Notes","Last Online iOS","Last Online Android","Unsubscribed from all emails","Left Group","Left Group Reason","Dalyell Status","First Aid Expiry","Online Module Expiry","RSA Expiry","Working with Children Expiry"',
   `"600001","${USU_ID}","11000001","Ada","${SURNAME}","ada@example.com","-","","Member","0","Web","Joined a group","12/31/2026","1/1/2026 9:00:00 AM","0","0","-","-","-","-","","","0","0","","","","",""`,
@@ -51,12 +43,12 @@ export default async function seed(): Promise<void> {
   await closeAnyOpenElections(batchId, officer.cookie)
   await openFreshElection(batchId, officer.cookie)
 
-  // Already checked in returns 200 with `already: true`, so this is repeatable.
+  // A repeat check-in returns 200 with `already: true`.
   await post(`/api/batches/${batchId}/check-in`, 'check in',
     { headers: { ...json, ...door }, body: JSON.stringify({ usu_id: USU_ID }) })
 }
 
-/** A 409 means a previous run created it. That is expected, not a failure. */
+/** A 409 means a previous run created it. */
 async function findOrCreateSociety(): Promise<string> {
   const res = await fetch(`${API}/api/batches`, {
     method: 'POST',
@@ -85,9 +77,8 @@ async function signIn(batchId: string, role: 'officer' | 'door', password: strin
 }
 
 /**
- * The voter app lists every open election and the test votes in the one it finds.
- * A previous run's election is still open and its voter has already voted there,
- * so leaving it would give the test two `Vote` buttons and a 409 behind one.
+ * Close the previous run's election. Its voter has voted, so leaving it open
+ * gives the test two `Vote` buttons, one of which returns 409.
  */
 async function closeAnyOpenElections(batchId: string, officerCookie: string): Promise<void> {
   const res = await fetch(`${API}/api/batches/${batchId}/officer/elections`, {

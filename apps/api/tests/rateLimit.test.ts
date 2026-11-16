@@ -5,10 +5,9 @@ import type { Env } from '../src/index.js'
 import { rateLimit, RATE_LIMITS } from '../src/middleware/rateLimit.js'
 
 /**
- * The limiter runs against a fake binding: the real one's counters cannot be
- * reset between tests, so vitest.config.ts gives integration tests limits they
- * never reach. What is tested here is the middleware's contract; the numbers
- * are Cloudflare's to enforce and are checked against wrangler.jsonc below.
+ * A fake binding: the real one's counters cannot be reset between tests.
+ * This tests the middleware. The numbers are checked against wrangler.jsonc
+ * below.
  */
 function fakeLimiter(limit: number) {
   const counts = new Map<string, number>()
@@ -50,7 +49,7 @@ describe('rate limiting', () => {
     expect(res.status).toBe(429)
     expect(await res.json()).toMatchObject({ error: 'rate_limited', retry_after: 60 })
     expect(res.headers.get('retry-after')).toBe('60')
-    // A 429 on sign-in must not have run PBKDF2 or written an audit row.
+    // A 429 on sign-in runs no PBKDF2 and writes no audit row.
     expect(handled()).toBe(1)
   })
 
@@ -70,8 +69,7 @@ describe('rate limiting', () => {
     expect(keys).toEqual(['192.0.2.5'])
   })
 
-  // The failure that prompted the move off KV: the limiter's own storage threw,
-  // and every limited route -- ballots included -- returned 500 for the day.
+  // A limiter outage must not stop voting.
   it('fails open when the limiter itself throws', async () => {
     const broken = { limit: async () => { throw new Error('limiter down') } } as unknown as RateLimit
     const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: broken })

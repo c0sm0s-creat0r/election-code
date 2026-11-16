@@ -48,23 +48,13 @@ describe('count - first preferences', () => {
     expect(r.winners).toEqual([])
   })
 
-  // NOTE: there is deliberately no "conserves votes in every round" test here.
-  // recordRound() throws on any leak, exactly, in bigint - so such a test could
-  // only ever run after count() had already succeeded, and the float version of
-  // it (toBeCloseTo) was strictly weaker than the check it restated.
+  // No conservation test here: recordRound() throws on any leak.
 })
 
 describe('count - every candidate at quota is elected in the same round (C1)', () => {
-  // 5 candidates, 3 seats, 11 ballots, quota = floor(11/4)+1 = 3. Zero
-  // tie-breaks, so the whole result is forced by the arithmetic.
-  //
-  // In round 1 both c (4 first preferences) and d (3) are at or above quota.
-  // Electing only c and leaving d 'continuing' sends c's surplus ONTO d, who
-  // has already been paid a quota - lifting d to 3.50000 and manufacturing a
-  // 0.50000 surplus that is then redistributed by d's preferences. That gave
-  // the third seat to e instead of b. See Commonwealth Electoral Act s273(8)
-  // (elected at that count) and s273(1) (an elected candidate is no longer
-  // continuing, so a surplus must skip them).
+  // 5 candidates, 3 seats, 11 ballots, quota = floor(11/4)+1 = 3, no ties.
+  // In round 1 both c (4) and d (3) are at quota. c's surplus must skip d
+  // (CEA s273(8)); landing on d would hand the third seat to e instead of b.
   const fixture = 'edacb cdbea becad beadc cdbae edbca cbead daebc caebd daecb dceab'.split(' ')
   const run = () =>
     count({
@@ -97,9 +87,7 @@ describe('count - every candidate at quota is elected in the same round (C1)', (
 
 describe('count - the zero-vote guard', () => {
   it('holds no count when every ballot ranks nobody', async () => {
-    // Three ballots, three candidates, one seat, and not a single vote on
-    // anybody. Guarding only on ballots.length === 0 let this run two seeded
-    // draws and "elect" a winner on 0.00000 votes.
+    // three ballots that rank no candidate must not elect anyone on 0.00000
     const r = await count(
       base({
         ballots: [

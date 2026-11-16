@@ -1,10 +1,6 @@
 /**
- * A society's own logo, or nothing at all — never a placeholder.
- *
- * `alt=""` on purpose: the society's name is always rendered beside it, so a
- * screen reader that announced the image would read the name twice. `logoSrc`
- * is what makes it load at all — a stored `logo_url` is root-relative to the
- * *API*, not to this app.
+ * A society's logo, or nothing. `alt=""`: the name is always beside it.
+ * `logoSrc` resolves the stored URL against the API.
  */
 import { logoSrc, type Branding } from '../api.js'
 

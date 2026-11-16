@@ -3,11 +3,7 @@ import { screen } from '@testing-library/react'
 import { Exports } from '../src/screens/Exports.js'
 import { renderRouted } from './renderOfficer.js'
 
-/**
- * The component shows what it was given: the files for one election, or the
- * whole-AGM files — never both. Repeating the AGM-wide ones under every election's
- * result would suggest they were about that election.
- */
+/** Shows the files for one election or the whole-AGM files, never both. */
 describe('Exports', () => {
   it('offers the per-election files when given an election', () => {
     renderRouted(<Exports batchId="b1" electionId="e1" />)
@@ -37,7 +33,7 @@ describe('Exports', () => {
   })
 
   it('links straight at the API, so the browser streams the file to disk', () => {
-    // A fetch would hold a multi-megabyte CSV in a laptop's memory mid-AGM.
+    // a link streams to disk; a fetch would hold the whole CSV in memory
     renderRouted(<Exports batchId="b1" electionId="e1" />)
     const href = screen.getByRole('link', { name: /ballots \(csv\)/i }).getAttribute('href')
     expect(href).toContain('/api/batches/b1/elections/e1/ballots.csv')

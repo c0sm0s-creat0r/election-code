@@ -6,7 +6,7 @@
 		"nodejs_compat"
 	],
 	// Must share an apex with vote. and admin.: the session cookie is
-	// SameSite=Strict, so on *.workers.dev it is never sent. See EXECUTION.md §1.
+	// SameSite=Strict, so on *.workers.dev it is not sent. See EXECUTION.md §1.
 	"routes": [
 		{ "pattern": "api.dalyell.com.au", "custom_domain": true }
 	],
@@ -18,17 +18,15 @@
 			"remote": true
 		}
 	],
-	// Per-IP rate limits. Not KV: its 1,000 writes a day ran out and every
-	// limited route returned 500. Sizing rationale in src/middleware/rateLimit.ts;
-	// a period change must be mirrored in RATE_LIMITS there. namespace_id only
-	// has to be unique within the account.
+	// Per-IP rate limits (see src/middleware/rateLimit.ts). Mirror any period
+	// change in RATE_LIMITS there. namespace_id need only be unique within the
+	// account.
 	"ratelimits": [
 		{ "name": "BATCH_CREATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
 		{ "name": "STAFF_SIGNIN_LIMITER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
 		{ "name": "VOTING_LIMITER", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
 	],
-	// Society logos. Objects are keyed by a hash of their content, so they are
-	// immutable and one society can never overwrite another's.
+	// Society logos, keyed by content hash.
 	"r2_buckets": [
 		{
 			"bucket_name": "election-logos",
@@ -36,11 +34,8 @@
 			"remote": true
 		}
 	],
-	// Not a secret — the CORS allow-list is public by definition (a browser is
-	// told the answer). Exact origins only, comma-separated: never "*", and
-	// never a reflected Origin. See src/index.ts and README.md.
-	// SESSION_SECRET and SUPER_ADMIN_KEY are secrets and are deliberately
-	// absent here; set them with `wrangler secret put`.
+	// Exact origins, comma-separated. Never "*". SESSION_SECRET and
+	// SUPER_ADMIN_KEY are secrets, set with `wrangler secret put`.
 	"vars": {
 		"ALLOWED_ORIGINS": "https://admin.dalyell.com.au,https://vote.dalyell.com.au,http://localhost:5173,http://localhost:5174"
 	},

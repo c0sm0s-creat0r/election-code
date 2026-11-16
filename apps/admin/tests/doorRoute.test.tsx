@@ -43,8 +43,7 @@ describe('DoorRoute', () => {
   })
 
   it('RETURNS TO THE FORM WITH A REASON when the session ends mid-shift', async () => {
-    // The stall that prompted this: the desk used to sit on a permission error
-    // with nothing to click.
+    // without this the desk shows a permission error with nothing to click
     let signedIn = false
     stub((url) => {
       if (url.includes('/door/session')) { signedIn = true; return undefined }

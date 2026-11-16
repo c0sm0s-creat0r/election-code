@@ -1,10 +1,6 @@
 /**
- * The operator screen. Most of these tests are about what it refuses to do.
- *
- * The screen holds the one credential that can mint an officer session for every
- * society in the system, and drives the only route that can destroy a sealed
- * result. So the assertions worth having are: the key is never written anywhere,
- * the slug has to be typed back, and the request carries both.
+ * The operator screen. The key is never written anywhere, the slug must be
+ * typed back, and the request carries both.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
@@ -21,10 +17,7 @@ const societies = [
 
 type Call = { url: string; init?: RequestInit }
 
-/**
- * Routes the three calls the screen makes: the list, the by-slug lookup that
- * turns a slug into an id, and the delete itself.
- */
+/** Routes the screen's three calls: the list, the by-slug lookup, the delete. */
 const stubApi = (deleteStatus = 204) => {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -69,8 +62,7 @@ describe('Operator', () => {
   })
 
   it('WILL NOT DELETE UNTIL THE SLUG IS TYPED BACK', async () => {
-    // The id is a UUID nobody proofreads. Typing the slug is what makes deleting
-    // the wrong society take more than one click.
+    // the slug is typed back to confirm
     stubApi()
     renderRouted(<Operator />)
     typeKey('operator-key')
@@ -108,8 +100,7 @@ describe('Operator', () => {
   })
 
   it('NEVER PUTS THE KEY IN BROWSER STORAGE, or in the URL', async () => {
-    // It is the credential that can reach every society. It is typed when used
-    // and gone when the tab closes.
+    // the key is typed when used and gone when the tab closes
     const writes: string[] = []
     vi.stubGlobal('localStorage', {
       getItem: () => null,

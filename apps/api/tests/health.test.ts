@@ -18,7 +18,7 @@ describe('health', () => {
 describe('error contract', () => {
   it('answers JSON on an unhandled error, not text/plain', async () => {
     // A weak SESSION_SECRET makes sign-in throw. The frontend must be able to
-    // res.json() the response; hono's default handler would return text.
+    // res.json() the response. Hono's default handler returns text.
     const res = await SELF.fetch('https://example.com/api/batches/nope/officer/session', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -10,7 +10,7 @@ const draft = {
   candidates: [{ id: 'a', name: 'Alex' }],
 }
 
-/** The form is a disclosure now, so every creation test opens it first. */
+/** The form is a disclosure, so every creation test opens it first. */
 const openTheForm = () => fireEvent.click(screen.getByRole('button', { name: /new election/i }))
 
 const stubList = (list: unknown[], extra: (url: string) => unknown = () => undefined) =>
@@ -47,8 +47,8 @@ describe('Elections', () => {
   })
 
   it('creates an election and opens it for editing', async () => {
-    // Stateful, like the server: creating adds to what the next list returns.
-    // The list URL also ends in /elections, so the create URL is matched exactly.
+    // Stateful, like the server: creating adds to the next list. The list URL
+    // also ends in /elections, so the create URL is matched exactly.
     const made = { id: 'e9', name: 'Secretary', seats: 1, status: 'draft' as const, candidates: [] }
     let created = false
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {

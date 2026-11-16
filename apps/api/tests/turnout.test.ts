@@ -31,8 +31,7 @@ describe('turnout', () => {
   })
 
   it('NEVER leaks a tally, at any status', async () => {
-    // spec §4: turnout is visible while open, the count is not. A per-candidate
-    // figure here would reopen exactly what closing exists to control.
+    // spec §4: turnout is visible while open, the count is not
     for (const stage of ['open', 'closed'] as const) {
       if (stage === 'closed') {
         await SELF.fetch(`https://example.com/api/batches/${f.batchId}/elections/${f.electionId}/close`, {
