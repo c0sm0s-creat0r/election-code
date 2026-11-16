@@ -1,22 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ApiError } from './api.js'
+import { useEffect, useState } from 'react'
+import { ApiError, probeOfficer } from './api.js'
 
 /**
- * Whether a staff session is live, according to the server. Component state
- * is lost on reload, back navigation and new tabs while the cookie is still
- * valid.
+ * Whether the officer session is live, according to the server. Component
+ * state is lost on reload, back navigation and new tabs while the cookie is
+ * still valid.
  *
  * `checking` stops the sign-in form flashing at someone already signed in.
  */
-export type SessionState = 'checking' | 'signed-in' | 'signed-out'
+type SessionState = 'checking' | 'signed-in' | 'signed-out'
 
-export function useStaffSession(batchId: string | undefined, probe: (batchId: string) => Promise<unknown>) {
+export function useStaffSession(batchId: string | undefined) {
   const [state, setState] = useState<SessionState>('checking')
 
   useEffect(() => {
     if (batchId === undefined) return
     let live = true
-    probe(batchId)
+    probeOfficer(batchId)
       .then(() => { if (live) setState('signed-in') })
       .catch((caught: unknown) => {
         if (!live) return
@@ -27,10 +27,7 @@ export function useStaffSession(batchId: string | undefined, probe: (batchId: st
         setState(status === 401 || status === 403 ? 'signed-out' : 'signed-in')
       })
     return () => { live = false }
-  }, [batchId, probe])
+  }, [batchId])
 
-  const confirm = useCallback(() => setState('signed-in'), [])
-  const forget = useCallback(() => setState('signed-out'), [])
-
-  return { state, confirm, forget }
+  return { state, confirm: () => setState('signed-in'), forget: () => setState('signed-out') }
 }

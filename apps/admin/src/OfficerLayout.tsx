@@ -7,7 +7,7 @@
  */
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useParams } from 'react-router'
-import { getBatchBySlug, officerSignOut, probeOfficer, type Batch } from './api.js'
+import { getBatchBySlug, officerSignOut, type Batch } from './api.js'
 import { useStaffSession } from './useStaffSession.js'
 import { ElectionHelp } from './components/ElectionHelp.js'
 
@@ -28,7 +28,7 @@ export function OfficerLayout() {
   const location = useLocation()
   const [batch, setBatch] = useState<Batch | undefined>(undefined)
   const [error, setError] = useState('')
-  const { state, confirm, forget } = useStaffSession(batch?.id, probeOfficer)
+  const { state, confirm, forget } = useStaffSession(batch?.id)
 
   useEffect(() => {
     if (slug === undefined) return
