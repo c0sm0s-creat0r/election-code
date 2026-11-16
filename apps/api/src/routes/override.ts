@@ -76,7 +76,7 @@ override.post('/api/batches/:id/elections/:eid/result/override', requireRole('of
   // Accumulate, so a new override keeps the earlier ones.
   const overrides = { ...overridesInForce(tieBreaks), [tieBreakId]: { candidateId: resolvedId, reason } }
 
-  await computeAndStore(c.env.DB, batchId, sealed, overrides, current.id)
+  const stored = await computeAndStore(c.env.DB, batchId, sealed, overrides, current.id)
 
   // The decision is audited separately from the count. The detail names no
   // person and no ballot.
@@ -87,7 +87,5 @@ override.post('/api/batches/:id/elections/:eid/result/override', requireRole('of
     detail: { kind: 'tie_override', tieBreakId, reason },
   })
 
-  const stored = await currentResult(c.env.DB, electionId)
-  if (!stored) throw new Error('stored result missing immediately after being written')
   return c.json(resultDocument(sealed, stored))
 })

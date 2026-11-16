@@ -10,7 +10,7 @@
  */
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { count, type CountResult } from '@election/core'
+import { count } from '@election/core'
 import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import type { CandidateRow, CountBallotRow, ElectionResultRow, ElectionRow, ElectionSealRow } from '../db/types.js'
@@ -108,7 +108,7 @@ export async function computeAndStore(
   sealed: SealedElection,
   overrides: Record<string, { candidateId: string; reason: string }>,
   supersedes: number | null,
-): Promise<CountResult> {
+): Promise<ElectionResultRow> {
   const electionId = sealed.election.id
 
   const [{ results: candidates }, { results: ballots }] = await Promise.all([
@@ -127,14 +127,14 @@ export async function computeAndStore(
     seats: sealed.election.seats,
     electionId,
     ballotsSha256: sealed.seal.ballots_sha256,
-    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+    overrides,
   })
 
-  await db.batch([
+  const [inserted] = await db.batch<ElectionResultRow>([
     db.prepare(
       `INSERT INTO election_result
          (election_id, computed_at, quota, rounds, winners, tie_breaks, overridden, supersedes)
-       VALUES (?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?) RETURNING *`,
     ).bind(
       electionId,
       Date.now(),
@@ -153,7 +153,9 @@ export async function computeAndStore(
     }),
   ])
 
-  return result
+  const stored = inserted?.results[0]
+  if (!stored) throw new Error('stored result missing immediately after being written')
+  return stored
 }
 
 /** 409 or 404 for a failed load. One place, so every route agrees. */
@@ -183,10 +185,5 @@ result.get('/api/batches/:id/elections/:eid/result', requireRole('officer'), asy
   const existing = await currentResult(c.env.DB, electionId)
   if (existing) return c.json(resultDocument(sealed, existing))
 
-  await computeAndStore(c.env.DB, batchId, sealed, {}, null)
-
-  const stored = await currentResult(c.env.DB, electionId)
-  // Just written in a committed transaction. A miss is a broken invariant.
-  if (!stored) throw new Error('stored result missing immediately after being written')
-  return c.json(resultDocument(sealed, stored))
+  return c.json(resultDocument(sealed, await computeAndStore(c.env.DB, batchId, sealed, {}, null)))
 })
