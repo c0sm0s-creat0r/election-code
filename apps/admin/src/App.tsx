@@ -84,8 +84,7 @@ function ResultScreen() {
 
 function SettingsScreen() {
   const batch = useBatch()
-  const [branding, setBranding] = useState(batch.branding)
-  return <Settings batchId={batch.id} branding={branding} onSaved={setBranding} />
+  return <Settings batchId={batch.id} branding={batch.branding} />
 }
 
 /**

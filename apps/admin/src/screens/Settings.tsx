@@ -6,9 +6,7 @@ import { useState } from 'react'
 import { updateBranding, uploadLogo, type Branding } from '../api.js'
 import { staffMessage } from '../errorMessage.js'
 
-export type SettingsProps = { batchId: string; branding: Branding; onSaved: (next: Branding) => void }
-
-export function Settings({ batchId, branding, onSaved }: SettingsProps) {
+export function Settings({ batchId, branding }: { batchId: string; branding: Branding }) {
   const [draft, setDraft] = useState<Branding>(branding)
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
@@ -29,8 +27,7 @@ export function Settings({ batchId, branding, onSaved }: SettingsProps) {
     setError('')
     setNote('')
     try {
-      const saved = await updateBranding(batchId, draft)
-      onSaved(saved)
+      await updateBranding(batchId, draft)
       setNote('Branding saved.')
     } catch (caught) {
       setError(staffMessage(caught))
@@ -43,9 +40,7 @@ export function Settings({ batchId, branding, onSaved }: SettingsProps) {
     setNote('')
     try {
       const { logo_url } = await uploadLogo(batchId, file)
-      const next = { ...draft, logo_url }
-      setDraft(next)
-      onSaved(next)
+      setDraft({ ...draft, logo_url })
       setNote('Logo uploaded.')
     } catch (caught) {
       setError(staffMessage(caught))
