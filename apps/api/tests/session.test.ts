@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   signSession,
   verifySession,
-  verifySessionResult,
   cookieName,
   cookieOptions,
   MIN_SECRET_LENGTH,
@@ -66,21 +65,6 @@ describe('session tokens', () => {
   it('scopes the cookie name to batch and role, so one does not authorise the other', async () => {
     expect(cookieName('b1', 'officer')).not.toBe(cookieName('b1', 'door'))
     expect(cookieName('b1', 'officer')).not.toBe(cookieName('b2', 'officer'))
-  })
-
-  it('reports why a token failed, so 401 can be told from 403', async () => {
-    const expired = await signSession(base({ exp: 1_000 }), SECRET)
-    expect(await verifySessionResult(expired, SECRET, 2_000)).toEqual({ ok: false, reason: 'expired' })
-    expect(await verifySessionResult('garbage', SECRET)).toEqual({ ok: false, reason: 'invalid' })
-    const ok = await verifySessionResult(await signSession(base(), SECRET), SECRET)
-    expect(ok.ok).toBe(true)
-  })
-
-  it('never reports "expired" for a token whose signature does not verify', async () => {
-    // Otherwise the reason code reveals that a stale token was once valid.
-    const expired = await signSession(base({ exp: 1_000 }), SECRET)
-    expect(await verifySessionResult(expired, 'a-different-secret-0123456789abc', 2_000))
-      .toEqual({ ok: false, reason: 'invalid' })
   })
 
   it('sets HttpOnly, Secure, SameSite=Strict and a max age', () => {

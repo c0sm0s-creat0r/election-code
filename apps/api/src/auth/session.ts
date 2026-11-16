@@ -79,63 +79,38 @@ export async function signSession(session: Session, secret: string): Promise<str
   return `${payload}.${b64url(await hmac(payload, secret))}`
 }
 
-/**
- * The reason separates a lapsed session ("sign in again") from a refusal.
- * `expired` is reported only after the signature verifies.
- */
-export type VerifyFailure = 'expired' | 'invalid'
-export type VerifyResult = { ok: true; session: Session } | { ok: false; reason: VerifyFailure }
-
-export async function verifySessionResult(
-  token: string,
-  secret: string,
-  now: number = Math.floor(Date.now() / 1000),
-): Promise<VerifyResult> {
-  const bad = { ok: false, reason: 'invalid' } as const
-  // Also refused on verify: a deployment with a weak secret accepts nothing.
-  if (!isUsableSecret(secret)) return bad
-  const parts = token.split('.')
-  if (parts.length !== 2) return bad
-  const [payload, sig] = parts as [string, string]
-  if (!payload || !sig) return bad
-  try {
-    // Signature first. No field below affects whether we get here.
-    if (!timingSafeEqual(await hmac(payload, secret), unb64url(sig))) return bad
-    const session = JSON.parse(new TextDecoder().decode(unb64url(payload))) as Partial<Session>
-    if (typeof session.exp !== 'number') return bad
-    if (session.exp <= now) return { ok: false, reason: 'expired' }
-    if (session.role !== 'officer' && session.role !== 'door' && session.role !== 'voter') return bad
-    if (typeof session.batchId !== 'string' || session.batchId === '') return bad
-
-    // A voter token without a subject would reach the ballot query as undefined.
-    if (session.role === 'voter') {
-      if (typeof session.subject !== 'string' || session.subject === '') return bad
-      const voter: VoterSession = {
-        batchId: session.batchId,
-        role: 'voter',
-        subject: session.subject,
-        exp: session.exp,
-      }
-      return { ok: true, session: voter }
-    }
-
-    // A staff token must not carry a subject.
-    if (session.subject !== undefined) return bad
-    const staff: StaffSession = { batchId: session.batchId, role: session.role, exp: session.exp }
-    return { ok: true, session: staff }
-  } catch {
-    return bad
-  }
-}
-
-/** Returns the session or null, with no reason. */
+/** The session, or null if the token is malformed, forged or expired. */
 export async function verifySession(
   token: string,
   secret: string,
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<Session | null> {
-  const result = await verifySessionResult(token, secret, now)
-  return result.ok ? result.session : null
+  // Also refused on verify: a deployment with a weak secret accepts nothing.
+  if (!isUsableSecret(secret)) return null
+  const parts = token.split('.')
+  if (parts.length !== 2) return null
+  const [payload, sig] = parts as [string, string]
+  if (!payload || !sig) return null
+  try {
+    // Signature first. No field below affects whether we get here.
+    if (!timingSafeEqual(await hmac(payload, secret), unb64url(sig))) return null
+    const session = JSON.parse(new TextDecoder().decode(unb64url(payload))) as Partial<Session>
+    if (typeof session.exp !== 'number' || session.exp <= now) return null
+    if (session.role !== 'officer' && session.role !== 'door' && session.role !== 'voter') return null
+    if (typeof session.batchId !== 'string' || session.batchId === '') return null
+
+    // A voter token without a subject would reach the ballot query as undefined.
+    if (session.role === 'voter') {
+      if (typeof session.subject !== 'string' || session.subject === '') return null
+      return { batchId: session.batchId, role: 'voter', subject: session.subject, exp: session.exp }
+    }
+
+    // A staff token must not carry a subject.
+    if (session.subject !== undefined) return null
+    return { batchId: session.batchId, role: session.role, exp: session.exp }
+  } catch {
+    return null
+  }
 }
 
 export const cookieName = (batchId: string, role: Role): string => `es_${role}_${batchId}`
