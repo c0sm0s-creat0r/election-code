@@ -27,5 +27,5 @@ export function bulkExclusionSet(
     running += candidate.votes
   }
 
-  return chosen.slice(0, maxExcludable)
+  return chosen
 }

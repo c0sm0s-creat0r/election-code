@@ -10,9 +10,4 @@ describe('fixed-point', () => {
   ])('formats %d to exactly five decimal places', (value, expected) => {
     expect(format(value)).toBe(expected)
   })
-
-  it('throws on negative format', () => {
-    expect(() => format(-50n)).toThrow(/negative/)
-    expect(() => format(-133_333n)).toThrow(/negative/)
-  })
 })

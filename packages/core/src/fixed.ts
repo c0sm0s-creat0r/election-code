@@ -12,7 +12,6 @@ export function fromInt(n: number): Fixed {
 }
 
 export function format(f: Fixed): string {
-  if (f < ZERO) throw new Error(`fixed: cannot format a negative value: ${f}`)
   const whole = f / SCALE
   const frac = (f % SCALE).toString().padStart(5, '0')
   return `${whole}.${frac}`

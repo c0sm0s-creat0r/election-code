@@ -18,9 +18,6 @@ export function validateBallot(
   if (preferences.length < min) {
     return { ok: false, reason: `Rank at least ${min} candidate(s).` }
   }
-  if (preferences.length > candidateIds.length) {
-    return { ok: false, reason: 'More preferences than candidates.' }
-  }
 
   const known = new Set(candidateIds)
   for (const id of preferences) {

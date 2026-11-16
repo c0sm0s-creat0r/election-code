@@ -60,7 +60,7 @@ export async function count(input: CountInput): Promise<CountResult> {
 
   const continuing = () => candidates.filter((c) => status.get(c.id) === 'continuing')
   const totalOf = (id: string) =>
-    (piles.get(id) ?? []).reduce<Fixed>((s, p) => s + p.weight, ZERO)
+    piles.get(id)!.reduce<Fixed>((s, p) => s + p.weight, ZERO)
 
   /** Move a paper to its next continuing preference, or to non-transferable. */
   const place = (paper: Paper) => {
@@ -234,7 +234,7 @@ export async function count(input: CountInput): Promise<CountResult> {
         }
         const next = pending.splice(bestIndex, 1)[0]!
         const surplus = bestTotal - quota
-        const pile = piles.get(next.id) ?? []
+        const pile = piles.get(next.id)!
 
         // Inclusive Gregory: transfer value = surplus / papers, applied to every
         // paper. One value per distribution, checkable by hand.
@@ -275,7 +275,7 @@ export async function count(input: CountInput): Promise<CountResult> {
 
     // Nobody at quota: exclude the lowest, in bulk where safe.
     const remainingSeats = seats - winners.length
-    const maxExcludable = Math.max(1, cont.length - remainingSeats)
+    const maxExcludable = cont.length - remainingSeats
     const totals = cont.map((c) => ({ id: c.id, votes: totalOf(c.id) }))
 
     let toExclude = bulkExclusionSet(totals, maxExcludable)
@@ -292,7 +292,7 @@ export async function count(input: CountInput): Promise<CountResult> {
     const excludedRecord = toExclude.map((id) => ({ candidateId: id, name: nameOf.get(id)! }))
     for (const id of toExclude) status.set(id, 'excluded')
     for (const id of toExclude) {
-      const pile = piles.get(id) ?? []
+      const pile = piles.get(id)!
       piles.set(id, [])
       for (const paper of pile) place(paper) // at current weight
     }

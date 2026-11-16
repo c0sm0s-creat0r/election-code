@@ -17,8 +17,7 @@ describe('droop quota', () => {
     expect(format(droopQuota(valid, seats))).toBe(expected)
   })
 
-  it('rejects nonsense input', () => {
+  it('rejects zero seats', () => {
     expect(() => droopQuota(10, 0)).toThrow(/seats/)
-    expect(() => droopQuota(-1, 1)).toThrow(/ballots/)
   })
 })

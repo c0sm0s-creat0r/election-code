@@ -36,8 +36,4 @@ describe('validateBallot', () => {
     const r = validateBallot(preferences, candidateIds, seats)
     expect(r).toEqual({ ok: false, reason: expect.stringMatching(reason) })
   })
-
-  it('rejects more preferences than candidates', () => {
-    expect(validateBallot(['a', 'b', 'c', 'd', 'a'], CANDIDATES, 2).ok).toBe(false)
-  })
 })

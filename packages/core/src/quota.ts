@@ -11,8 +11,5 @@ export function droopQuota(validBallots: number, seats: number): Fixed {
   if (!Number.isInteger(seats) || seats < 1) {
     throw new Error(`droopQuota: seats must be a positive integer, got ${seats}`)
   }
-  if (!Number.isInteger(validBallots) || validBallots < 0) {
-    throw new Error(`droopQuota: ballots must be a non-negative integer, got ${validBallots}`)
-  }
   return fromInt(Math.floor(validBallots / (seats + 1)) + 1)
 }
