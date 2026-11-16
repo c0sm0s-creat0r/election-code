@@ -13,62 +13,48 @@ const exclusionTie: TieBreakRecord = {
 const show = (tie: TieBreakRecord = exclusionTie) => {
   const onOverride = vi.fn()
   render(<TieBreaks tieBreaks={[tie]} candidates={candidates} onOverride={onOverride} />)
-  return { onOverride }
+  return onOverride
 }
 
+const startOverride = () => fireEvent.click(screen.getByRole('button', { name: /override/i }))
+
 describe('TieBreaks', () => {
-  it('labels an EXCLUSION tie\'s control as who is EXCLUDED — never who wins', () => {
-    show()
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    expect(screen.getByLabelText(/who is excluded/i)).toBeTruthy()
-    expect(screen.queryByLabelText(/pick the winner|who wins|elected first/i)).toBeNull()
+  // For an exclusion the resolved id is who is EXCLUDED, never who wins.
+  it.each([
+    ['exclusion', /who is excluded/i, /pick the winner|who wins|elected first/i],
+    ['election_order', /elected first/i, /who is excluded/i],
+  ] as const)('labels the control for an %s tie by what it decides', (kind, label, wrongLabel) => {
+    show({ ...exclusionTie, kind })
+    startOverride()
+    expect(screen.getByLabelText(label)).toBeTruthy()
+    expect(screen.queryByLabelText(wrongLabel)).toBeNull()
   })
 
-  it('labels an ELECTION ORDER tie\'s control as who is elected FIRST', () => {
-    show({ ...exclusionTie, kind: 'election_order' })
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    expect(screen.getByLabelText(/elected first/i)).toBeTruthy()
-    expect(screen.queryByLabelText(/who is excluded/i)).toBeNull()
-  })
-
-  it('says what the count decided, in the language of the kind', () => {
+  it('says what the count decided, and shows the seed so the draw can be re-derived', () => {
     show()
     expect(screen.getByText(/Bo was excluded/i)).toBeTruthy()
-  })
-
-  it('shows the seed, so a candidate can re-derive the draw', () => {
-    show()
     expect(screen.getByText(new RegExp(exclusionTie.seed!.slice(0, 12)))).toBeTruthy()
   })
 
-  it('requires a reason before an override can be saved', () => {
-    show()
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    expect(screen.getByRole('button', { name: /save override/i })).toHaveProperty('disabled', true)
-  })
+  it('requires a real reason, then sends resolved_id and the reason', () => {
+    const onOverride = show()
+    startOverride()
+    // an override writes a new result and keeps the old one
+    expect(screen.getByText(/both are kept/i)).toBeTruthy()
+    const save = screen.getByRole('button', { name: /save override/i })
+    const reason = (value: string) =>
+      fireEvent.change(screen.getByLabelText(/reason/i), { target: { value } })
 
-  it('rejects a whitespace-only reason', () => {
-    show()
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: '   ' } })
-    expect(screen.getByRole('button', { name: /save override/i })).toHaveProperty('disabled', true)
-  })
-
-  it('sends resolved_id and the reason', () => {
-    const { onOverride } = show()
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'Drew lots at the AGM' } })
     fireEvent.change(screen.getByLabelText(/who is excluded/i), { target: { value: 'a' } })
-    fireEvent.click(screen.getByRole('button', { name: /save override/i }))
+    expect(save).toHaveProperty('disabled', true)
+    reason('   ')
+    expect(save).toHaveProperty('disabled', true)
+
+    reason('Drew lots at the AGM')
+    fireEvent.click(save)
     expect(onOverride).toHaveBeenCalledWith({
       tie_break_id: 'tb-1', resolved_id: 'a', reason: 'Drew lots at the AGM',
     })
-  })
-
-  it('warns that an override writes a new result and keeps the old one', () => {
-    show()
-    fireEvent.click(screen.getByRole('button', { name: /override/i }))
-    expect(screen.getByText(/both are kept/i)).toBeTruthy()
   })
 
   it('shows an override already in force, with its reason', () => {

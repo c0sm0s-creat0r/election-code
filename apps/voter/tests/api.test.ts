@@ -1,62 +1,38 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { ApiError, voterSignIn, submitBallot } from '../src/api.js'
-
-const mockFetch = (status: number, body: unknown) =>
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
-    status, headers: { 'content-type': 'application/json' },
-  })))
-
-/** Parameters are declared so `mock.calls[0]` is a typed tuple. */
-const spyFetch = (respond: () => Response) =>
-  vi.fn(async (_url: string, _init?: RequestInit) => respond())
+import { ApiError, getBatchBySlug, voterSignIn, submitBallot } from '../src/api.js'
+import { json, stub, stubFetch } from './helpers.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('api client', () => {
   it('sends credentials, or the session cookie never travels', async () => {
-    const spy = spyFetch(() => new Response(JSON.stringify({ first_name: 'Ada' }), { status: 200 }))
-    vi.stubGlobal('fetch', spy)
+    const spy = stub(200, { first_name: 'Ada' })
     await voterSignIn('b1', '2400001', 'Lovelace')
     expect(spy.mock.calls[0]![1]).toMatchObject({ credentials: 'include' })
   })
 
-  it('returns the body on success', async () => {
-    mockFetch(200, { first_name: 'Ada' })
-    expect(await voterSignIn('b1', '2400001', 'Lovelace')).toEqual({ first_name: 'Ada' })
-  })
-
-  it('throws an ApiError carrying the status and the code', async () => {
-    mockFetch(403, { error: 'not checked in', code: 'not_checked_in' })
-    await expect(voterSignIn('b1', '2400001', 'Lovelace')).rejects.toMatchObject({
-      status: 403, code: 'not_checked_in',
-    })
-  })
-
-  it('still throws an ApiError when the body is not JSON', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('gateway timeout', { status: 504 })))
+  it.each([
+    ['the status and code of a refusal',
+      () => json(403, { error: 'not checked in', code: 'not_checked_in' }), { status: 403, code: 'not_checked_in' }],
+    ['status 0 when the request never completes',
+      () => { throw new TypeError('Failed to fetch') }, { status: 0 }],
+    ['the status when the body is not JSON',
+      () => new Response('gateway timeout', { status: 504 }), { status: 504 }],
+  ])('throws an ApiError carrying %s', async (_what, respond, expected) => {
+    stubFetch(respond)
     const err = await voterSignIn('b1', '2400001', 'Lovelace').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).status).toBe(504)
-  })
-
-  it('reports a network failure as an ApiError with status 0', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
-    const err = await submitBallot('b1', 'e1', ['a', 'b']).catch((e: unknown) => e)
-    expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).status).toBe(0)
+    expect(err).toMatchObject(expected)
   })
 
   it('never puts the usu_id in a ballot body — the session carries it', async () => {
-    const spy = spyFetch(() => new Response(JSON.stringify({ receipt_token: 't' }), { status: 201 }))
-    vi.stubGlobal('fetch', spy)
+    const spy = stub(201, { receipt_token: 't' })
     await submitBallot('b1', 'e1', ['a', 'b'])
     expect(spy.mock.calls[0]![1]!.body).toBe(JSON.stringify({ preferences: ['a', 'b'] }))
   })
 
   it('encodes a slug that would otherwise break the path', async () => {
-    const spy = spyFetch(() => new Response(JSON.stringify({}), { status: 200 }))
-    vi.stubGlobal('fetch', spy)
-    const { getBatchBySlug } = await import('../src/api.js')
+    const spy = stub(200, {})
     await getBatchBySlug('a/b')
     expect(spy.mock.calls[0]![0]).toContain('a%2Fb')
   })

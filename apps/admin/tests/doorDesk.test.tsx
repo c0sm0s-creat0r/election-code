@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { DoorDesk } from '../src/door/DoorDesk.js'
 import { renderRouted } from './renderOfficer.js'
+import { json, spyOnStorage, stubFetch } from './helpers.js'
 
 const roll = [
   { usu_id: '2400001', first_name: 'Ada', last_name: 'Lovelace', eligible: 1, checked_in_at: null },
@@ -11,202 +12,124 @@ const roll = [
 
 const quorum = { checked_in: 1, eligible: 2, guests: 3, added_at_door: 1 }
 
-let fetchSpy: ReturnType<typeof vi.fn>
+type Override = (url: string) => Response | undefined
 
 /** Routes stubbed responses by URL. */
-const stubApi = (over: (url: string) => unknown = () => undefined) => {
-  fetchSpy = vi.fn(async (url: string) => {
-    const custom = over(url)
-    if (custom !== undefined) {
-      const { status, body } = custom as { status: number; body: unknown }
-      return new Response(JSON.stringify(body), {
-        status, headers: { 'content-type': 'application/json' },
-      })
-    }
-    const body = url.includes('/guests') ? [] : url.includes('/quorum') ? quorum : roll
-    return new Response(JSON.stringify(body), {
-      status: 200, headers: { 'content-type': 'application/json' },
-    })
-  })
-  vi.stubGlobal('fetch', fetchSpy)
-}
-
-/**
- * Spies, not inspection: this environment's `localStorage` is a stub with no
- * methods, and a spy catches a write whatever backs the store.
- */
-let writes: ReturnType<typeof vi.fn>
-
-beforeEach(() => {
-  writes = vi.fn()
-  // stubGlobal: the environment's storage object refuses assignment
-  const fake = () => ({
-    setItem: writes, getItem: () => null, removeItem: () => {}, clear: () => {},
-    key: () => null, length: 0,
-  })
-  vi.stubGlobal('localStorage', fake())
-  vi.stubGlobal('sessionStorage', fake())
-})
+const stubApi = (over: Override = () => undefined) =>
+  stubFetch((url) =>
+    over(url) ?? json(200, url.includes('/guests') ? [] : url.includes('/quorum') ? quorum : roll))
 
 afterEach(() => vi.unstubAllGlobals())
 
 const search = (value: string) =>
   fireEvent.change(screen.getByLabelText(/search/i), { target: { value } })
 
-let onSessionLost: ReturnType<typeof vi.fn>
+const mount = (over?: Override) => {
+  const fetchSpy = stubApi(over)
+  const onSessionLost = vi.fn()
+  renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={onSessionLost} />)
+  return { fetchSpy, onSessionLost }
+}
 
 const show = async () => {
-  onSessionLost = vi.fn()
-  renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={onSessionLost} />)
-  await waitFor(() => expect(screen.getByText(/Lovelace/)).toBeTruthy())
+  const mounted = mount()
+  await screen.findByText(/Lovelace/)
+  return mounted
+}
+
+const openForm = (name: RegExp) => fireEvent.click(screen.getByRole('button', { name }))
+
+const fillMember = (usuId: string, first: string, last: string) => {
+  // /^usu id$/ so it does not also match "Search by name or USU ID".
+  fireEvent.change(screen.getByLabelText(/^usu id$/i), { target: { value: usuId } })
+  fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: first } })
+  fireEvent.change(screen.getByLabelText(/surname/i), { target: { value: last } })
 }
 
 describe('DoorDesk', () => {
-  it('finds a member by surname', async () => {
-    stubApi(); await show()
-    search('lovel')
-    expect(screen.getByText(/Lovelace/)).toBeTruthy()
-    expect(screen.queryByText(/Turing/)).toBeNull()
+  it.each([
+    ['surname, in any case', 'LOVEL', /Lovelace/, /Turing/],
+    ['first name', 'alan', /Turing/, /Lovelace/],
+    // a card shows the number, not the spelling
+    ['USU id', '2400002', /Turing/, /Lovelace/],
+  ])('finds a member by %s', async (_by, term, found, hidden) => {
+    await show()
+    search(term)
+    expect(screen.getByText(found)).toBeTruthy()
+    expect(screen.queryByText(hidden)).toBeNull()
   })
 
-  it('finds a member by first name', async () => {
-    stubApi(); await show()
-    search('alan')
-    expect(screen.getByText(/Turing/)).toBeTruthy()
-    expect(screen.queryByText(/Lovelace/)).toBeNull()
-  })
-
-  it('FINDS A MEMBER BY USU ID — a card shows the number, not the spelling', async () => {
-    stubApi(); await show()
-    search('2400002')
-    expect(screen.getByText(/Turing/)).toBeTruthy()
-    expect(screen.queryByText(/Lovelace/)).toBeNull()
-  })
-
-  it('is case-insensitive', async () => {
-    stubApi(); await show()
-    search('LOVELACE')
-    expect(screen.getByText(/Lovelace/)).toBeTruthy()
-  })
-
-  it('filters WITHOUT a network request', async () => {
-    stubApi(); await show()
-    const before = fetchSpy.mock.calls.length
-    search('lov'); search('love'); search('lovel')
-    expect(fetchSpy.mock.calls.length).toBe(before)
-  })
-
-  it('NEVER writes the roll to browser storage', async () => {
+  it('NEVER writes the roll to browser storage, and filters without a request', async () => {
     // Names on a volunteer's device would survive the purge (LIMITATIONS.md §10).
-    stubApi(); await show()
-    search('lovel')
+    const writes = spyOnStorage()
+    const { fetchSpy } = await show()
+    const before = fetchSpy.mock.calls.length
+    search('lov'); search('lovel')
+    expect(fetchSpy.mock.calls.length).toBe(before)
     expect(writes).not.toHaveBeenCalled()
   })
 
-  it('does NOT refetch the whole roll to check someone in', async () => {
+  it('checks someone in on the row itself, WITHOUT refetching the whole roll', async () => {
     // Reloading would cost ~50 KB per tap over venue wifi, 1,300 times.
-    stubApi(); await show()
+    const { fetchSpy } = await show()
     const rollFetches = () =>
       fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith('/roll')).length
     const before = rollFetches()
     fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /check out Ada Lovelace/i })).toBeTruthy())
+    await screen.findByRole('button', { name: /check out Ada Lovelace/i })
     expect(rollFetches()).toBe(before)
   })
 
-  it('updates the row locally so the check-in is visible immediately', async () => {
-    stubApi(); await show()
-    fireEvent.click(screen.getByRole('button', { name: /check in Ada Lovelace/i }))
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /check out Ada Lovelace/i })).toBeTruthy())
-  })
-
-  it('HANDS BACK to the sign-in form on a 403, instead of stranding the volunteer', async () => {
-    // 403 is a valid session of the wrong role, e.g. an officer opening the desk.
-    stubApi((url) => (url.endsWith('/roll') ? { status: 403, body: { error: 'forbidden' } } : undefined))
-    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
-    await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
-  })
-
-  it('hands back on a 401 too, so a lapsed shift is recoverable', async () => {
-    stubApi((url) => (url.endsWith('/roll') ? { status: 401, body: { error: 'unauthenticated' } } : undefined))
-    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
-    await waitFor(() => expect(onSessionLost).toHaveBeenCalled())
-  })
-
   it('does NOT hand back on an ordinary failure, which is not a session problem', async () => {
-    stubApi((url) => (url.endsWith('/roll') ? { status: 500, body: { error: 'internal' } } : undefined))
-    renderRouted(<DoorDesk batchId="b1" slug="soc" onSessionLost={(onSessionLost = vi.fn())} />)
-    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    // The 401 and 403 hand-backs are in doorRoute.test.tsx.
+    const { onSessionLost } = mount((url) =>
+      url.endsWith('/roll') ? json(500, { error: 'internal' }) : undefined)
+    await screen.findByRole('alert')
     expect(onSessionLost).not.toHaveBeenCalled()
   })
 
-  it('offers CHECK OUT for someone already checked in', async () => {
-    stubApi(); await show()
+  it('offers check out, refuses the ineligible and says why, and links back to admin', async () => {
+    await show()
     expect(screen.getByRole('button', { name: /check out Alan Turing/i })).toBeTruthy()
-  })
-
-  it('offers a way back to the officer area', async () => {
-    stubApi(); await show()
+    expect(screen.queryByRole('button', { name: /check in Grace Hopper/i })).toBeNull()
+    expect(screen.getByText(/not an eligible member/i)).toBeTruthy()
     expect(screen.getByRole('link', { name: /back to admin/i }).getAttribute('href')).toBe('/b/soc')
   })
 
-  it('CANNOT check in an ineligible member, and says why', async () => {
-    stubApi(); await show()
-    expect(screen.queryByRole('button', { name: /check in Grace Hopper/i })).toBeNull()
-    expect(screen.getByText(/not an eligible member/i)).toBeTruthy()
-  })
-
   it('shows quorum with guests and door additions as separate figures', async () => {
-    stubApi(); await show()
+    await show()
     const status = screen.getByRole('status')
     expect(status.textContent).toMatch(/1 \/ 2 members/)
     expect(status.textContent).toMatch(/3 guests/)
     expect(status.textContent).toMatch(/1 added at the door/)
   })
 
-  it('keeps the two additions as separate actions', async () => {
-    stubApi(); await show()
-    expect(screen.getByRole('button', { name: /^add guest$/i })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /^add member$/i })).toBeTruthy()
-  })
-
-  it('SAYS A GUEST CANNOT VOTE on the guest form', async () => {
-    stubApi(); await show()
-    fireEvent.click(screen.getByRole('button', { name: /^add guest$/i }))
-    expect(screen.getByText(/cannot vote/i)).toBeTruthy()
-  })
-
-  it('SAYS A DOOR-ADDED MEMBER CAN VOTE on the member form', async () => {
-    stubApi(); await show()
-    fireEvent.click(screen.getByRole('button', { name: /^add member$/i }))
-    expect(screen.getByText(/will be able to vote/i)).toBeTruthy()
+  it.each([
+    ['A GUEST CANNOT VOTE', /^add guest$/i, /cannot vote/i],
+    ['A DOOR-ADDED MEMBER CAN VOTE', /^add member$/i, /will be able to vote/i],
+  ])('SAYS %s on its own form', async (_rule, button, wording) => {
+    await show()
+    openForm(button)
+    expect(screen.getByText(wording)).toBeTruthy()
   })
 
   it('requires a well-formed usu_id and both names to add a member', async () => {
-    stubApi(); await show()
-    fireEvent.click(screen.getByRole('button', { name: /^add member$/i }))
+    await show()
+    openForm(/^add member$/i)
     const save = () => screen.getByRole('button', { name: /add this member/i })
-    // /^usu id$/ so it does not also match "Search by name or USU ID".
-    fireEvent.change(screen.getByLabelText(/^usu id$/i), { target: { value: '123' } })
-    fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: 'Nina' } })
-    fireEvent.change(screen.getByLabelText(/surname/i), { target: { value: 'Newjoiner' } })
+    fillMember('123', 'Nina', 'Newjoiner')
     expect(save()).toHaveProperty('disabled', true)
-    fireEvent.change(screen.getByLabelText(/^usu id$/i), { target: { value: '2400777' } })
+    fillMember('2400777', 'Nina', 'Newjoiner')
     expect(save()).toHaveProperty('disabled', false)
   })
 
   it('tells the volunteer to search when a usu_id is already on the roll', async () => {
-    stubApi(); await show()
-    fireEvent.click(screen.getByRole('button', { name: /^add member$/i }))
-    fireEvent.change(screen.getByLabelText(/^usu id$/i), { target: { value: '2400001' } })
-    fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: 'Ada' } })
-    fireEvent.change(screen.getByLabelText(/surname/i), { target: { value: 'Lovelace' } })
-    stubApi((url) =>
-      url.endsWith('/voters')
-        ? { status: 409, body: { error: 'that USU id is already on the roll — search for them and check them in instead', code: 'already_on_roll' } }
-        : undefined)
+    await show()
+    openForm(/^add member$/i)
+    fillMember('2400001', 'Ada', 'Lovelace')
+    stubApi((url) => (url.endsWith('/voters')
+      ? json(409, { error: 'that USU id is already on the roll — search for them and check them in instead', code: 'already_on_roll' })
+      : undefined))
     fireEvent.click(screen.getByRole('button', { name: /add this member/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/already on the roll/i))
   })

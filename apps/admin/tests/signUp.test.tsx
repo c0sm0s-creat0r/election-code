@@ -1,150 +1,96 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderRouted } from './renderOfficer.js'
+import { json, stub, stubFetch } from './helpers.js'
 import { SignUp } from '../src/screens/SignUp.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
-const stub = (status: number, body: unknown) =>
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
-    status, headers: { 'content-type': 'application/json' },
-  })))
-
-const fill = (over: Partial<Record<'name' | 'officer' | 'door' | 'slug', string>> = {}) => {
-  fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: over.name ?? 'Science Society' } })
-  if (over.slug !== undefined) {
-    fireEvent.change(screen.getByLabelText(/web address/i), { target: { value: over.slug } })
-  }
-  fireEvent.change(screen.getByLabelText(/officer password/i), { target: { value: over.officer ?? 'officer-password-1' } })
-  fireEvent.change(screen.getByLabelText(/check-in desk password/i), { target: { value: over.door ?? 'door-password-1' } })
+const made = {
+  id: 'b1', slug: 'science-society', name: 'Science Society',
+  branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
 }
 
-const submit = () => fireEvent.click(screen.getByRole('button', { name: /register society/i }))
+type Fields = Partial<Record<'name' | 'officer' | 'door' | 'slug', string>>
+
+const type = (label: RegExp, value: string) =>
+  fireEvent.change(screen.getByLabelText(label), { target: { value } })
+const slugField = () => screen.getByLabelText(/web address/i) as HTMLInputElement
+
+/** Renders, fills the form and submits it. */
+const register = (over: Fields = {}, logo?: File) => {
+  renderRouted(<SignUp />)
+  type(/society name/i, over.name ?? 'Science Society')
+  if (over.slug !== undefined) type(/web address/i, over.slug)
+  type(/officer password/i, over.officer ?? 'officer-password-1')
+  type(/check-in desk password/i, over.door ?? 'door-password-1')
+  if (logo) fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [logo] } })
+  fireEvent.click(screen.getByRole('button', { name: /register society/i }))
+}
+
+/** Registration and the officer sign-in succeed. `logo` answers the upload. */
+const stubWithLogo = (logo: Response) =>
+  stubFetch((url) => {
+    if (url.endsWith('/api/batches')) return json(201, made)
+    if (url.endsWith('/officer/session')) return json(200, { ok: true, role: 'officer' })
+    return logo
+  })
 
 describe('SignUp', () => {
-  it('suggests a slug from the name, so nobody has to guess the rules', () => {
+  it('suggests a slug from the name, and stops tracking the name once the slug is overridden', () => {
     renderRouted(<SignUp />)
-    fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society!' } })
-    expect((screen.getByLabelText(/web address/i) as HTMLInputElement).value).toBe('science-society')
+    type(/society name/i, 'Science Society!')
+    expect(slugField().value).toBe('science-society')
+    type(/web address/i, 'scisoc')
+    type(/society name/i, 'Science Society 2026')
+    expect(slugField().value).toBe('scisoc')
   })
 
-  it('lets the slug be overridden and then stops tracking the name', () => {
-    renderRouted(<SignUp />)
-    fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society' } })
-    fireEvent.change(screen.getByLabelText(/web address/i), { target: { value: 'scisoc' } })
-    fireEvent.change(screen.getByLabelText(/society name/i), { target: { value: 'Science Society 2026' } })
-    expect((screen.getByLabelText(/web address/i) as HTMLInputElement).value).toBe('scisoc')
-  })
-
-  it('registers a society and never asks for a key', async () => {
-    const spy = vi.fn(async (_url: string, init?: RequestInit) =>
-      new Response(JSON.stringify({ id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} }), {
-        status: 201, headers: { 'content-type': 'application/json' },
-      }))
-    vi.stubGlobal('fetch', spy)
-    renderRouted(<SignUp />)
-    fill()
-    submit()
-    await waitFor(() => expect(screen.getByText(/is registered/i)).toBeTruthy())
+  it('registers without asking for a key, shows all three URLs, and SAYS TO WRITE THE PASSWORDS DOWN', async () => {
+    const spy = stub(201, made)
+    register()
+    await screen.findByText(/is registered/i)
     const headers = (spy.mock.calls[0]![1]!.headers ?? {}) as Record<string, string>
     expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain('x-super-admin-key')
+    expect(screen.getByText(/written down your passwords/i)).toBeTruthy()
+    for (const url of ['/b/science-society', '/b/science-society/door', '/science-society']) {
+      expect(screen.getByText(url)).toBeTruthy()
+    }
   })
 
-  it('TELLS THEM TO WRITE THE PASSWORDS DOWN', async () => {
-    stub(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} })
-    renderRouted(<SignUp />)
-    fill()
-    submit()
-    await waitFor(() => expect(screen.getByText(/written down your passwords/i)).toBeTruthy())
-  })
-
-  it('shows all three URLs afterwards', async () => {
-    stub(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: {} })
-    renderRouted(<SignUp />)
-    fill()
-    submit()
-    await waitFor(() => expect(screen.getByText('/b/science-society')).toBeTruthy())
-    expect(screen.getByText('/b/science-society/door')).toBeTruthy()
-    expect(screen.getByText('/science-society')).toBeTruthy()
-  })
-
-  it('will not submit a password under the floor', () => {
-    const spy = vi.fn()
-    vi.stubGlobal('fetch', spy)
-    renderRouted(<SignUp />)
-    fill({ officer: 'short' })
-    submit()
+  it.each<[string, Fields]>([
+    ['a password under the floor', { officer: 'short' }],
+    ['the same password for both roles', { officer: 'same-password-1', door: 'same-password-1' }],
+    ['a malformed slug', { slug: 'Not A Slug' }],
+  ])('REFUSES %s without a request', (_what, over) => {
+    const spy = stub(201, made)
+    register(over)
     expect(spy).not.toHaveBeenCalled()
   })
 
-  it('REFUSES the same password for both roles', () => {
-    const spy = vi.fn()
-    vi.stubGlobal('fetch', spy)
-    renderRouted(<SignUp />)
-    fill({ officer: 'same-password-1', door: 'same-password-1' })
-    submit()
-    expect(spy).not.toHaveBeenCalled()
-  })
-
-  it('will not submit a malformed slug', () => {
-    const spy = vi.fn()
-    vi.stubGlobal('fetch', spy)
-    renderRouted(<SignUp />)
-    fill({ slug: 'Not A Slug' })
-    submit()
-    expect(spy).not.toHaveBeenCalled()
-  })
-
-  it('reports a taken slug from the server', async () => {
-    stub(409, { error: 'slug already exists' })
-    renderRouted(<SignUp />)
-    fill()
-    submit()
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/already exists/i))
-  })
-
-  it('reports a reserved slug from the server', async () => {
-    stub(400, { error: 'that name is reserved — please choose another' })
-    renderRouted(<SignUp />)
-    fill({ slug: 'admin' })
-    submit()
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/reserved/i))
+  it.each([
+    [409, 'slug already exists'],
+    [400, 'that name is reserved — please choose another'],
+  ])('shows the server\'s reason for a %i', async (status, error) => {
+    stub(status, { error })
+    register()
+    expect((await screen.findByRole('alert')).textContent).toContain(error)
   })
 
   it('UPLOADS THE LOGO after registering, signed in as the new officer', async () => {
-    const json = (status: number, body: unknown) =>
-      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-    const spy = vi.fn(async (url: string) => {
-      if (url.endsWith('/api/batches')) return json(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' } })
-      if (url.endsWith('/officer/session')) return json(200, { ok: true, role: 'officer' })
-      return json(201, { logo_url: '/api/logos/batches/b1/abc.png' })
-    })
-    vi.stubGlobal('fetch', spy)
-    renderRouted(<SignUp />)
-    fill()
-    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'logo.png', { type: 'image/png' })
-    fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [file] } })
-    submit()
-    await waitFor(() => expect(screen.getByText(/is registered/i)).toBeTruthy())
-    const urls = spy.mock.calls.map((call) => String(call[0]))
-    expect(urls.map((u) => u.replace(/^.*\/api/, '/api'))).toEqual([
+    const spy = stubWithLogo(json(201, { logo_url: '/api/logos/batches/b1/abc.png' }))
+    register({}, new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'logo.png', { type: 'image/png' }))
+    await screen.findByText(/is registered/i)
+    expect(spy.mock.calls.map(([url]) => url.replace(/^.*\/api/, '/api'))).toEqual([
       '/api/batches', '/api/batches/b1/officer/session', '/api/batches/b1/logo',
     ])
-    expect(document.querySelector('img.society-logo')!.getAttribute('src')).toMatch(/\/api\/logos\/batches\/b1\/abc\.png$/)
+    expect(document.querySelector('img.society-logo')!.getAttribute('src'))
+      .toMatch(/\/api\/logos\/batches\/b1\/abc\.png$/)
   })
 
   it('STILL SHOWS THE PASSWORDS when the logo is refused, because the society exists', async () => {
-    const json = (status: number, body: unknown) =>
-      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.endsWith('/api/batches')) return json(201, { id: 'b1', slug: 'science-society', name: 'Science Society', branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' } })
-      if (url.endsWith('/officer/session')) return json(200, { ok: true, role: 'officer' })
-      return json(400, { error: 'that file is not a PNG, JPEG, GIF or WebP image', code: 'not_an_image' })
-    }))
-    renderRouted(<SignUp />)
-    fill()
-    fireEvent.change(screen.getByLabelText(/logo/i), { target: { files: [new File(['nope'], 'x.png')] } })
-    submit()
+    stubWithLogo(json(400, { error: 'that file is not a PNG, JPEG, GIF or WebP image', code: 'not_an_image' }))
+    register({}, new File(['nope'], 'x.png'))
     await waitFor(() => expect(screen.getByText(/written down your passwords/i)).toBeTruthy())
     expect(screen.getByRole('alert').textContent).toMatch(/logo was not/i)
     expect(document.querySelector('img.society-logo')).toBeNull()

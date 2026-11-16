@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { render } from '@testing-library/react'
 import { OfficerLayout } from '../src/OfficerLayout.js'
+import { json, stub, stubFetch } from './helpers.js'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -11,26 +11,7 @@ const BATCH = {
   branding: { title: 'AGM 2026', org_name: 'Test Society', accent_color: '#123456', logo_url: '' },
 }
 
-const json = { 'content-type': 'application/json' }
-
-/** `ping` decides whether the password form appears. Everything else is the batch. */
-const stub = (pingStatus: number) =>
-  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.includes('/officer/ping')) {
-      return pingStatus === 200
-        ? new Response(JSON.stringify({ ok: true }), { status: 200, headers: json })
-        : new Response(JSON.stringify({ error: 'unauthenticated' }), { status: pingStatus, headers: json })
-    }
-    if (url.includes('/officer/session') && init?.method === 'DELETE') {
-      return new Response(null, { status: 204 })
-    }
-    if (url.includes('/officer/session')) {
-      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: json })
-    }
-    return new Response(JSON.stringify(BATCH), { status: 200, headers: json })
-  }))
-
-const show = () =>
+const render_ = () =>
   render(
     <MemoryRouter initialEntries={['/b/soc/elections']}>
       <Routes>
@@ -41,99 +22,81 @@ const show = () =>
     </MemoryRouter>,
   )
 
-describe('OfficerLayout', () => {
-  it('DOES NOT ASK FOR A PASSWORD when the session cookie is still valid', async () => {
-    // a reload with a valid cookie must not ask for the password again
-    stub(200)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-    expect(screen.queryByLabelText(/password/i)).toBeNull()
-  })
-
-  it('asks for a password when the session has lapsed', async () => {
-    stub(401)
-    show()
-    await waitFor(() => expect(screen.getByLabelText(/password/i)).toBeTruthy())
-    expect(screen.queryByText('the elections screen')).toBeNull()
-  })
-
-  it('shows the screen without a reload once the password is accepted', async () => {
-    stub(401)
-    show()
-    await waitFor(() => expect(screen.getByLabelText(/password/i)).toBeTruthy())
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'officer-password-1' } })
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-  })
-
-  it('never flashes the password form while the probe is in flight', async () => {
-    stub(200)
-    show()
-    // Before the probe resolves there is a loading state, not a prompt.
-    expect(screen.queryByLabelText(/password/i)).toBeNull()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-  })
-
-  it('does NOT ask for a password when the probe fails for a non-auth reason', async () => {
-    // a network failure or a 503 is not a reason to ask for a password
-    stub(503)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-  })
-
-  it('offers every destination in an always-visible nav', async () => {
-    stub(200)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-    for (const label of [/elections/i, /member roll/i, /exports/i, /appearance/i, /check-in desk/i]) {
-      expect(screen.getByRole('link', { name: label })).toBeTruthy()
+/** `pingStatus` decides whether the password form appears. Everything else is the batch. */
+const show = (pingStatus: number) => {
+  stubFetch((url, init) => {
+    if (url.includes('/officer/ping')) {
+      return json(pingStatus, pingStatus === 200 ? { ok: true } : { error: 'unauthenticated' })
     }
+    if (url.includes('/officer/session')) {
+      return init?.method === 'DELETE' ? json(204, null) : json(200, { ok: true })
+    }
+    return json(200, BATCH)
+  })
+  render_()
+}
+
+const theScreen = () => screen.findByText('the elections screen')
+const password = () => screen.queryByLabelText(/password/i)
+
+describe('OfficerLayout', () => {
+  it.each([
+    // a reload with a valid cookie must not ask for the password again
+    [200, 'the session cookie is still valid'],
+    // a network failure or a 503 is not a reason to ask for a password
+    [503, 'the probe fails for a non-auth reason'],
+  ])('DOES NOT ASK FOR A PASSWORD on a %i: %s', async (pingStatus) => {
+    show(pingStatus)
+    // Nor while the probe is in flight: a loading state, not a prompt.
+    expect(password()).toBeNull()
+    await theScreen()
+    expect(password()).toBeNull()
   })
 
-  it('KEEPS SIGN OUT OUT OF THE NAV, beside the society name instead', async () => {
-    // sign out is not a destination, so it is not in the nav
-    stub(200)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-    const signOut = screen.getByRole('button', { name: /sign out/i })
-    expect(signOut.closest('nav')).toBeNull()
-    expect(signOut.closest('.officer-title')).not.toBeNull()
+  it('asks for a password when the session has lapsed, then shows the screen without a reload', async () => {
+    show(401)
+    await waitFor(() => expect(password()).toBeTruthy())
+    expect(screen.queryByText('the elections screen')).toBeNull()
+    fireEvent.change(password()!, { target: { value: 'officer-password-1' } })
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await theScreen()
   })
 
-  it('marks the current section, so the nav says where you are', async () => {
-    stub(200)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
+  it('offers every destination in an always-visible nav, and marks the current one', async () => {
+    show(200)
+    await theScreen()
+    for (const name of [/elections/i, /member roll/i, /exports/i, /appearance/i, /check-in desk/i]) {
+      expect(screen.getByRole('link', { name })).toBeTruthy()
+    }
     expect(screen.getByRole('link', { name: /elections/i }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: /member roll/i }).getAttribute('aria-current')).toBeNull()
   })
 
   it('titles the page from the society, and applies its accent', async () => {
-    stub(200)
-    show()
+    show(200)
     await waitFor(() => expect(document.title).toBe('AGM 2026'))
     expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#123456')
   })
 
-  it('signs out, and then asks for the password again', async () => {
-    stub(200)
-    show()
-    await waitFor(() => expect(screen.getByText('the elections screen')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /sign out/i }))
-    await waitFor(() => expect(screen.getByLabelText(/password/i)).toBeTruthy())
+  it('signs out from beside the society name, NOT THE NAV, and then asks for the password again', async () => {
+    show(200)
+    await theScreen()
+    // sign out is not a destination
+    const signOut = screen.getByRole('button', { name: /sign out/i })
+    expect(signOut.closest('nav')).toBeNull()
+    expect(signOut.closest('.officer-title')).not.toBeNull()
+    fireEvent.click(signOut)
+    await waitFor(() => expect(password()).toBeTruthy())
   })
 
   it('reports a society that does not exist', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not found' }), {
-      status: 404, headers: json,
-    })))
-    show()
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/could not find/i))
+    stub(404, { error: 'not found' })
+    render_()
+    expect((await screen.findByRole('alert')).textContent).toMatch(/could not find/i)
   })
 
   it('has a help button beside sign out that walks through an election', async () => {
-    stub(200)
-    show()
+    show(200)
     const help = await screen.findByRole('button', { name: 'Help' })
     expect(help.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(help)

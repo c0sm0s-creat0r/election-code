@@ -1,14 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { renderRouted } from './renderOfficer.js'
+import { stub } from './helpers.js'
 import { Result } from '../src/screens/Result.js'
 
 afterEach(() => vi.unstubAllGlobals())
-
-const stub = (status: number, body: unknown) =>
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
-    status, headers: { 'content-type': 'application/json' },
-  })))
 
 const document_ = {
   election: { id: 'e1', name: 'President', seats: 1 },
@@ -30,80 +26,49 @@ const document_ = {
   tie_breaks: [],
 }
 
+const show = (status: number, body: unknown) => {
+  stub(status, body)
+  renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
+}
+
 describe('Result', () => {
   it('REFUSES to show a result before the ballots are sealed', async () => {
-    stub(409, { error: 'no result exists until voting is closed', code: 'not_sealed' })
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/until voting is closed/i))
+    show(409, { error: 'no result exists until voting is closed', code: 'not_sealed' })
+    expect((await screen.findByRole('alert')).textContent).toMatch(/until voting is closed/i)
   })
 
   it('lists the winners', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
+    show(200, document_)
     // Alex is also a row header in the table; this asserts the winners list.
-    await waitFor(() => expect(screen.getByRole('heading', { name: /^elected$/i })).toBeTruthy())
-    const winners = screen.getByRole('heading', { name: /^elected$/i }).nextElementSibling
+    const winners = (await screen.findByRole('heading', { name: /^elected$/i })).nextElementSibling
     expect(winners?.tagName).toBe('OL')
     expect(winners?.textContent).toContain('Alex')
   })
 
-  it('renders a column per round and a row per candidate', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
+  it('tabulates the rounds, with the quota and the non-transferable total', async () => {
+    show(200, document_)
+    const table = await screen.findByRole('table')
     expect(screen.getByRole('columnheader', { name: /round 1/i })).toBeTruthy()
     expect(screen.getByRole('rowheader', { name: 'Bo' })).toBeTruthy()
-  })
-
-  it('shows the quota on the table itself', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
+    expect(screen.getByRole('rowheader', { name: /non-transferable/i })).toBeTruthy()
     // The value is also Alex's round-1 total, so assert the labelled caption.
-    await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
-    const caption = screen.getByRole('table').querySelector('caption')
+    const caption = table.querySelector('caption')
     expect(caption?.textContent).toMatch(/quota/i)
     expect(caption?.textContent).toContain('2.00000')
   })
 
-  it('keeps the non-transferable total in view', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByRole('rowheader', { name: /non-transferable/i })).toBeTruthy())
+  it('shows the digest beside this election\'s ballot file, so one can be checked against the other', async () => {
+    show(200, document_)
+    expect(await screen.findByText(document_.ballots_sha256)).toBeTruthy()
+    expect(screen.getByRole('link', { name: /ballots \(csv\)/i }).getAttribute('href'))
+      .toContain('/elections/e1/ballots.csv')
   })
 
-  it('shows the digest, so it can be checked against the export', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByText(document_.ballots_sha256)).toBeTruthy())
-  })
-
-  it('OFFERS THE EXPORTS FOR THIS ELECTION, where the files are about this count', async () => {
-    // the ballot CSV and the digest belong beside each other
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())
-    expect(screen.getByRole('link', { name: /candidates \(csv\)/i })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /sealed result \(json\)/i })).toBeTruthy()
-  })
-
-  it('does NOT repeat the whole-AGM exports, which have their own screen', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByRole('link', { name: /ballots \(csv\)/i })).toBeTruthy())
-    expect(screen.queryByRole('link', { name: /voters in every election/i })).toBeNull()
-    expect(screen.queryByRole('link', { name: /checked-in members/i })).toBeNull()
-    expect(screen.queryByRole('link', { name: /guests \(csv\)/i })).toBeNull()
-  })
-
-  it('says when a result supersedes an earlier one', async () => {
-    stub(200, { ...document_, overridden: true })
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByText(/supersedes an earlier one/i)).toBeTruthy())
-  })
-
-  it('says so when there were no ties', async () => {
-    stub(200, document_)
-    renderRouted(<Result batchId="b1" electionId="e1" slug="soc" />)
-    await waitFor(() => expect(screen.getByText(/no ties to resolve/i)).toBeTruthy())
+  it.each([
+    ['there were no ties', document_, /no ties to resolve/i],
+    ['it supersedes an earlier result', { ...document_, overridden: true }, /supersedes an earlier one/i],
+  ])('says when %s', async (_when, body, note) => {
+    show(200, body)
+    expect(await screen.findByText(note)).toBeTruthy()
   })
 })

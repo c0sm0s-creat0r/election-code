@@ -3,39 +3,28 @@ import { screen } from '@testing-library/react'
 import { Exports } from '../src/screens/Exports.js'
 import { renderRouted } from './renderOfficer.js'
 
+const link = (name: RegExp) => screen.queryByRole('link', { name })
+
 /** Shows the files for one election or the whole-AGM files, never both. */
 describe('Exports', () => {
-  it('offers the per-election files when given an election', () => {
+  it('offers only the per-election files when given an election, linked straight at the API', () => {
     renderRouted(<Exports batchId="b1" electionId="e1" />)
-    for (const name of [/ballots \(csv\)/i, /candidates \(csv\)/i, /sealed result \(json\)/i]) {
-      expect(screen.getByRole('link', { name })).toBeTruthy()
-    }
-  })
-
-  it('offers the whole-AGM files when given no election', () => {
-    renderRouted(<Exports batchId="b1" electionId={undefined} />)
-    expect(screen.getByRole('link', { name: /voters in every election/i }).getAttribute('href'))
-      .toContain('/api/batches/b1/attendance.csv')
-    expect(screen.getByRole('link', { name: /checked-in members/i }).getAttribute('href'))
-      .toContain('/api/batches/b1/check-ins.csv')
-    expect(screen.getByRole('link', { name: /guests \(csv\)/i })).toBeTruthy()
-  })
-
-  it('never shows both sets at once', () => {
-    renderRouted(<Exports batchId="b1" electionId="e1" />)
-    expect(screen.queryByRole('link', { name: /voters in every election/i })).toBeNull()
-    expect(screen.queryByRole('link', { name: /checked-in members/i })).toBeNull()
-  })
-
-  it('shows no per-election files without an election', () => {
-    renderRouted(<Exports batchId="b1" electionId={undefined} />)
-    expect(screen.queryByRole('link', { name: /ballots \(csv\)/i })).toBeNull()
-  })
-
-  it('links straight at the API, so the browser streams the file to disk', () => {
     // a link streams to disk; a fetch would hold the whole CSV in memory
-    renderRouted(<Exports batchId="b1" electionId="e1" />)
-    const href = screen.getByRole('link', { name: /ballots \(csv\)/i }).getAttribute('href')
-    expect(href).toContain('/api/batches/b1/elections/e1/ballots.csv')
+    expect(link(/ballots \(csv\)/i)?.getAttribute('href'))
+      .toContain('/api/batches/b1/elections/e1/ballots.csv')
+    expect(link(/candidates \(csv\)/i)).toBeTruthy()
+    expect(link(/sealed result \(json\)/i)).toBeTruthy()
+    expect(link(/voters in every election/i)).toBeNull()
+    expect(link(/checked-in members/i)).toBeNull()
+  })
+
+  it('offers only the whole-AGM files when given no election', () => {
+    renderRouted(<Exports batchId="b1" electionId={undefined} />)
+    expect(link(/voters in every election/i)?.getAttribute('href'))
+      .toContain('/api/batches/b1/attendance.csv')
+    expect(link(/checked-in members/i)?.getAttribute('href'))
+      .toContain('/api/batches/b1/check-ins.csv')
+    expect(link(/guests \(csv\)/i)).toBeTruthy()
+    expect(link(/ballots \(csv\)/i)).toBeNull()
   })
 })
