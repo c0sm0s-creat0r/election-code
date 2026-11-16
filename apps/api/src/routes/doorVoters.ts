@@ -11,7 +11,6 @@ import { z } from 'zod'
 import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { pathParam } from '../http/params.js'
 import type { VoterRollRow } from '../db/types.js'
 
 const doorVoterSchema = z.object({
@@ -76,7 +75,7 @@ doorVoters.post(
 
 doorVoters.delete('/api/batches/:id/voters/:usuId', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
-  const usuId = pathParam(c, 'usuId')
+  const usuId = c.req.param('usuId')
 
   // Both refusals are in the WHERE clause, so a ballot cast in between is
   // caught.

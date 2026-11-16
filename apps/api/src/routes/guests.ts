@@ -11,7 +11,6 @@ import { z } from 'zod'
 import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { pathParam } from '../http/params.js'
 import type { GuestRow } from '../db/types.js'
 
 const guestSchema = z.object({
@@ -55,7 +54,7 @@ guests.get('/api/batches/:id/guests', requireRole('door'), async (c) => {
 /** Idempotent, like un-check-in, so a volunteer can undo a tap. */
 guests.delete('/api/batches/:id/guests/:guestId', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
-  const guestId = pathParam(c, 'guestId')
+  const guestId = c.req.param('guestId')
 
   const result = await c.env.DB
     .prepare(`DELETE FROM guest WHERE id = ? AND batch_id = ?`)

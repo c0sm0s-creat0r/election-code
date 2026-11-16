@@ -14,7 +14,6 @@ import { validateBallot } from '@election/core'
 import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { pathParam } from '../http/params.js'
 import { sha256Hex } from '../lib/hash.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
 
@@ -53,7 +52,7 @@ ballots.post(
   async (c) => {
     const session = requireSession(c)
     const batchId = session.batchId
-    const electionId = pathParam(c, 'eid')
+    const electionId = c.req.param('eid')
     // A voter session always has a subject; this narrows the type.
     const usuId = session.subject
     if (usuId === undefined) return c.json({ error: 'forbidden' }, 403)

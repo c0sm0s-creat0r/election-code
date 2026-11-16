@@ -23,7 +23,6 @@ import {
 import { recordAudit } from '../db/audit.js'
 import { notConfigured } from '../http/notConfigured.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { pathParam } from '../http/params.js'
 import type { AuthedEnv } from '../middleware/requireRole.js'
 
 const voterSignInSchema = z.object({
@@ -45,7 +44,7 @@ voter.post(
   async (c) => {
     if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
 
-    const batchId = pathParam(c, 'id')
+    const batchId = c.req.param('id')
     const parsed = voterSignInSchema.safeParse(await c.req.json().catch(() => undefined))
     if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
     const { usu_id: usuId, surname } = parsed.data

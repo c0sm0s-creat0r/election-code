@@ -12,7 +12,6 @@
 import { Hono } from 'hono'
 import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 import { ballotsSha256, type SealableBallot } from '../lib/seal.js'
 import type { ElectionRow } from '../db/types.js'
 
@@ -20,7 +19,7 @@ export const close = new Hono<AuthedEnv>()
 
 close.post('/api/batches/:id/elections/:eid/close', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const election = await c.env.DB
     .prepare(`SELECT id, status, closed_at FROM election WHERE id = ? AND batch_id = ?`)

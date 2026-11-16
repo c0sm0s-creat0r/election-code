@@ -168,7 +168,7 @@ batches.delete('/api/batches/:id', rateLimit('BATCH_CREATE_LIMITER'), async (c) 
     return c.json({ error: 'unauthorized' }, 401)
   }
 
-  const id = c.req.param('id') ?? ''
+  const id = c.req.param('id')
   const row = await c.env.DB
     .prepare(`SELECT id, slug FROM batch WHERE id = ?`)
     .bind(id)

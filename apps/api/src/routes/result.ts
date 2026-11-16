@@ -13,7 +13,6 @@ import type { Context } from 'hono'
 import { count, type CountResult } from '@election/core'
 import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 import type { CandidateRow, CountBallotRow, ElectionResultRow, ElectionRow, ElectionSealRow } from '../db/types.js'
 
 /** A sealed election, with the seal it was closed under. */
@@ -176,7 +175,7 @@ export const result = new Hono<AuthedEnv>()
 
 result.get('/api/batches/:id/elections/:eid/result', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const sealed = await loadSealed(c.env.DB, batchId, electionId)
   if ('error' in sealed) return sealedError(c, sealed)

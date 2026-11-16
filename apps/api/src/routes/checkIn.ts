@@ -11,7 +11,6 @@ import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit } from '../middleware/rateLimit.js'
 import type { VoterRollRow } from '../db/types.js'
-import { pathParam } from '../http/params.js'
 
 const checkInSchema = z.object({ usu_id: z.string().min(1).max(32) })
 
@@ -86,7 +85,7 @@ checkIn.post('/api/batches/:id/check-in', requireRole('door'), async (c) => {
  */
 checkIn.delete('/api/batches/:id/check-in/:usuId', requireRole('door'), async (c) => {
   const batchId = requireSession(c).batchId
-  const usuId = pathParam(c, 'usuId')
+  const usuId = c.req.param('usuId')
 
   const result = await c.env.DB
     .prepare(`DELETE FROM check_in WHERE batch_id = ? AND usu_id = ?`)

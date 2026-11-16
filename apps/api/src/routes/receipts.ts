@@ -12,14 +12,13 @@
 import { Hono } from 'hono'
 import { recordAudit } from '../db/audit.js'
 import { rateLimit } from '../middleware/rateLimit.js'
-import { pathParam } from '../http/params.js'
 import { sha256Hex } from '../lib/hash.js'
 import type { Env } from '../index.js'
 
 export const receipts = new Hono<{ Bindings: Env }>()
 
 receipts.get('/api/receipts/:token', rateLimit('VOTING_LIMITER'), async (c) => {
-  const hash = await sha256Hex(pathParam(c, 'token'))
+  const hash = await sha256Hex(c.req.param('token'))
 
   // Joins neither the preference list nor vote_receipt: a lookup must not
   // reveal who cast the ballot.
@@ -42,7 +41,7 @@ receipts.get('/api/receipts/:token', rateLimit('VOTING_LIMITER'), async (c) => {
 })
 
 receipts.post('/api/receipts/:token/void', rateLimit('VOTING_LIMITER'), async (c) => {
-  const hash = await sha256Hex(pathParam(c, 'token'))
+  const hash = await sha256Hex(c.req.param('token'))
   const now = Date.now()
 
   // For the audit row only, not a precondition. The batch id comes from our

@@ -12,7 +12,6 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { toBallotsCsv, toCandidatesCsv, type ExportBallot } from '@election/core'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 import { loadSealed, currentResult, resultDocument, sealedError } from './result.js'
 import type { BallotRow, CandidateRow } from '../db/types.js'
 
@@ -37,7 +36,7 @@ export const exports_ = new Hono<AuthedEnv>()
  */
 exports_.get('/api/batches/:id/elections/:eid/attendance.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const election = await c.env.DB
     .prepare(`SELECT id FROM election WHERE id = ? AND batch_id = ?`)
@@ -120,7 +119,7 @@ exports_.get('/api/batches/:id/attendance.csv', requireRole('officer'), async (c
  */
 exports_.get('/api/batches/:id/elections/:eid/ballots.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const sealed = await loadSealed(c.env.DB, batchId, electionId)
   if ('error' in sealed) return sealedError(c, sealed)
@@ -191,7 +190,7 @@ exports_.get('/api/batches/:id/check-ins.csv', requireRole('officer'), async (c)
 /** The rest of a recount's input. */
 exports_.get('/api/batches/:id/elections/:eid/candidates.csv', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const sealed = await loadSealed(c.env.DB, batchId, electionId)
   if ('error' in sealed) return sealedError(c, sealed)
@@ -207,7 +206,7 @@ exports_.get('/api/batches/:id/elections/:eid/candidates.csv', requireRole('offi
 /** The sealed result document, in the shape the result endpoint serves. */
 exports_.get('/api/batches/:id/elections/:eid/result.json', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const sealed = await loadSealed(c.env.DB, batchId, electionId)
   if ('error' in sealed) return sealedError(c, sealed)

@@ -9,7 +9,6 @@
 import { Hono } from 'hono'
 import { auditLogStatement } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 import { detectImageType } from '../lib/imageType.js'
 import { sha256HexBytes } from '../lib/hash.js'
 import type { BatchRow } from '../db/types.js'
@@ -71,7 +70,7 @@ logo.post('/api/batches/:id/logo', requireRole('officer'), async (c) => {
 const logoDelivery = new Hono<{ Bindings: Env }>()
 
 logoDelivery.get('/api/logos/:key{.+}', async (c) => {
-  const object = await c.env.LOGOS.get(pathParam(c, 'key'))
+  const object = await c.env.LOGOS.get(c.req.param('key'))
   if (!object) return c.json({ error: 'not found' }, 404)
 
   return new Response(object.body, {

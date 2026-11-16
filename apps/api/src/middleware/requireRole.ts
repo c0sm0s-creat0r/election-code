@@ -4,7 +4,7 @@
  *   401: unknown caller (no cookie, bad signature, expired).
  *   403: valid session, wrong role or wrong batch.
  */
-import type { Context, Next } from 'hono'
+import type { Context, MiddlewareHandler } from 'hono'
 import { getCookie } from 'hono/cookie'
 import type { Env } from '../index.js'
 import { verifySession, cookieName, type Role, type Session } from '../auth/session.js'
@@ -22,8 +22,8 @@ export function requireSession(c: Context<AuthedEnv>): Session {
 
 const ALL_ROLES: readonly Role[] = ['officer', 'door', 'voter']
 
-export function requireRole(role: Role) {
-  return async (c: Context<AuthedEnv>, next: Next) => {
+export function requireRole(role: Role): MiddlewareHandler<AuthedEnv> {
+  return async (c, next) => {
     const batchId = c.req.param('id')
     if (!batchId) return c.json({ error: 'unauthenticated' }, 401)
 

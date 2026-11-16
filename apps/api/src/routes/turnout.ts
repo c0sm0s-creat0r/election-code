@@ -4,13 +4,12 @@
  */
 import { Hono } from 'hono'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 
 export const turnout = new Hono<AuthedEnv>()
 
 turnout.get('/api/batches/:id/elections/:eid/turnout', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   // One statement, `found` included: clients poll this every few seconds.
   const row = await c.env.DB

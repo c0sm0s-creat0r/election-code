@@ -12,7 +12,6 @@ import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
 import type { Env } from '../index.js'
-import { pathParam } from '../http/params.js'
 
 const createElectionSchema = z.object({
   name: z.string().min(1).max(200),
@@ -77,7 +76,7 @@ async function listElections(
 }
 
 publicElections.get('/api/batches/:id/elections', async (c) =>
-  c.json(await listElections(c.env.DB, c.req.param('id') ?? '', ['open', 'closed'])))
+  c.json(await listElections(c.env.DB, c.req.param('id'), ['open', 'closed'])))
 
 elections.route('/', publicElections)
 
@@ -130,7 +129,7 @@ async function explainNoChange(
 
 elections.post('/api/batches/:id/elections/:eid/candidates', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
   const parsed = candidateSchema.safeParse(await c.req.json().catch(() => undefined))
   if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
 
@@ -158,8 +157,8 @@ elections.post('/api/batches/:id/elections/:eid/candidates', requireRole('office
 
 elections.patch('/api/batches/:id/elections/:eid/candidates/:cid', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
-  const candidateId = pathParam(c, 'cid')
+  const electionId = c.req.param('eid')
+  const candidateId = c.req.param('cid')
   const parsed = candidateSchema.safeParse(await c.req.json().catch(() => undefined))
   if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
 
@@ -180,8 +179,8 @@ elections.patch('/api/batches/:id/elections/:eid/candidates/:cid', requireRole('
 
 elections.delete('/api/batches/:id/elections/:eid/candidates/:cid', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
-  const candidateId = pathParam(c, 'cid')
+  const electionId = c.req.param('eid')
+  const candidateId = c.req.param('cid')
 
   const result = await c.env.DB
     .prepare(
@@ -200,7 +199,7 @@ elections.delete('/api/batches/:id/elections/:eid/candidates/:cid', requireRole(
 
 elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   // One conditional UPDATE holds every precondition: this batch's election,
   // still a draft, at least as many candidates as seats.
@@ -258,7 +257,7 @@ elections.post('/api/batches/:id/elections/:eid/open', requireRole('officer'), a
  */
 elections.delete('/api/batches/:id/elections/:eid', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   // Read for the audit detail only. Each statement below has its own guard.
   const before = await c.env.DB

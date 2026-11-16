@@ -15,7 +15,6 @@ import { z } from 'zod'
 import type { TieBreakRecord } from '@election/core'
 import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { pathParam } from '../http/params.js'
 import { loadSealed, currentResult, resultDocument, computeAndStore, sealedError } from './result.js'
 
 const overrideSchema = z.object({
@@ -45,7 +44,7 @@ export const override = new Hono<AuthedEnv>()
 
 override.post('/api/batches/:id/elections/:eid/result/override', requireRole('officer'), async (c) => {
   const batchId = requireSession(c).batchId
-  const electionId = pathParam(c, 'eid')
+  const electionId = c.req.param('eid')
 
   const sealed = await loadSealed(c.env.DB, batchId, electionId)
   if ('error' in sealed) return sealedError(c, sealed)
