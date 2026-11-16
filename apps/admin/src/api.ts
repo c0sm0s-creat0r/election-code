@@ -74,9 +74,6 @@ export const probeOfficer = (batchId: string) =>
 export const officerSignOut = (batchId: string) =>
   request<void>(`/api/batches/${batchId}/officer/session`, { method: 'DELETE' })
 
-export const doorSignOut = (batchId: string) =>
-  request<void>(`/api/batches/${batchId}/door/session`, { method: 'DELETE' })
-
 export const officerSignIn = (batchId: string, password: string) =>
   request<{ ok: true; role: string }>(`/api/batches/${batchId}/officer/session`, postJson({ password }))
 
@@ -137,12 +134,6 @@ export const addCandidate = (batchId: string, electionId: string, name: string) 
   request<import('@election/core').Candidate>(
     `/api/batches/${batchId}/elections/${electionId}/candidates`,
     postJson({ name }),
-  )
-
-export const renameCandidate = (batchId: string, electionId: string, candidateId: string, name: string) =>
-  request<import('@election/core').Candidate>(
-    `/api/batches/${batchId}/elections/${electionId}/candidates/${candidateId}`,
-    patchJson({ name }),
   )
 
 export const removeCandidate = (batchId: string, electionId: string, candidateId: string) =>
