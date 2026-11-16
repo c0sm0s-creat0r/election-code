@@ -1,3 +1,5 @@
+import { parseCsv } from './csv.js'
+
 export type RollMember = {
   usuId: string
   firstName: string
@@ -19,69 +21,6 @@ const HEADER_COLUMNS = 28
 const SHIFT_AT = 10 // an extra source-type-text field appears here
 
 /**
- * Single-pass CSV parse, so a quoted newline does not split a row. Throws on
- * an unterminated quote: rows have merged and `skipped` would undercount.
- */
-function parseCsvRows(csv: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let cur = ''
-  let inQuotes = false
-  let started = false // true once the current (unterminated) row has any content
-
-  const n = csv.length
-  let i = 0
-  while (i < n) {
-    const ch = csv[i]!
-    if (inQuotes) {
-      if (ch === '"' && csv[i + 1] === '"') { cur += '"'; i += 2; continue }
-      if (ch === '"') { inQuotes = false; i++; continue }
-      cur += ch
-      i++
-      continue
-    }
-    if (ch === '"') { inQuotes = true; started = true; i++; continue }
-    if (ch === ',') { row.push(cur); cur = ''; started = true; i++; continue }
-    if (ch === '\r' && csv[i + 1] === '\n') {
-      row.push(cur)
-      rows.push(row)
-      row = []
-      cur = ''
-      started = false
-      i += 2
-      continue
-    }
-    if (ch === '\n') {
-      row.push(cur)
-      rows.push(row)
-      row = []
-      cur = ''
-      started = false
-      i++
-      continue
-    }
-    cur += ch
-    started = true
-    i++
-  }
-
-  if (inQuotes) {
-    throw new Error(
-      'parseUsuExport: unterminated quoted field — the export is corrupt. ' +
-        'No roll was imported.',
-    )
-  }
-
-  // Flush a final row with no trailing newline.
-  if (started || cur.length > 0 || row.length > 0) {
-    row.push(cur)
-    rows.push(row)
-  }
-
-  return rows
-}
-
-/**
  * Parse a USU member export into roll entries.
  *
  * The export has 28 header columns but 29 per data row: an unnamed field at
@@ -93,7 +32,15 @@ function parseCsvRows(csv: string): string[][] {
  * Keeps id, names and eligibility. Discards email and everything else.
  */
 export function parseUsuExport(csv: string): ImportResult {
-  const rows = parseCsvRows(csv).filter((r) => !(r.length === 1 && (r[0] ?? '').trim() === ''))
+  const parsed = parseCsv(csv)
+  // Rows have merged, and `skipped` would undercount.
+  if (!parsed) {
+    throw new Error(
+      'parseUsuExport: unterminated quoted field — the export is corrupt. ' +
+        'No roll was imported.',
+    )
+  }
+  const rows = parsed.filter((r) => !(r.length === 1 && (r[0] ?? '').trim() === ''))
   const header = rows[0]
   if (!header) throw new Error('parseUsuExport: file has no header row')
 

@@ -1,4 +1,5 @@
 import { count } from './count.js'
+import { parseCsv } from './csv.js'
 import type { Candidate, CountBallot, CountResult } from './types.js'
 
 /**
@@ -12,79 +13,6 @@ type CsvRow = { n: number; fields: string[] }
 
 function corrupt(detail: string): Error {
   return new Error(`recount: ${detail} — the CSV is corrupt. No count was performed.`)
-}
-
-/**
- * Single-pass CSV parse. Quoted fields may hold commas, newlines and `""`.
- * Not shared with usu-import.ts: that parser recovers from a malformed file,
- * this one fails closed.
- */
-function parseCsvRows(text: string): CsvRow[] {
-  const rows: CsvRow[] = []
-  let row: string[] = []
-  let field = ''
-  let inQuotes = false
-  let i = 0
-  let ordinal = 0
-  const n = text.length
-
-  const endField = () => {
-    row.push(field)
-    field = ''
-  }
-  const endRow = () => {
-    endField()
-    rows.push({ n: ++ordinal, fields: row })
-    row = []
-  }
-
-  while (i < n) {
-    const c = text[i]
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i += 2
-        } else {
-          inQuotes = false
-          i++
-        }
-      } else {
-        field += c
-        i++
-      }
-      continue
-    }
-    if (c === '"') {
-      inQuotes = true
-      i++
-    } else if (c === ',') {
-      endField()
-      i++
-    } else if (c === '\n') {
-      endRow()
-      i++
-    } else if (c === '\r' && text[i + 1] === '\n') {
-      endRow()
-      i += 2
-    } else {
-      field += c
-      i++
-    }
-  }
-  if (inQuotes) {
-    // We only read our own export, so this is truncation or tampering.
-    throw new Error(
-      'recount: unterminated quoted field — the CSV is truncated or corrupt. No count was performed.',
-    )
-  }
-  if (field !== '' || row.length > 0) {
-    endRow()
-  }
-
-  // Drop all-blank rows: a phantom ballot would change the quota. Field values
-  // are never trimmed.
-  return rows.filter((r) => !r.fields.every((f) => f.trim() === ''))
 }
 
 const CANDIDATE_HEADER = ['candidate_id', 'name'] as const
@@ -131,7 +59,18 @@ export function toBallotsCsv(ballots: ExportBallot[]): string {
  * cannot be checked against a seal.
  */
 function dataRows(csv: string, header: readonly string[]): CsvRow[] {
-  const rows = parseCsvRows(csv)
+  const parsed = parseCsv(csv)
+  // We read only our own export, so this is truncation or tampering.
+  if (!parsed) {
+    throw new Error(
+      'recount: unterminated quoted field — the CSV is truncated or corrupt. No count was performed.',
+    )
+  }
+  // Drop all-blank rows: a phantom ballot would change the quota. Field values
+  // are never trimmed.
+  const rows: CsvRow[] = parsed
+    .map((fields, i) => ({ n: i + 1, fields }))
+    .filter((r) => !r.fields.every((f) => f.trim() === ''))
   const first = rows[0]
   const headerOk =
     first !== undefined &&
