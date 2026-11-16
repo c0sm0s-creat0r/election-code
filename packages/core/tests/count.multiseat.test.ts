@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { count } from '../src/count.js'
 import type { CountInput, CountResult } from '../src/types.js'
+import { ballots } from './helpers.js'
 
-const ballots = (spec: [string[], number][]) =>
-  spec.flatMap(([prefs, n]) =>
-    Array.from({ length: n }, (_, i) => ({ id: `${prefs.join('')}-${i}`, preferences: prefs })),
-  )
 
 const cands = (ids: string[]) => ids.map((id) => ({ id, name: id.toUpperCase() }))
 

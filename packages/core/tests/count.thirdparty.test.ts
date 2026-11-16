@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { count } from '../src/count.js'
+import { ballots } from './helpers.js'
 import fx from './fixtures/third-party/concretestv-simple-example.json' with { type: 'json' }
 
 /**
@@ -15,25 +16,16 @@ import fx from './fixtures/third-party/concretestv-simple-example.json' with { t
  * ConcreteSTV stores above-the-line tickets. Each is expanded to its
  * preference list, recorded in the fixture's `_from` fields.
  */
-const ballots = () =>
-  (fx.ballotGroups as { preferences: string[]; n: number }[]).flatMap((g, gi) =>
-    Array.from({ length: g.n }, (_, i) => ({ id: `g${gi}-${i}`, preferences: g.preferences })),
-  )
-
 const run = () =>
   count({
     candidates: fx.candidates,
-    ballots: ballots(),
+    ballots: ballots(fx.ballotGroups.map((g) => [g.preferences, g.n])),
     seats: fx.seats,
     electionId: 'concretestv-simple',
     ballotsSha256: 'ab'.repeat(8),
   })
 
 describe('ConcreteSTV SimpleExample (AEC2013 rules)', () => {
-  it('expands the party tickets to 240 ballots', () => {
-    expect(ballots()).toHaveLength(240)
-  })
-
   it('computes the same quota', async () => {
     expect((await run()).quota).toBe(fx.quota)
   })
@@ -72,15 +64,5 @@ describe('ConcreteSTV SimpleExample (AEC2013 rules)', () => {
     expect(at('A2')).toBe('44.54500')
     expect(at('P1')).toBe('24.45450')
     expect(at('C2')).toBe('48.99950') // C1's surplus, entirely to C2
-  })
-
-  it('conserves every vote across the whole count', async () => {
-    const r = await run()
-    for (const rd of r.rounds) {
-      const total =
-        rd.counts.reduce((s, c) => s + BigInt(c.votes.replace('.', '')), 0n) +
-        BigInt(rd.nonTransferable.replace('.', ''))
-      expect(total).toBe(24_000_000n) // 240 ballots at 5dp
-    }
   })
 })

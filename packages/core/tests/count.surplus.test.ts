@@ -1,31 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { count } from '../src/count.js'
-import type { CountInput } from '../src/types.js'
+import type { CountBallot } from '../src/types.js'
+import { ballots, input as base } from './helpers.js'
 
-const input = (over: Partial<CountInput>): CountInput => ({
-  candidates: [
-    { id: 'a', name: 'Alex' },
-    { id: 'b', name: 'Bo' },
-    { id: 'c', name: 'Cass' },
-  ],
-  ballots: [],
-  seats: 2,
-  electionId: 'e1',
-  ballotsSha256: 'deadbeef00000000',
-  ...over,
-})
-
-const ballots = (spec: [string[], number][]) =>
-  spec.flatMap(([prefs, n]) =>
-    Array.from({ length: n }, (_, i) => ({ id: `${prefs.join('')}-${i}`, preferences: prefs })),
-  )
+// two seats throughout
+const input = (b: CountBallot[]) => base({ seats: 2, ballots: b })
 
 describe('surplus transfers (IGM)', () => {
   it('transfer value is surplus divided by the NUMBER of papers', async () => {
     // 12 ballots, 2 seats -> quota = floor(12/3)+1 = 5
     // a gets 9 first preferences: surplus 4, over 9 papers -> TV = 0.44444
     const r = await count(
-      input({ ballots: ballots([[['a', 'b'], 9], [['c', 'b'], 3]]) }),
+      input(ballots([[['a', 'b'], 9], [['c', 'b'], 3]])),
     )
     const elected = r.rounds.flatMap((x) => x.elected).find((e) => e.candidateId === 'a')!
     expect(elected.surplus).toBe('4.00000')
@@ -35,7 +21,7 @@ describe('surplus transfers (IGM)', () => {
   it('moves every paper at the same value, replacing its old weight', async () => {
     // IGM: one transfer value per distribution
     const r = await count(
-      input({ ballots: ballots([[['a', 'b'], 9], [['c', 'b'], 3]]) }),
+      input(ballots([[['a', 'b'], 9], [['c', 'b'], 3]])),
     )
     // b receives 9 papers at 0.44444 in the round a's surplus is
     // distributed = 3.99996
@@ -46,7 +32,7 @@ describe('surplus transfers (IGM)', () => {
   it('sends exhausted papers to non-transferable', async () => {
     // a's surplus papers have no further preference
     const r = await count(
-      input({ ballots: ballots([[['a'], 9], [['b'], 2], [['c'], 1]]) }),
+      input(ballots([[['a'], 9], [['b'], 2], [['c'], 1]])),
     )
     const last = r.rounds[r.rounds.length - 1]!
     expect(Number(last.nonTransferable)).toBeGreaterThan(0)
@@ -75,13 +61,11 @@ describe('a second surplus, over papers of mixed weight', () => {
    */
   const secondSurplus = () =>
     count(
-      input({
-        ballots: ballots([
-          [['a', 'b'], 9],
-          [['b', 'c'], 6],
-          [['c', 'b'], 6],
-        ]),
-      }),
+      input(ballots([
+        [['a', 'b'], 9],
+        [['b', 'c'], 6],
+        [['c', 'b'], 6],
+      ])),
     )
 
   it('sets the first transfer value at 0.11111 and books the fraction lost', async () => {

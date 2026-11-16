@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { count } from '../src/count.js'
-import type { CountInput } from '../src/types.js'
+import type { CountInput, CountResult } from '../src/types.js'
+import { ballots, input } from './helpers.js'
 
 /** Deterministic pseudo-random generator so failures are reproducible. */
 function lcg(seed: number) {
@@ -42,30 +43,36 @@ function randomElection(seed: number): CountInput {
   return { candidates, ballots, seats, electionId: `e${seed}`, ballotsSha256: 'aa'.repeat(8) }
 }
 
-describe('count - properties', () => {
-  it('terminates and never exceeds the seat count, across 200 random elections', async () => {
-    for (let seed = 1; seed <= 200; seed++) {
-      const input = randomElection(seed)
-      const r = await count(input)
+describe('count - properties, across 200 random elections', () => {
+  // Counted once; every property reads the same set.
+  let runs: { seed: number; input: CountInput; r: CountResult }[]
+  beforeAll(async () => {
+    runs = await Promise.all(
+      Array.from({ length: 200 }, async (_, i) => {
+        const input = randomElection(i + 1)
+        return { seed: i + 1, input, r: await count(input) }
+      }),
+    )
+  })
+
+  it('never exceeds the seat count or elects anyone twice', () => {
+    for (const { input, r } of runs) {
       expect(r.winners.length).toBeLessThanOrEqual(input.seats)
       expect(new Set(r.winners.map((w) => w.id)).size).toBe(r.winners.length)
     }
   })
 
-  it('fills every seat whenever there are enough candidates and ballots', async () => {
-    for (let seed = 1; seed <= 200; seed++) {
-      const input = randomElection(seed)
+  it('fills every seat whenever there are enough candidates and ballots', () => {
+    for (const { input, r } of runs) {
       if (input.ballots.length === 0) continue
       if (input.candidates.length < input.seats) continue
-      const r = await count(input)
       expect(r.winners.length).toBe(input.seats)
     }
   })
 
-  it('never lets the non-transferable total go down', async () => {
+  it('never lets the non-transferable total go down', () => {
     // Votes only ever leave the count: by exhaustion or by truncation.
-    for (let seed = 1; seed <= 200; seed++) {
-      const r = await count(randomElection(seed))
+    for (const { r } of runs) {
       let previous = 0n
       for (const round of r.rounds) {
         const current = fx(round.nonTransferable)
@@ -75,11 +82,10 @@ describe('count - properties', () => {
     }
   })
 
-  it('elects every winner either on quota or by the fill rule', async () => {
+  it('elects every winner either on quota or by the fill rule', () => {
     // A seat is filled only at quota, or by the fill rule once the continuing
     // field has shrunk to the seats left.
-    for (let seed = 1; seed <= 200; seed++) {
-      const r = await count(randomElection(seed))
+    for (const { r } of runs) {
       const quota = fx(r.quota)
       const declared: string[] = []
 
@@ -105,12 +111,11 @@ describe('count - properties', () => {
     }
   })
 
-  it('never ends a round with a continuing candidate sitting on a quota', async () => {
+  it('never ends a round with a continuing candidate sitting on a quota', () => {
     // A continuing candidate may sit at or above quota only after an exclusion
     // round, and is then elected at the next count. A round that elected and
     // distributed must leave nobody continuing on a quota (CEA s273(8)).
-    for (let seed = 1; seed <= 200; seed++) {
-      const r = await count(randomElection(seed))
+    for (const { seed, r } of runs) {
       const quota = fx(r.quota)
 
       for (const [index, round] of r.rounds.entries()) {
@@ -135,72 +140,40 @@ describe('count - properties', () => {
     }
   })
 
-  it('is deterministic - identical input gives identical output', async () => {
-    for (let seed = 1; seed <= 50; seed++) {
-      const input = randomElection(seed)
-      const a = await count(input)
-      const b = await count(input)
-      expect(JSON.stringify(a)).toBe(JSON.stringify(b))
-    }
-  })
-
   it('is independent of ballot ordering', async () => {
-    for (let seed = 1; seed <= 50; seed++) {
-      const input = randomElection(seed)
-      const reversed = { ...input, ballots: [...input.ballots].reverse() }
-      const a = await count(input)
-      const b = await count(reversed)
-      expect(a.winners.map((w) => w.id)).toEqual(b.winners.map((w) => w.id))
-      expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+    for (const { input, r } of runs.slice(0, 50)) {
+      const reversed = await count({ ...input, ballots: [...input.ballots].reverse() })
+      expect(reversed).toEqual(r)
     }
   })
 })
 
 describe('count - edge cases', () => {
-  const base = { electionId: 'e', ballotsSha256: 'bb'.repeat(8) }
-
   it('handles a single candidate and a single seat', async () => {
-    const r = await count({
-      ...base,
+    const r = await count(input({
       candidates: [{ id: 'a', name: 'Alex' }],
-      ballots: [{ id: 'b1', preferences: ['a'] }],
-      seats: 1,
-    })
+      ballots: ballots([[['a'], 1]]),
+    }))
     expect(r.winners.map((w) => w.id)).toEqual(['a'])
   })
 
   it('handles every ballot exhausting', async () => {
-    const r = await count({
-      ...base,
-      candidates: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }],
-      ballots: [{ id: 'b1', preferences: ['a'] }, { id: 'b2', preferences: ['b'] }],
-      seats: 1,
-    })
+    const r = await count(input({ ballots: ballots([[['a'], 1], [['b'], 1]]) }))
     expect(r.winners).toHaveLength(1)
     expect(r.rounds.some((round) => round.excluded.length > 0)).toBe(true)
   })
 
   it('handles seats >= candidates by electing everyone', async () => {
-    const r = await count({
-      ...base,
+    const r = await count(input({
       candidates: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }],
-      ballots: [{ id: 'b1', preferences: ['a', 'b'] }],
+      ballots: ballots([[['a', 'b'], 1]]),
       seats: 3,
-    })
+    }))
     expect(r.winners.map((w) => w.id).sort()).toEqual(['a', 'b'])
   })
 
   it('handles every candidate tied', async () => {
-    const r = await count({
-      ...base,
-      candidates: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }],
-      ballots: [
-        { id: '1', preferences: ['a'] },
-        { id: '2', preferences: ['b'] },
-        { id: '3', preferences: ['c'] },
-      ],
-      seats: 1,
-    })
+    const r = await count(input({ ballots: ballots([[['a'], 1], [['b'], 1], [['c'], 1]]) }))
     expect(r.winners).toHaveLength(1)
     expect(r.tieBreaks.length).toBeGreaterThan(0)
     expect(['countback', 'seeded_draw']).toContain(r.tieBreaks[0]!.method)

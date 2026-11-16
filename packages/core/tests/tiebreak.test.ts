@@ -7,78 +7,43 @@ const r = (o: Record<string, number>): Map<string, Fixed> =>
   new Map(Object.entries(o).map(([k, v]) => [k, fromInt(v)]))
 
 describe('countback', () => {
-  it('excludes whoever was lower at the last round they differed', () => {
-    const history = [r({ a: 10, b: 12 }), r({ a: 15, b: 15 })]
-    // for an exclusion, the LOWER candidate at the differing round loses
-    expect(countback(['a', 'b'], history, 'exclusion')).toEqual({ winner: 'a', atRound: 1 })
-  })
+  const lastRoundLevel = [r({ a: 10, b: 12 }), r({ a: 15, b: 15 })]
 
-  it('elects whoever was higher at the last round they differed', () => {
-    const history = [r({ a: 10, b: 12 }), r({ a: 15, b: 15 })]
-    expect(countback(['a', 'b'], history, 'election_order')).toEqual({ winner: 'b', atRound: 1 })
-  })
-
-  it('walks backwards and uses the MOST RECENT differing round', () => {
-    const history = [r({ a: 1, b: 9 }), r({ a: 8, b: 5 }), r({ a: 15, b: 15 })]
+  it.each([
+    ['excludes whoever was lower at the last round they differed',
+      lastRoundLevel, 'exclusion', { winner: 'a', atRound: 1 }],
+    ['elects whoever was higher at the last round they differed',
+      lastRoundLevel, 'election_order', { winner: 'b', atRound: 1 }],
     // round 2 is the most recent difference: a=8 > b=5, so b is excluded
-    expect(countback(['a', 'b'], history, 'exclusion')).toEqual({ winner: 'b', atRound: 2 })
-  })
-
-  it('returns null when level at every round', () => {
-    const history = [r({ a: 5, b: 5 }), r({ a: 9, b: 9 })]
-    expect(countback(['a', 'b'], history, 'exclusion')).toBeNull()
-  })
-
-  it('keeps walking back when the differing round leaves the tied pair level', () => {
-    const history = [r({ a: 1, b: 2, c: 9 }), r({ a: 5, b: 5, c: 8 })]
-    // round 2 differs overall but does NOT separate a from b; round 1 does
-    expect(countback(['a', 'b'], history, 'exclusion')).toEqual({ winner: 'a', atRound: 1 })
-  })
-
-  it('returns null when no round ever gives a unique extreme', () => {
-    const history = [r({ a: 5, b: 5, c: 8 }), r({ a: 7, b: 7, c: 9 })]
-    expect(countback(['a', 'b'], history, 'exclusion')).toBeNull()
+    ['uses the most recent differing round',
+      [r({ a: 1, b: 9 }), r({ a: 8, b: 5 }), r({ a: 15, b: 15 })], 'exclusion', { winner: 'b', atRound: 2 }],
+    ['returns null when level at every round',
+      [r({ a: 5, b: 5 }), r({ a: 9, b: 9 })], 'exclusion', null],
+    // only a and b are tied; c's totals must not count as a difference
+    ['ignores candidates outside the tie',
+      [r({ a: 1, b: 2, c: 9 }), r({ a: 5, b: 5, c: 8 })], 'exclusion', { winner: 'a', atRound: 1 }],
+    ['returns null when the tied pair is level throughout, whatever others hold',
+      [r({ a: 5, b: 5, c: 8 }), r({ a: 7, b: 7, c: 9 })], 'exclusion', null],
+  ] as const)('%s', (_label, history, kind, expected) => {
+    expect(countback(['a', 'b'], [...history], kind)).toEqual(expected)
   })
 })
 
-describe('seededDraw', () => {
-  it('is deterministic for the same seed and tie id', async () => {
+describe('deriveSeed and seededDraw', () => {
+  it('give the known answer for fixed inputs', async () => {
+    // sha256('election-1|abc123|tb-1'); first 8 bytes mod 3 = 1 -> 'y'
     const seed = await deriveSeed('election-1', 'abc123', 'tb-1')
-    const a = await seededDraw(['x', 'y', 'z'], seed)
-    const b = await seededDraw(['x', 'y', 'z'], seed)
-    expect(a).toBe(b)
+    expect(seed).toBe('aee5b2775979da5b7608b311aabeb8a8bfd1c0727d06b195e3f6f76e0af2a328')
+    expect(await seededDraw(['x', 'y', 'z'], seed)).toBe('y')
+    // sorted internally, so caller order cannot steer it
+    expect(await seededDraw(['z', 'y', 'x'], seed)).toBe('y')
   })
 
-  it('is independent of the order the tied candidates are passed in', async () => {
-    const seed = await deriveSeed('election-1', 'abc123', 'tb-1')
-    const a = await seededDraw(['x', 'y', 'z'], seed)
-    const b = await seededDraw(['z', 'y', 'x'], seed)
-    expect(a).toBe(b) // sorted internally, so caller order cannot steer it
-  })
-
-  it('always returns one of the tied candidates', async () => {
-    for (const id of ['tb-1', 'tb-2', 'tb-3', 'tb-4', 'tb-5']) {
-      const seed = await deriveSeed('e', 'deadbeef', id)
-      expect(['x', 'y', 'z']).toContain(await seededDraw(['x', 'y', 'z'], seed))
-    }
-  })
-})
-
-describe('deriveSeed', () => {
-  it('differs per tie-break id', async () => {
-    // if it did not, two ties in one count would resolve to the same index
-    const s1 = await deriveSeed('e1', 'hash', 'tb-1')
-    const s2 = await deriveSeed('e1', 'hash', 'tb-2')
-    expect(s1).not.toBe(s2)
-  })
-
-  it('differs when the ballot hash differs', async () => {
-    const s1 = await deriveSeed('e1', 'hashA', 'tb-1')
-    const s2 = await deriveSeed('e1', 'hashB', 'tb-1')
-    expect(s1).not.toBe(s2)
-  })
-
-  it('is reproducible, so anyone can verify a draw after the fact', async () => {
-    expect(await deriveSeed('e1', 'hash', 'tb-1')).toBe(await deriveSeed('e1', 'hash', 'tb-1'))
+  it.each([
+    // otherwise two ties in one count would resolve to the same index
+    ['tie-break id', 'hash', 'tb-2'],
+    ['ballot hash', 'hashB', 'tb-1'],
+  ])('the seed differs when the %s differs', async (_label, hash, tieBreakId) => {
+    expect(await deriveSeed('e1', hash, tieBreakId)).not.toBe(await deriveSeed('e1', 'hash', 'tb-1'))
   })
 })

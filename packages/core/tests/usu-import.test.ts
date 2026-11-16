@@ -138,38 +138,21 @@ describe('parseUsuExport', () => {
     expect(() => parseUsuExport(unterminated)).toThrow(/unterminated|corrupt/i)
   })
 
-  it('an even number of stray quotes lets the file terminate, but silently merges the rows in between - and skipped undercounts the real loss', () => {
-    // A stray quote opens a runaway field in row 2600002. Two quote-free lines
-    // are swallowed into it, and a second stray quote closes it. The quotes
-    // balance, so nothing throws, but three member rows have merged into one.
-    const good1 = shiftedRow('2600001', 'First', 'Good', '-', '0')
-    const corruptLine = [
-      '"900002"', '"2600002"', '"13000002"', '"Stray"', '"Quote"',
-      '"person@example.com"', '"-"', '""', '"Member"', '"0"', '"Web"',
-      '"Joined a group"', '"12/31/2026"', '"1/1/2026 9:00:00 AM"', '"0"', '"0"',
-      '"-"', '"-"', '"Note with a stray',
-    ].join(',')
-    // two more members' rows, with no quotes of their own
-    const swallowedA = 'PLAIN,2600003,ThirdPerson,SwallowedWhole'
-    const swallowedB = 'PLAIN,2600004,FourthPerson,AlsoSwallowed'
-    // exactly one quote character: closes the runaway field
-    const closingFragment = 'end of runaway note" ,filler'
-    const good2 = shiftedRow('2600005', 'Last', 'Good', '-', '0')
-
-    const csv = [header, good1, corruptLine, swallowedA, swallowedB, closingFragment, good2].join('\n')
-
+  it('balanced stray quotes merge the rows between them into one skipped row', () => {
+    // The quote opened on 2600002's row swallows two members' lines before a
+    // second stray quote closes it. Nothing throws, and `skipped` is 1 though
+    // three members are lost: it counts rows, not members.
+    const csv = [
+      header,
+      shiftedRow('2600001', 'First', 'Good', '-', '0'),
+      shiftedRow('2600002', 'Stray', 'Quote', '-', '0') + ',"opens',
+      'PLAIN,2600003',
+      'PLAIN,2600004',
+      'closes",filler',
+      shiftedRow('2600005', 'Last', 'Good', '-', '0'),
+    ].join('\n')
     const r = parseUsuExport(csv)
-
-    // The parse terminates (does not throw) ...
-    expect(r.members).toHaveLength(2) // only 2600001 and 2600005 survive intact
     expect(r.members.map((m) => m.usuId)).toEqual(['2600001', '2600005'])
-    // ... and the merged row is counted as exactly ONE skipped row ...
     expect(r.skipped).toBe(1)
-    // ... although three members are missing. `skipped` counts rows, not lost
-    // members, once rows have merged.
-    const intendedMembers = 5 // 2600001..2600005
-    const actuallyAccountedFor = r.members.length + r.skipped
-    expect(actuallyAccountedFor).toBeLessThan(intendedMembers)
-    expect(intendedMembers - actuallyAccountedFor).toBe(2) // 2 of the 3 lost members are invisible to `skipped`
   })
 })

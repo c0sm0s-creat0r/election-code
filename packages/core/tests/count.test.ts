@@ -1,29 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { count } from '../src/count.js'
-import type { CountInput } from '../src/types.js'
-
-const base = (over: Partial<CountInput>): CountInput => ({
-  candidates: [
-    { id: 'a', name: 'Alex' },
-    { id: 'b', name: 'Bo' },
-    { id: 'c', name: 'Cass' },
-  ],
-  ballots: [],
-  seats: 1,
-  electionId: 'e1',
-  ballotsSha256: 'deadbeef00000000',
-  ...over,
-})
-
-const ballots = (spec: [string[], number][]) =>
-  spec.flatMap(([prefs, n]) =>
-    Array.from({ length: n }, (_, i) => ({ id: `${prefs.join('')}-${i}`, preferences: prefs })),
-  )
+import { ballots, input } from './helpers.js'
 
 describe('count - first preferences', () => {
   it('elects an outright majority in round 1', async () => {
     const r = await count(
-      base({ ballots: ballots([[['a', 'b'], 6], [['b', 'a'], 4]]) }),
+      input({ ballots: ballots([[['a', 'b'], 6], [['b', 'a'], 4]]) }),
     )
     expect(r.quota).toBe('6.00000') // floor(10/2)+1
     expect(r.winners.map((w) => w.id)).toEqual(['a'])
@@ -34,18 +16,13 @@ describe('count - first preferences', () => {
   it('elects the remaining candidates when continuing == remaining seats', async () => {
     // 2 seats, 2 candidates: both are elected without anyone reaching quota
     const r = await count(
-      base({
+      input({
         seats: 2,
         candidates: [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Bo' }],
         ballots: ballots([[['a', 'b'], 5], [['b', 'a'], 5]]),
       }),
     )
     expect(r.winners.map((w) => w.id).sort()).toEqual(['a', 'b'])
-  })
-
-  it('returns no winner and no rounds for zero ballots', async () => {
-    const r = await count(base({ ballots: [] }))
-    expect(r.winners).toEqual([])
   })
 
   // No conservation test here: recordRound() throws on any leak.
@@ -86,28 +63,12 @@ describe('count - every candidate at quota is elected in the same round (C1)', (
 })
 
 describe('count - the zero-vote guard', () => {
-  it('holds no count when every ballot ranks nobody', async () => {
-    // three ballots that rank no candidate must not elect anyone on 0.00000
-    const r = await count(
-      base({
-        ballots: [
-          { id: 'x1', preferences: [] },
-          { id: 'x2', preferences: [] },
-          { id: 'x3', preferences: [] },
-        ],
-      }),
-    )
-    expect(r.quota).toBe('2.00000') // still reported: floor(3/2)+1
-    expect(r.rounds).toEqual([])
-    expect(r.winners).toEqual([])
-    expect(r.tieBreaks).toEqual([])
-  })
-
-  it('holds no count when every preference names a non-candidate', async () => {
-    const r = await count(
-      base({ ballots: [{ id: 'x1', preferences: ['ghost'] }] }),
-    )
-    expect(r.winners).toEqual([])
-    expect(r.rounds).toEqual([])
+  // nobody may be elected on 0.00000; the quota is still reported
+  it.each([
+    ['there are no ballots', [], '1.00000'],
+    ['every ballot ranks nobody', ['x1', 'x2', 'x3'].map((id) => ({ id, preferences: [] })), '2.00000'],
+    ['every preference names a non-candidate', [{ id: 'x1', preferences: ['ghost'] }], '1.00000'],
+  ])('holds no count when %s', async (_label, ballots, quota) => {
+    expect(await count(input({ ballots }))).toEqual({ quota, rounds: [], winners: [], tieBreaks: [] })
   })
 })
