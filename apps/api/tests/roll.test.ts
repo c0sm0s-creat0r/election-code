@@ -1,40 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
+import { SELF, env } from 'cloudflare:test'
 // `?raw`, because the workers runtime cannot read the host filesystem.
 import csv from './fixtures/usu-sample.csv?raw'
+import { setUpBatch, uploadRoll } from './helpers'
 
-const KEY = 'super-secret-test-key'
 let batchId = ''
 let officerCookie = ''
+let doorCookie = ''
 
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['voter_roll', 'check_in', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  const si = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: 'officer-password-1' }),
-  })
-  officerCookie = (si.headers.get('set-cookie') ?? '').split(';')[0]!
+  ({ batchId, officerCookie, doorCookie } = await setUpBatch())
 })
 
-const upload = (path: string, cookie = officerCookie) => {
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  return SELF.fetch(`https://example.com/api/batches/${batchId}${path}`, {
-    method: 'POST', headers: { cookie }, body: fd,
-  })
-}
+const upload = (path: string, cookie = officerCookie) => uploadRoll(batchId, cookie, path)
 
 describe('roll import', () => {
   it('requires an officer session', async () => {
@@ -42,11 +20,6 @@ describe('roll import', () => {
   })
 
   it('rejects a door session', async () => {
-    const si = await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'door-password-1' }),
-    })
-    const doorCookie = (si.headers.get('set-cookie') ?? '').split(';')[0]!
     expect((await upload('/roll/preview', doorCookie)).status).toBe(403)
   })
 

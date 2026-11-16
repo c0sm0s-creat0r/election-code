@@ -1,36 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
+import { SELF, env } from 'cloudflare:test'
+import {
+  JSON_HEADERS as json, setUpBatch, createBatch, signIn,
+  createElection as createElectionId, openElection as openById,
+} from './helpers'
 
-const KEY = 'super-secret-test-key'
 let batchId = ''
 let officerCookie = ''
 let doorCookie = ''
 
-const json = { 'content-type': 'application/json' }
-
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['candidate', 'election', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { ...json, 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  const si = await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-1' }),
-  })
-  officerCookie = (si.headers.get('set-cookie') ?? '').split(';')[0]!
-  const ds = await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'door-password-1' }),
-  })
-  doorCookie = (ds.headers.get('set-cookie') ?? '').split(';')[0]!
+  ({ batchId, officerCookie, doorCookie } = await setUpBatch())
 })
 
 const createElection = (body: { name: string; seats: number }, cookie = officerCookie) =>
@@ -38,10 +18,8 @@ const createElection = (body: { name: string; seats: number }, cookie = officerC
     method: 'POST', headers: { ...json, cookie }, body: JSON.stringify(body),
   })
 
-const newElection = async (body: { name?: string; seats?: number } = {}) => {
-  const res = await createElection({ name: body.name ?? 'President', seats: body.seats ?? 1 })
-  return (await res.json() as { id: string }).id
-}
+const newElection = (body: { name?: string; seats?: number } = {}) =>
+  createElectionId(batchId, officerCookie, body.name ?? 'President', body.seats ?? 1)
 
 const addCandidate = (eid: string, name: string, cookie = officerCookie) =>
   SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/candidates`, {
@@ -58,10 +36,7 @@ const deleteCandidate = (eid: string, cid: string) =>
     method: 'DELETE', headers: { cookie: officerCookie },
   })
 
-const open = (eid: string, cookie = officerCookie) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/open`, {
-    method: 'POST', headers: { cookie },
-  })
+const open = (eid: string) => openById(batchId, officerCookie, eid)
 
 const openElection = async () => {
   const eid = await newElection()
@@ -179,15 +154,7 @@ describe('election lifecycle', () => {
 
   it('does not list another batch\'s elections', async () => {
     await openElection()
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
+    const otherId = await createBatch('other', 2)
     const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/elections`)
     expect(await res.json()).toEqual([])
   })
@@ -195,18 +162,8 @@ describe('election lifecycle', () => {
   it('refuses to open an election belonging to another batch', async () => {
     const eid = await newElection()
     await addCandidate(eid, 'Alex')
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other2', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
-    const otherCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-2' }),
-    })).headers.get('set-cookie')) ?? '').split(';')[0]!
+    const otherId = await createBatch('other2', 2)
+    const otherCookie = await signIn(otherId, 'officer', 'officer-password-2')
     // the other batch's officer, on their own batch's path, naming our election
     const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/elections/${eid}/open`, {
       method: 'POST', headers: { cookie: otherCookie },
@@ -254,18 +211,8 @@ describe('officer election listing', () => {
 
   it('does not list another batch\'s elections', async () => {
     await newElection()
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other-list', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
-    const otherCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-2' }),
-    })).headers.get('set-cookie')) ?? '').split(';')[0]!
+    const otherId = await createBatch('other-list', 2)
+    const otherCookie = await signIn(otherId, 'officer', 'officer-password-2')
     const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/officer/elections`, {
       headers: { cookie: otherCookie },
     })

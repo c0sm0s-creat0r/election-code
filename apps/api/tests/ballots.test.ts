@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import csv from './fixtures/usu-sample.csv?raw'
-
-const KEY = 'super-secret-test-key'
-const json = { 'content-type': 'application/json' }
+import { SELF, env } from 'cloudflare:test'
+import {
+  JSON_HEADERS, setUp, createBatch, createElection, addCandidate, openElection,
+  checkIn, voterSignIn, submitBallot,
+} from './helpers'
 
 let batchId = ''
 let officerCookie = ''
@@ -14,92 +14,28 @@ let draftElectionId = ''
 let closedElectionId = ''
 let candidateIds: Record<string, string> = {}
 
-const cookieOf = (res: Response) => (res.headers.get('set-cookie') ?? '').split(';')[0]!
-
-const createElection = async (name: string, seats: number) => {
-  const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections`, {
-    method: 'POST', headers: { ...json, cookie: officerCookie },
-    body: JSON.stringify({ name, seats }),
-  })
-  return (await res.json() as { id: string }).id
-}
-
-const addCandidate = async (eid: string, name: string) => {
-  const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/candidates`, {
-    method: 'POST', headers: { ...json, cookie: officerCookie },
-    body: JSON.stringify({ name }),
-  })
-  return (await res.json() as { id: string }).id
-}
-
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['ballot', 'vote_receipt', 'candidate', 'election', 'check_in', 'voter_roll', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { ...json, 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  officerCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-1' }),
-  }))
-  doorCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'door-password-1' }),
-  }))
-
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body: fd,
-  })
-
   // seats = 2, so the minimum is two preferences
-  electionId = await createElection('President', 2)
-  candidateIds = {
-    a: await addCandidate(electionId, 'Alex'),
-    b: await addCandidate(electionId, 'Bo'),
-    c: await addCandidate(electionId, 'Cass'),
-  }
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/open`, {
-    method: 'POST', headers: { cookie: officerCookie },
-  })
+  const f = await setUp(['2400001'], { seats: 2, candidates: ['Alex', 'Bo', 'Cass'] })
+  ;({ batchId, officerCookie, doorCookie, electionId, candidateIds } = f)
+  voterCookie = f.voterCookies['2400001']!
 
-  draftElectionId = await createElection('Secretary', 1)
-  await addCandidate(draftElectionId, 'Dee')
+  draftElectionId = await createElection(batchId, officerCookie, 'Secretary', 1)
+  await addCandidate(batchId, officerCookie, draftElectionId, 'Dee')
 
-  closedElectionId = await createElection('Treasurer', 1)
-  await addCandidate(closedElectionId, 'Eve')
-  await addCandidate(closedElectionId, 'Fred')
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${closedElectionId}/open`, {
-    method: 'POST', headers: { cookie: officerCookie },
-  })
+  closedElectionId = await createElection(batchId, officerCookie, 'Treasurer', 1)
+  await addCandidate(batchId, officerCookie, closedElectionId, 'Eve')
+  await addCandidate(batchId, officerCookie, closedElectionId, 'Fred')
+  await openElection(batchId, officerCookie, closedElectionId)
   // set directly; close.test.ts covers the route
   await env.DB.prepare(`UPDATE election SET status = 'closed', closed_at = ? WHERE id = ?`)
     .bind(Date.now(), closedElectionId).run()
-
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie },
-    body: JSON.stringify({ usu_id: '2400001' }),
-  })
-  voterCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400001', surname: 'Lovelace' }),
-  }))
 })
 
 const ids = (keys: string[]) => keys.map((k) => candidateIds[k] ?? k)
 
 const submitTo = (eid: string, prefs: string[], cookie = voterCookie) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/ballots`, {
-    method: 'POST', headers: { ...json, cookie },
-    body: JSON.stringify({ preferences: ids(prefs) }),
-  })
+  submitBallot(batchId, eid, cookie, ids(prefs))
 
 const submit = (prefs: string[], cookie = voterCookie) => submitTo(electionId, prefs, cookie)
 
@@ -199,7 +135,7 @@ describe('ballot submission', () => {
   })
 
   it('refuses a candidate belonging to another election', async () => {
-    const other = await addCandidate(draftElectionId, 'Ineligible Elsewhere')
+    const other = await addCandidate(batchId, officerCookie, draftElectionId, 'Ineligible Elsewhere')
     expect((await submit(['a', other])).status).toBe(400)
   })
 
@@ -213,7 +149,7 @@ describe('ballot submission', () => {
 
   it('refuses a body that is not a list of strings', async () => {
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/ballots`, {
-      method: 'POST', headers: { ...json, cookie: voterCookie },
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: voterCookie },
       body: JSON.stringify({ preferences: [1, 2] }),
     })
     expect(res.status).toBe(400)
@@ -275,13 +211,8 @@ describe('ballot submission', () => {
 
   it('lets a different voter cast in the same election', async () => {
     await submit(['a', 'b'])
-    await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { ...json, cookie: doorCookie },
-      body: JSON.stringify({ usu_id: '2400002' }),
-    })
-    const second = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400002', surname: 'Turing' }),
-    }))
+    await checkIn(batchId, doorCookie, '2400002')
+    const second = await voterSignIn(batchId, '2400002', 'Turing')
     expect((await submit(['b', 'a'], second)).status).toBe(201)
     const row = await env.DB.prepare('SELECT count(*) c FROM ballot').first<{ c: number }>()
     expect(row!.c).toBe(2)
@@ -289,29 +220,16 @@ describe('ballot submission', () => {
 
   it('lets the same voter cast in a second election', async () => {
     await submit(['a', 'b'])
-    const eid = await createElection('Vice President', 1)
-    await addCandidate(eid, 'Gus')
-    const gus = await addCandidate(eid, 'Hana')
-    await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/open`, {
-      method: 'POST', headers: { cookie: officerCookie },
-    })
+    const eid = await createElection(batchId, officerCookie, 'Vice President', 1)
+    await addCandidate(batchId, officerCookie, eid, 'Gus')
+    const gus = await addCandidate(batchId, officerCookie, eid, 'Hana')
+    await openElection(batchId, officerCookie, eid)
     expect((await submitTo(eid, [gus])).status).toBe(201)
   })
 
   it('refuses a voter session issued for another batch', async () => {
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
-    const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/elections/${electionId}/ballots`, {
-      method: 'POST', headers: { ...json, cookie: voterCookie },
-      body: JSON.stringify({ preferences: ids(['a', 'b']) }),
-    })
+    const otherId = await createBatch('other', 2)
+    const res = await submitBallot(otherId, electionId, voterCookie, ids(['a', 'b']))
     expect(res.status).toBe(401)
     const row = await env.DB.prepare('SELECT count(*) c FROM ballot').first<{ c: number }>()
     expect(row!.c).toBe(0)

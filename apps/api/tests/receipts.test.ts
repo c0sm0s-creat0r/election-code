@@ -1,81 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import csv from './fixtures/usu-sample.csv?raw'
-
-const KEY = 'super-secret-test-key'
-const json = { 'content-type': 'application/json' }
+import { SELF, env } from 'cloudflare:test'
+import { setUp, checkIn, voterSignIn, submitBallot } from './helpers'
 
 let batchId = ''
-let officerCookie = ''
 let doorCookie = ''
 let voterCookie = ''
 let electionId = ''
 let candidateIds: Record<string, string> = {}
 
-const cookieOf = (res: Response) => (res.headers.get('set-cookie') ?? '').split(';')[0]!
-
-const addCandidate = async (eid: string, name: string) => {
-  const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${eid}/candidates`, {
-    method: 'POST', headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name }),
-  })
-  return (await res.json() as { id: string }).id
-}
-
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['ballot', 'vote_receipt', 'candidate', 'election', 'check_in', 'voter_roll', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST', headers: { ...json, 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  officerCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-1' }),
-  }))
-  doorCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'door-password-1' }),
-  }))
-
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body: fd,
-  })
-
-  const created = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections`, {
-    method: 'POST', headers: { ...json, cookie: officerCookie },
-    body: JSON.stringify({ name: 'President', seats: 2 }),
-  })
-  electionId = (await created.json() as { id: string }).id
-  candidateIds = {
-    a: await addCandidate(electionId, 'Alex'),
-    b: await addCandidate(electionId, 'Bo'),
-  }
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/open`, {
-    method: 'POST', headers: { cookie: officerCookie },
-  })
-
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: '2400001' }),
-  })
-  voterCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400001', surname: 'Lovelace' }),
-  }))
+  const f = await setUp(['2400001'], { seats: 2 })
+  ;({ batchId, doorCookie, electionId, candidateIds } = f)
+  voterCookie = f.voterCookies['2400001']!
 })
 
 const ids = (keys: string[]) => keys.map((k) => candidateIds[k] ?? k)
 
 const submit = (prefs: string[], cookie = voterCookie) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/ballots`, {
-    method: 'POST', headers: { ...json, cookie },
-    body: JSON.stringify({ preferences: ids(prefs) }),
-  })
+  submitBallot(batchId, electionId, cookie, ids(prefs))
 
 const castAndGetToken = async () =>
   (await (await submit(['a', 'b'])).json() as { receipt_token: string }).receipt_token
@@ -238,12 +180,8 @@ describe('receipts', () => {
     // the receipt row is found through the hash, so a void clears the owner's
     // mark-off, never the caller's
     const mine = await castAndGetToken()
-    await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: '2400002' }),
-    })
-    const other = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400002', surname: 'Turing' }),
-    }))
+    await checkIn(batchId, doorCookie, '2400002')
+    const other = await voterSignIn(batchId, '2400002', 'Turing')
     await submit(['b', 'a'], other)
     // the other voter voids my token, then tries to cast a second ballot
     await voidBallot(mine)

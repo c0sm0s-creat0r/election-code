@@ -1,58 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import csv from './fixtures/usu-sample.csv?raw'
+import { SELF, env } from 'cloudflare:test'
+import {
+  JSON_HEADERS, INELIGIBLE_USU_ID, setUpBatch, createBatch, importRoll,
+  checkIn as checkInAt, voterSession,
+} from './helpers'
 
-const KEY = 'super-secret-test-key'
-// Grace Hopper carries "Left Group" = 1 in the fixture.
-const INELIGIBLE_USU_ID = '2400003'
 const INELIGIBLE_SURNAME = 'Hopper'
 
 let batchId = ''
-let officerCookie = ''
 let doorCookie = ''
 
-const json = { 'content-type': 'application/json' }
-
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['check_in', 'voter_roll', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { ...json, 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  officerCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-1' }),
-  })).headers.get('set-cookie')) ?? '').split(';')[0]!
-  doorCookie = ((await (await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'door-password-1' }),
-  })).headers.get('set-cookie')) ?? '').split(';')[0]!
-
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body: fd,
-  })
+  const f = await setUpBatch()
+  ;({ batchId, doorCookie } = f)
+  await importRoll(batchId, f.officerCookie)
 })
 
-const checkIn = (usuId: string) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie },
-    body: JSON.stringify({ usu_id: usuId }),
-  })
-
-const voterSignIn = (usuId: string, surname: string) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-    method: 'POST', headers: json,
-    body: JSON.stringify({ usu_id: usuId, surname }),
-  })
+const checkIn = (usuId: string) => checkInAt(batchId, doorCookie, usuId)
+const voterSignIn = (usuId: string, surname: string) => voterSession(batchId, usuId, surname)
 
 describe('voter sign-in', () => {
   it('accepts a checked-in member with matching surname', async () => {
@@ -155,26 +120,15 @@ describe('voter sign-in', () => {
 
   it('rejects a body missing the surname', async () => {
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400001' }),
+      method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ usu_id: '2400001' }),
     })
     expect(res.status).toBe(400)
   })
 
   it('does not sign a voter in against another batch\'s roll', async () => {
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { ...json, 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
+    const otherId = await createBatch('other', 2)
     await checkIn('2400001')
-    const res = await SELF.fetch(`https://example.com/api/batches/${otherId}/voter/session`, {
-      method: 'POST', headers: json,
-      body: JSON.stringify({ usu_id: '2400001', surname: 'Lovelace' }),
-    })
+    const res = await voterSession(otherId, '2400001', 'Lovelace')
     expect(res.status).toBe(401)
   })
 })

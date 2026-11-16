@@ -1,53 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import csv from './fixtures/usu-sample.csv?raw'
-
-const KEY = 'super-secret-test-key'
-// Grace Hopper carries "Left Group" = 1 in the fixture.
-const INELIGIBLE_USU_ID = '2400003'
+import { SELF, env } from 'cloudflare:test'
+import {
+  JSON_HEADERS, INELIGIBLE_USU_ID, setUpBatch, createBatch, signIn, importRoll,
+  checkIn as checkInAt,
+} from './helpers'
 
 let batchId = ''
 let officerCookie = ''
 let doorCookie = ''
 
-const signIn = async (role: 'officer' | 'door', password: string) => {
-  const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/${role}/session`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password }),
-  })
-  return (res.headers.get('set-cookie') ?? '').split(';')[0]!
-}
-
 beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['check_in', 'voter_roll', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-
-  const res = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  batchId = (await res.json() as { id: string }).id
-  officerCookie = await signIn('officer', 'officer-password-1')
-  doorCookie = await signIn('door', 'door-password-1')
-
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body: fd,
-  })
+  ({ batchId, officerCookie, doorCookie } = await setUpBatch())
+  await importRoll(batchId, officerCookie)
 })
 
-const checkIn = (usuId: string, cookie = doorCookie) =>
-  SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-    method: 'POST', headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ usu_id: usuId }),
-  })
+const checkIn = (usuId: string, cookie = doorCookie) => checkInAt(batchId, cookie, usuId)
 
 describe('door check-in', () => {
   it('requires a door session', async () => {
@@ -135,24 +102,10 @@ describe('door check-in', () => {
   })
 
   it('cannot check in a member of another batch', async () => {
-    const other = await SELF.fetch('https://example.com/api/batches', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-super-admin-key': KEY },
-      body: JSON.stringify({
-        name: 'Other', slug: 'other', officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    const otherId = (await other.json() as { id: string }).id
+    const otherId = await createBatch('other', 2)
     // a door cookie for the other batch, used on this batch's route
-    const otherDoor = (await (await SELF.fetch(`https://example.com/api/batches/${otherId}/door/session`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: 'door-password-2' }),
-    })).headers.get('set-cookie') ?? '').split(';')[0]!
-    const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { 'content-type': 'application/json', cookie: otherDoor },
-      body: JSON.stringify({ usu_id: '2400001' }),
-    })
+    const otherDoor = await signIn(otherId, 'door', 'door-password-2')
+    const res = await checkIn('2400001', otherDoor)
     expect(res.status).toBe(401)
     const row = await env.DB.prepare('SELECT count(*) c FROM check_in').first<{ c: number }>()
     expect(row!.c).toBe(0)
@@ -160,7 +113,7 @@ describe('door check-in', () => {
 
   it('rejects a body with no usu_id', async () => {
     const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { 'content-type': 'application/json', cookie: doorCookie },
+      method: 'POST', headers: { ...JSON_HEADERS, cookie: doorCookie },
       body: JSON.stringify({}),
     })
     expect(res.status).toBe(400)

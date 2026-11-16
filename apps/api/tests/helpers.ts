@@ -35,20 +35,22 @@ export type Fixture = {
   batchId: string
   officerCookie: string
   doorCookie: string
-  /** An open election, seats = 1, candidates Alex and Bo. */
+  /** An open election; by default seats = 1, candidates Alex and Bo. */
   electionId: string
-  candidateIds: { a: string; b: string }
+  /** Keyed a, b, c... in ballot order. */
+  candidateIds: { a: string; b: string; [key: string]: string }
   /** usu_id -> voter cookie, for every member checked in by `setUp`. */
   voterCookies: Record<string, string>
 }
 
-export async function createBatch(slug = 's'): Promise<string> {
+/** Passwords are `officer-password-<n>` and `door-password-<n>`. */
+export async function createBatch(slug = 's', n = 1): Promise<string> {
   const res = await SELF.fetch('https://example.com/api/batches', {
     method: 'POST',
     headers: { ...JSON_HEADERS, 'x-super-admin-key': SUPER_KEY },
     body: JSON.stringify({
       name: 'Test Society', slug,
-      officer_password: 'officer-password-1', door_password: 'door-password-1',
+      officer_password: `officer-password-${n}`, door_password: `door-password-${n}`,
       branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
     }),
   })
@@ -61,12 +63,17 @@ export async function signIn(batchId: string, role: 'officer' | 'door', password
   }))
 }
 
-export async function importRoll(batchId: string, officerCookie: string): Promise<void> {
+/** Posts the fixture CSV to `/roll` or `/roll/preview`. */
+export function uploadRoll(batchId: string, cookie: string, path = '/roll'): Promise<Response> {
   const body = new FormData()
   body.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body,
+  return SELF.fetch(`https://example.com/api/batches/${batchId}${path}`, {
+    method: 'POST', headers: { cookie }, body,
   })
+}
+
+export async function importRoll(batchId: string, officerCookie: string): Promise<void> {
+  await uploadRoll(batchId, officerCookie)
 }
 
 export async function createElection(
@@ -100,10 +107,13 @@ export const checkIn = (batchId: string, doorCookie: string, usuId: string) =>
     body: JSON.stringify({ usu_id: usuId }),
   })
 
-export async function voterSignIn(batchId: string, usuId: string, surname: string): Promise<string> {
-  return cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
+export const voterSession = (batchId: string, usuId: string, surname: string) =>
+  SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
     method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ usu_id: usuId, surname }),
-  }))
+  })
+
+export async function voterSignIn(batchId: string, usuId: string, surname: string): Promise<string> {
+  return cookieOf(await voterSession(batchId, usuId, surname))
 }
 
 export const submitBallot = (
@@ -113,21 +123,31 @@ export const submitBallot = (
     method: 'POST', headers: { ...JSON_HEADERS, cookie }, body: JSON.stringify({ preferences }),
   })
 
-/**
- * A batch with an imported roll and one open single-seat election, with the
- * given members checked in and signed in as voters. No ballots are cast.
- */
-export async function setUp(usuIds: readonly string[] = ['2400001', '2400002', '2400004']): Promise<Fixture> {
+/** A clean database and one batch, with both staff roles signed in. No roll. */
+export async function setUpBatch(): Promise<Pick<Fixture, 'batchId' | 'officerCookie' | 'doorCookie'>> {
   await resetDatabase()
   const batchId = await createBatch()
   const officerCookie = await signIn(batchId, 'officer', 'officer-password-1')
   const doorCookie = await signIn(batchId, 'door', 'door-password-1')
+  return { batchId, officerCookie, doorCookie }
+}
+
+/**
+ * A batch with an imported roll and one open election (single-seat unless
+ * `seats` says otherwise), with the given members checked in and signed in as
+ * voters. No ballots are cast.
+ */
+export async function setUp(
+  usuIds: readonly string[] = ['2400001', '2400002', '2400004'],
+  { seats = 1, candidates = ['Alex', 'Bo'] }: { seats?: number; candidates?: readonly string[] } = {},
+): Promise<Fixture> {
+  const { batchId, officerCookie, doorCookie } = await setUpBatch()
   await importRoll(batchId, officerCookie)
 
-  const electionId = await createElection(batchId, officerCookie, 'President', 1)
-  const candidateIds = {
-    a: await addCandidate(batchId, officerCookie, electionId, 'Alex'),
-    b: await addCandidate(batchId, officerCookie, electionId, 'Bo'),
+  const electionId = await createElection(batchId, officerCookie, 'President', seats)
+  const candidateIds: Fixture['candidateIds'] = { a: '', b: '' }
+  for (const [i, name] of candidates.entries()) {
+    candidateIds[String.fromCharCode(97 + i)] = await addCandidate(batchId, officerCookie, electionId, name)
   }
   await openElection(batchId, officerCookie, electionId)
 
