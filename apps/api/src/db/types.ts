@@ -34,12 +34,6 @@ export type GuestRow = {
   checked_in_at: number
 }
 
-export type CheckInRow = {
-  batch_id: string
-  usu_id: string
-  checked_in_at: number
-}
-
 export type ElectionStatus = 'draft' | 'open' | 'closed'
 
 export type ElectionRow = {
@@ -71,20 +65,6 @@ export type BallotRow = {
 /** The two columns the count needs from a ballot. */
 export type CountBallotRow = Pick<BallotRow, 'id' | 'preferences'>
 
-// Who voted, never what. The mark-off on the roll.
-export type VoteReceiptRow = {
-  election_id: string
-  usu_id: string // = "Net Id" in the USU export
-  voted_at: number
-  recast_count: number
-  /**
-   * Receipt hash of this voter's live ballot. Null once voided or the election
-   * closes. While set it joins a usu_id to a ballot's preferences: never select
-   * or export it. See migration 0002.
-   */
-  live_receipt_hash: string | null
-}
-
 // written once at close, never updated
 export type ElectionSealRow = {
   election_id: string
@@ -105,16 +85,4 @@ export type ElectionResultRow = {
   tie_breaks: string // every tie, method, seed or reason
   overridden: number // 0 | 1
   supersedes: number | null
-}
-
-export type AuditLogRole = 'super' | 'public' | 'officer' | 'door' | 'voter'
-
-export type AuditLogRow = {
-  id: number
-  // null for an action with no batch: a denied super-admin-key attempt
-  batch_id: string | null
-  role: AuditLogRole
-  action: string
-  detail: string | null
-  at: number
 }
