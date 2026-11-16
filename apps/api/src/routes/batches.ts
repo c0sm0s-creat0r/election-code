@@ -5,7 +5,7 @@ import { hashPassword } from '../auth/password.js'
 import { timingSafeEqual } from '../auth/timing-safe-equal.js'
 import { auditLogStatement, recordAudit } from '../db/audit.js'
 import type { BatchRow } from '../db/types.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 
 // Slugs that look like system paths. Nothing routes on them today.
 const RESERVED_SLUGS = new Set([
@@ -90,7 +90,7 @@ const isUniqueSlugViolation = (err: unknown): boolean =>
 export const batches = new Hono<{ Bindings: Env }>()
 
 // Rate limited first: a denied key attempt writes an audit row.
-batches.post('/api/batches', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
+batches.post('/api/batches', rateLimit('BATCH_CREATE_LIMITER'), async (c) => {
   // Sign-up needs no key. A wrong key is an attempt on the operator path:
   // refuse and audit it, without recording the key. A self-registered society
   // is unvetted, and neither frontend may imply otherwise.
@@ -161,7 +161,7 @@ batches.get('/api/batches/by-slug/:slug', async (c) => {
  *
  * `audit_log` survives and records the deletion as counts only.
  */
-batches.delete('/api/batches/:id', rateLimit(RATE_LIMITS.batchCreate), async (c) => {
+batches.delete('/api/batches/:id', rateLimit('BATCH_CREATE_LIMITER'), async (c) => {
   const provided = c.req.header('x-super-admin-key')
   if (!isSuperAdminKey(provided, c.env.SUPER_ADMIN_KEY)) {
     await recordAudit(c.env.DB, { batchId: null, role: 'super', action: 'batch.delete.denied' })

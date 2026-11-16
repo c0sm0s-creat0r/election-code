@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { auditLogStatement, recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
 import type { VoterRollRow } from '../db/types.js'
 
@@ -26,7 +26,7 @@ export const doorVoters = new Hono<AuthedEnv>()
 doorVoters.post(
   '/api/batches/:id/voters',
   requireRole('door'),
-  rateLimit(RATE_LIMITS.voting),
+  rateLimit('VOTING_LIMITER'),
   async (c) => {
     const batchId = requireSession(c).batchId
     const parsed = doorVoterSchema.safeParse(await c.req.json().catch(() => undefined))

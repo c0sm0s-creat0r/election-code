@@ -18,8 +18,8 @@
 			"remote": true
 		}
 	],
-	// Per-IP rate limits (see src/middleware/rateLimit.ts). Mirror any period
-	// change in RATE_LIMITS there. namespace_id need only be unique within the
+	// Per-IP rate limits (see src/middleware/rateLimit.ts). Every period must
+	// equal PERIOD_SECONDS there. namespace_id need only be unique within the
 	// account.
 	"ratelimits": [
 		{ "name": "BATCH_CREATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },

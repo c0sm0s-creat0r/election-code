@@ -9,7 +9,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 import type { VoterRollRow } from '../db/types.js'
 import { pathParam } from '../http/params.js'
 
@@ -25,7 +25,7 @@ export const checkIn = new Hono<AuthedEnv>()
 checkIn.get(
   '/api/batches/:id/roll',
   requireRole('door'),
-  rateLimit(RATE_LIMITS.voting),
+  rateLimit('VOTING_LIMITER'),
   async (c) => {
     const batchId = requireSession(c).batchId
     const { results } = await c.env.DB

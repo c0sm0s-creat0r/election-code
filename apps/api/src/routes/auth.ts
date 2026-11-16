@@ -18,7 +18,7 @@ import { recordAudit } from '../db/audit.js'
 import { notConfigured } from '../http/notConfigured.js'
 import type { BatchRow } from '../db/types.js'
 import { requireRole, type AuthedEnv } from '../middleware/requireRole.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 
 const signInSchema = z.object({ password: z.string().min(1) })
 
@@ -95,7 +95,7 @@ async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
 export const auth = new Hono<AuthedEnv>()
 
 // The limiter runs first: a 429 costs no PBKDF2 and writes no audit row.
-const staffSignInLimit = rateLimit(RATE_LIMITS.staffSignIn)
+const staffSignInLimit = rateLimit('STAFF_SIGNIN_LIMITER')
 
 auth.post('/api/batches/:id/officer/session', staffSignInLimit, (c) => handleSignIn(c, 'officer'))
 auth.post('/api/batches/:id/door/session', staffSignInLimit, (c) => handleSignIn(c, 'door'))

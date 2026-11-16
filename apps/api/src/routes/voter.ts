@@ -22,7 +22,7 @@ import {
 } from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
 import { notConfigured } from '../http/notConfigured.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
 import type { AuthedEnv } from '../middleware/requireRole.js'
 
@@ -41,7 +41,7 @@ export const voter = new Hono<AuthedEnv>()
 
 voter.post(
   '/api/batches/:id/voter/session',
-  rateLimit(RATE_LIMITS.voting),
+  rateLimit('VOTING_LIMITER'),
   async (c) => {
     if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
 

@@ -13,7 +13,7 @@ import { z } from 'zod'
 import { validateBallot } from '@election/core'
 import { recordAudit } from '../db/audit.js'
 import { requireRole, requireSession, type AuthedEnv } from '../middleware/requireRole.js'
-import { rateLimit, RATE_LIMITS } from '../middleware/rateLimit.js'
+import { rateLimit } from '../middleware/rateLimit.js'
 import { pathParam } from '../http/params.js'
 import { sha256Hex } from '../lib/hash.js'
 import type { CandidateRow, ElectionRow } from '../db/types.js'
@@ -49,7 +49,7 @@ export const ballots = new Hono<AuthedEnv>()
 ballots.post(
   '/api/batches/:id/elections/:eid/ballots',
   requireRole('voter'),
-  rateLimit(RATE_LIMITS.voting),
+  rateLimit('VOTING_LIMITER'),
   async (c) => {
     const session = requireSession(c)
     const batchId = session.batchId
