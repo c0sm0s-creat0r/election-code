@@ -4,7 +4,6 @@ import {
   verifySession,
   cookieName,
   cookieOptions,
-  MIN_SECRET_LENGTH,
   type StaffSession,
   type Session,
 } from '../src/auth/session.js'
@@ -119,53 +118,3 @@ describe('voter session subject', () => {
     expect(await verifySession(t, SECRET)).toEqual({ batchId: 'b1', role: 'officer', exp: future })
   })
 })
-
-describe('SESSION_SECRET strength', () => {
-  // A short secret can be brute-forced offline from any token, then used to
-  // mint an officer session.
-  it('refuses to mint a token with a secret shorter than the minimum', async () => {
-    for (const weak of ['', 'x', 'hunter2', 'test-secret-value', 'a'.repeat(MIN_SECRET_LENGTH - 1)]) {
-      await expect(signSession(base(), weak)).rejects.toThrow(/SESSION_SECRET/)
-    }
-  })
-
-  it('mints with a secret of exactly the minimum length', async () => {
-    const secret = 'a'.repeat(MIN_SECRET_LENGTH)
-    expect(typeof (await signSession(base(), secret))).toBe('string')
-  })
-
-  it('never puts the secret in the error it throws', async () => {
-    const weak = 'weak-secret-do-not-leak'
-    const err = await signSession(base(), weak).catch((e: unknown) => e)
-    expect(String(err)).not.toContain(weak)
-    expect(String(err)).not.toContain(String(weak.length))
-  })
-
-  it('requires at least 32 characters, matching `openssl rand -base64 32`', () => {
-    expect(MIN_SECRET_LENGTH).toBe(32)
-  })
-})
-
-describe('a weak SESSION_SECRET is refused on the verify side too', () => {
-  const WEAK = 'short-secret'
-
-  it('refuses a token even though its signature is genuine', async () => {
-    // Signed with the weak secret, so the signature verifies. Verification must
-    // still refuse it.
-    const payload = btoa(JSON.stringify(base()))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(WEAK), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-    const sigBytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)))
-    const sig = btoa(String.fromCharCode(...sigBytes))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-
-    expect(await verifySession(`${payload}.${sig}`, WEAK)).toBeNull()
-  })
-
-  it('still accepts a token under a secret of the required length', async () => {
-    const strong = 'x'.repeat(32)
-    expect(await verifySession(await signSession(base(), strong), strong)).toEqual(base())
-  })
-})
-

@@ -12,10 +12,8 @@ import {
   verifySession,
   cookieName,
   cookieOptions,
-  isUsableSecret,
 } from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
-import { notConfigured } from '../http/notConfigured.js'
 import type { BatchRow } from '../db/types.js'
 import { requireRole, type AuthedEnv } from '../middleware/requireRole.js'
 import { rateLimit } from '../middleware/rateLimit.js'
@@ -34,9 +32,6 @@ type SignInRole = keyof typeof TTL_SECONDS
 const DUMMY_HASH = 'pbkdf2-sha256$100000$BwcHBwcHBwcHBwcHBwcHBw==$xl+cmf7KzCjhMIgwm24j5zJdLtkUvSCoFpYH1NYVjrg='
 
 async function handleSignIn(c: Context<AuthedEnv>, role: SignInRole) {
-  // Checked first: a misconfigured deployment issues no weakly signed token.
-  if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
-
   const batchId = c.req.param('id')
   const parsed = signInSchema.safeParse(await c.req.json().catch(() => undefined))
   if (!parsed.success) {
@@ -79,7 +74,7 @@ async function handleSignOut(c: Context<AuthedEnv>, role: SignInRole) {
     const token = getCookie(c, cookieName(batchId, role))
     // Audit only a session that verifies, under the batch id in the signature,
     // not the path parameter.
-    if (token && isUsableSecret(c.env.SESSION_SECRET)) {
+    if (token) {
       const session = await verifySession(token, c.env.SESSION_SECRET)
       if (session && session.role === role && session.batchId === batchId) {
         await recordAudit(c.env.DB, { batchId: session.batchId, role, action: `session.${role}.signout` })

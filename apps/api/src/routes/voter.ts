@@ -18,10 +18,8 @@ import {
   signSession,
   cookieName,
   cookieOptions,
-  isUsableSecret,
 } from '../auth/session.js'
 import { recordAudit } from '../db/audit.js'
-import { notConfigured } from '../http/notConfigured.js'
 import { rateLimit } from '../middleware/rateLimit.js'
 import type { AuthedEnv } from '../middleware/requireRole.js'
 
@@ -42,9 +40,7 @@ voter.post(
   '/api/batches/:id/voter/session',
   rateLimit('VOTING_LIMITER'),
   async (c) => {
-    if (!isUsableSecret(c.env.SESSION_SECRET)) return notConfigured(c)
-
-    const batchId = c.req.param('id')
+      const batchId = c.req.param('id')
     const parsed = voterSignInSchema.safeParse(await c.req.json().catch(() => undefined))
     if (!parsed.success) return c.json({ error: 'invalid request body' }, 400)
     const { usu_id: usuId, surname } = parsed.data

@@ -18,6 +18,7 @@ import { turnout } from './routes/turnout.js'
 import { branding } from './routes/branding.js'
 import { guests } from './routes/guests.js'
 import { doorVoters } from './routes/doorVoters.js'
+import { isUsableSecret } from './auth/session.js'
 
 export type Env = {
   DB: D1Database
@@ -61,6 +62,13 @@ app.use('/api/*', (c, next) =>
     maxAge: 600,
   })(c, next),
 )
+
+// A weak SESSION_SECRET signs forgeable sessions. 503, not 500: configuration,
+// not a bug. The response does not name the secret.
+app.use('/api/*', async (c, next) => {
+  if (!isUsableSecret(c.env.SESSION_SECRET)) return c.json({ error: 'server_not_configured' }, 503)
+  await next()
+})
 
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 

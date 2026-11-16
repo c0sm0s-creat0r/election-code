@@ -30,17 +30,10 @@ export type Session = StaffSession | VoterSession
 /**
  * The payload is plaintext beside its signature. A short secret can be
  * brute-forced offline and then mints an officer session for any batch.
- * 32 matches `openssl rand -base64 32` (apps/api/README.md).
+ * 32 matches `openssl rand -base64 32` (apps/api/README.md). index.ts refuses
+ * every request while the secret is shorter.
  */
 export const MIN_SECRET_LENGTH = 32
-
-/** Rejects a weak secret. WebCrypto already rejects a missing one. */
-export function assertUsableSecret(secret: string): void {
-  if (typeof secret !== 'string' || secret.length < MIN_SECRET_LENGTH) {
-    // The message never includes the secret, its prefix or its length.
-    throw new Error(`SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`)
-  }
-}
 
 export const isUsableSecret = (secret: string | undefined): boolean =>
   typeof secret === 'string' && secret.length >= MIN_SECRET_LENGTH
@@ -74,7 +67,6 @@ async function hmac(data: string, secret: string): Promise<Uint8Array<ArrayBuffe
 }
 
 export async function signSession(session: Session, secret: string): Promise<string> {
-  assertUsableSecret(secret)
   const payload = b64url(enc.encode(JSON.stringify(session)))
   return `${payload}.${b64url(await hmac(payload, secret))}`
 }
@@ -85,8 +77,6 @@ export async function verifySession(
   secret: string,
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<Session | null> {
-  // Also refused on verify: a deployment with a weak secret accepts nothing.
-  if (!isUsableSecret(secret)) return null
   const parts = token.split('.')
   if (parts.length !== 2) return null
   const [payload, sig] = parts as [string, string]
