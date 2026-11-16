@@ -1,5 +1,3 @@
-import type { Fixed } from './fixed.js'
-
 export type Candidate = { id: string; name: string }
 
 /** A ballot as the count sees it: preferences already validated. */
@@ -64,5 +62,3 @@ export type CountResult = {
   winners: Candidate[]
   tieBreaks: TieBreakRecord[]
 }
-
-export type { Fixed }
