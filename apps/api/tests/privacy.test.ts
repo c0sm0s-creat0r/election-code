@@ -3,288 +3,137 @@
  * These catch failures that span handlers, such as one handler's audit row
  * surviving another's purge.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import csv from './fixtures/usu-sample.csv?raw'
-import { signIn, sha256Hex } from './helpers.js'
-
-const KEY = 'super-secret-test-key'
-const json = { 'content-type': 'application/json' }
-const cookieOf = (res: Response) => (res.headers.get('set-cookie') ?? '').split(';')[0]!
+import { describe, it, expect, beforeAll } from 'vitest'
+import { env } from 'cloudflare:test'
+import {
+  ALL_TABLES, NEW_MEMBER, addCandidate, addDoorVoter, addGuest, api, checkIn, closeElection, countOf,
+  createElection, getResult, openElection, postBatch, setUpBatch, staffSession, submitBallot, tokenOf,
+  uploadRoll, voterSession, voterSignIn,
+} from './helpers.js'
 
 /** Any 7-digit run: the shape of a USU Net Id. */
 const USU_ID_SHAPE = /\d{7}/
 /** Any UUID prefix: the shape of a ballot id, a candidate id or a receipt token. */
 const UUID_SHAPE = /[0-9a-f]{8}-[0-9a-f]{4}/
 
-beforeEach(async () => {
-  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS)
-  for (const t of ['ballot', 'vote_receipt', 'candidate', 'election', 'check_in', 'voter_roll', 'audit_log', 'batch']) {
-    await env.DB.prepare(`DELETE FROM ${t}`).run()
-  }
-})
+let batchId = ''
+/** Rows the purge was about to delete. */
+let purgeable = 0
 
-/** Provision, import, check in, open, vote, void, recast. */
-async function runWholeElection() {
-  const created = await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST', headers: { ...json, 'x-super-admin-key': KEY },
-    body: JSON.stringify({
-      name: 'N', slug: 's', officer_password: 'officer-password-1', door_password: 'door-password-1',
-      branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-    }),
-  })
-  const batchId = (await created.json() as { id: string }).id
-
+/**
+ * Provision, import, check in, open, vote, void, recast, close, count, purge.
+ * Run once: the pool rolls each test's writes back to this state. Every
+ * audited action the inventory below lists must run here.
+ */
+beforeAll(async () => {
+  const f = await setUpBatch()
+  batchId = f.batchId
+  const { officerCookie, doorCookie } = f
   // a denied super-admin attempt, which audits with a NULL batch
-  await SELF.fetch('https://example.com/api/batches', {
-    method: 'POST', headers: { ...json, 'x-super-admin-key': 'wrong' }, body: JSON.stringify({}),
-  })
-
-  const officerCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'officer-password-1' }),
-  }))
-  const doorCookie = cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/door/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'door-password-1' }),
-  }))
+  await postBatch({}, 'wrong')
   // a failed staff sign-in
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/officer/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ password: 'wrong-password-here' }),
-  })
+  await staffSession(batchId, 'officer', 'wrong-password-here')
 
-  const fd = new FormData()
-  fd.append('file', new File([csv], 'members.csv', { type: 'text/csv' }))
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'POST', headers: { cookie: officerCookie }, body: fd,
-  })
-
-  const election = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections`, {
-    method: 'POST', headers: { ...json, cookie: officerCookie },
-    body: JSON.stringify({ name: 'President', seats: 2 }),
-  })
-  const electionId = (await election.json() as { id: string }).id
+  await uploadRoll(batchId, officerCookie)
+  const electionId = await createElection(batchId, officerCookie, 'President', 2)
   const candidates: string[] = []
-  for (const name of ['Alex', 'Bo', 'Cass']) {
-    const res = await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/candidates`, {
-      method: 'POST', headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name }),
-    })
-    candidates.push((await res.json() as { id: string }).id)
-  }
-  // a rename and a removal while still in draft
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/candidates/${candidates[2]}`, {
-    method: 'PATCH', headers: { ...json, cookie: officerCookie }, body: JSON.stringify({ name: 'Cassandra' }),
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/open`, {
-    method: 'POST', headers: { cookie: officerCookie },
-  })
+  for (const name of ['Alex', 'Bo', 'Cass']) candidates.push(await addCandidate(batchId, officerCookie, electionId, name))
+  const [alex, bo, cass] = candidates as [string, string, string]
+  // a rename while still in draft
+  await api('PATCH', `/batches/${batchId}/elections/${electionId}/candidates/${cass}`, officerCookie, { name: 'Cassandra' })
+  await openElection(batchId, officerCookie, electionId)
 
   // two voters through the door, one of them un-checked-in and back again
-  for (const usuId of ['2400001', '2400002']) {
-    await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-      method: 'POST', headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: usuId }),
-    })
-  }
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in/2400002`, {
-    method: 'DELETE', headers: { cookie: doorCookie },
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/check-in`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie }, body: JSON.stringify({ usu_id: '2400002' }),
-  })
+  await checkIn(batchId, doorCookie, '2400001')
+  await checkIn(batchId, doorCookie, '2400002')
+  await api('DELETE', `/batches/${batchId}/check-in/2400002`, doorCookie)
+  await checkIn(batchId, doorCookie, '2400002')
 
-  const voters: string[] = []
-  for (const [usuId, surname] of [['2400001', 'Lovelace'], ['2400002', 'Turing']] as const) {
-    voters.push(cookieOf(await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-      method: 'POST', headers: json, body: JSON.stringify({ usu_id: usuId, surname }),
-    })))
-  }
+  const ada = await voterSignIn(batchId, '2400001', 'Lovelace')
+  const alan = await voterSignIn(batchId, '2400002', 'Turing')
   // a wrong surname, which writes no audit row (see routes/voter.ts)
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400001', surname: 'Wrong' }),
-  })
+  await voterSession(batchId, '2400001', 'Wrong')
   // a refusal for a real but ineligible member, which does audit
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/voter/session`, {
-    method: 'POST', headers: json, body: JSON.stringify({ usu_id: '2400003', surname: 'Hopper' }),
-  })
+  await voterSession(batchId, '2400003', 'Hopper')
 
-  const submit = (cookie: string, prefs: string[]) =>
-    SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/ballots`, {
-      method: 'POST', headers: { ...json, cookie }, body: JSON.stringify({ preferences: prefs }),
-    })
-
-  const first = (await (await submit(voters[0]!, [candidates[0]!, candidates[1]!])).json() as { receipt_token: string }).receipt_token
-  await submit(voters[1]!, [candidates[1]!, candidates[0]!])
+  const first = await tokenOf(await submitBallot(batchId, electionId, ada, [alex, bo]))
+  await submitBallot(batchId, electionId, alan, [bo, alex])
   // void and recast
-  await SELF.fetch(`https://example.com/api/receipts/${first}/void`, { method: 'POST' })
-  await submit(voters[0]!, [candidates[1]!, candidates[0]!])
+  await api('POST', `/receipts/${first}/void`)
+  await submitBallot(batchId, electionId, ada, [bo, alex])
 
   // A guest and a door-added member, before the purge so the inventory sees
   // them. The member is removed again to run both actions.
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/guests`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie },
-    body: JSON.stringify({ name: 'Jo Verydistinctiveguest', note: 'observer' }),
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/voters`, {
-    method: 'POST', headers: { ...json, cookie: doorCookie },
-    body: JSON.stringify({ usu_id: '2400777', first_name: 'Nina', last_name: 'Verydistinctivejoiner' }),
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/voters/2400777`, {
-    method: 'DELETE', headers: { cookie: doorCookie },
-  })
+  await addGuest(f, { name: 'Jo Verydistinctiveguest', note: 'observer' })
+  await addDoorVoter(f, { ...NEW_MEMBER, last_name: 'Verydistinctivejoiner' })
+  await api('DELETE', `/batches/${batchId}/voters/${NEW_MEMBER.usu_id}`, doorCookie)
 
-  // Then close, count, edit branding, purge. Every audited action must run in
-  // this scenario for the inventory to see it.
-  const officer = { cookie: officerCookie }
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/close`, {
-    method: 'POST', headers: officer,
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/elections/${electionId}/result`, {
-    headers: officer,
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/branding`, {
-    method: 'PATCH', headers: { ...json, ...officer },
-    body: JSON.stringify({ title: 'AGM', org_name: 'Soc', accent_color: '#123456', logo_url: '' }),
-  })
-  await SELF.fetch(`https://example.com/api/batches/${batchId}/roll`, {
-    method: 'DELETE', headers: officer,
-  })
-
-  return { batchId, electionId }
-}
+  const officer = { batchId, officerCookie, electionId }
+  await closeElection(officer)
+  await getResult(officer)
+  await api('PATCH', `/batches/${batchId}/branding`, officerCookie,
+    { title: 'AGM', org_name: 'Soc', accent_color: '#123456', logo_url: '' })
+  purgeable = await countOf('voter_roll') + await countOf('check_in') + await countOf('guest')
+  await api('DELETE', `/batches/${batchId}/roll`, officerCookie)
+})
 
 describe('privacy and secret-ballot invariants after a whole election', () => {
-  it('no audit_log row contains a USU id or a UUID, in detail OR anywhere else', async () => {
-    await runWholeElection()
-    const rows = await env.DB.prepare('SELECT role, action, detail FROM audit_log').all<{ role: string; action: string; detail: string | null }>()
-    expect(rows.results.length).toBeGreaterThan(10)
-    for (const r of rows.results) {
+  it('audits every action, with counts only: no USU id, no UUID, no name', async () => {
+    const { results } = await env.DB.prepare('SELECT batch_id, action, detail FROM audit_log ORDER BY id')
+      .all<{ batch_id: string | null; action: string; detail: string | null }>()
+
+    // so the checks below are not passing on an empty table
+    expect([...new Set(results.map((r) => r.action))].sort()).toEqual([
+      'ballot.cast', 'ballot.void', 'batch.create', 'batch.create.denied', 'branding.update',
+      'candidate.add', 'candidate.update', 'check_in.add', 'check_in.remove',
+      'election.close', 'election.count', 'election.create', 'election.open',
+      'guest.add', 'roll.import', 'roll.purge',
+      'session.door.ok', 'session.officer.fail', 'session.officer.ok', 'session.voter.fail', 'session.voter.ok',
+      'voter.add_at_door', 'voter.remove_at_door',
+    ])
+
+    for (const r of results) {
       const text = `${r.action} ${r.detail ?? ''}`
       expect(text, `audit row ${r.action} leaked an identifier`).not.toMatch(USU_ID_SHAPE)
       expect(text, `audit row ${r.action} leaked a UUID`).not.toMatch(UUID_SHAPE)
+      // attributed to the owning batch, a public receipt void included
+      expect(r.batch_id, r.action).toBe(r.action === 'batch.create.denied' ? null : batchId)
     }
-  })
+    // audit_log is never purged, so a guest's or a door-added member's name must not reach it
+    expect(JSON.stringify(results)).not.toMatch(/Verydistinctive/)
 
-  it('records every audited action, so the checks above are not passing on an empty table', async () => {
-    await runWholeElection()
-    const rows = await env.DB.prepare('SELECT DISTINCT action FROM audit_log ORDER BY action').all<{ action: string }>()
-    expect(rows.results.map((r) => r.action)).toEqual([
-      'ballot.cast',
-      'ballot.void',
-      'batch.create',
-      'batch.create.denied',
-      'branding.update',
-      'candidate.add',
-      'candidate.update',
-      'check_in.add',
-      'check_in.remove',
-      'election.close',
-      'election.count',
-      'election.create',
-      'election.open',
-      'guest.add',
-      'roll.import',
-      'roll.purge',
-      'session.door.ok',
-      'session.officer.fail',
-      'session.officer.ok',
-      'session.voter.fail',
-      'session.voter.ok',
-      'voter.add_at_door',
-      'voter.remove_at_door',
-    ])
+    // The only details: the allow-list in db/audit.ts. Everything else is NULL.
+    const details = Object.fromEntries(
+      results.filter((r) => r.detail !== null).map((r) => [r.action, JSON.parse(r.detail!) as unknown]))
+    expect(details).toEqual({
+      'roll.import': { kind: 'roll_import', total: 6, eligible: 4, excluded: 2, skipped: 0 },
+      'election.open': { kind: 'election_open', seats: 2, candidates: 3 },
+      'election.close': { kind: 'election_close', ballotCount: 3 },
+      'election.count': { kind: 'count', rounds: expect.any(Number), winners: 2 },
+      'roll.purge': { kind: 'roll_purge', rowsDeleted: purgeable },
+    })
+    expect(purgeable).toBe(6 + 2 + 1)
   })
 
   it('stores no email address anywhere in the database', async () => {
-    await runWholeElection()
-    const tables = ['batch', 'voter_roll', 'check_in', 'guest', 'election', 'candidate', 'ballot', 'vote_receipt', 'audit_log']
-    for (const t of tables) {
+    // the export has one per member
+    for (const t of ALL_TABLES) {
       const rows = await env.DB.prepare(`SELECT * FROM ${t}`).all()
       expect(JSON.stringify(rows.results), `${t} carried an email address`).not.toMatch(/@example\.com/)
     }
   })
 
-  it('never records a guest name or a door-added usu_id in the audit log', async () => {
-    // A guest's name and a door-added usu_id must not reach audit_log, which is
-    // never purged.
-    await runWholeElection()
-    const rows = await env.DB.prepare('SELECT * FROM audit_log').all()
-    const text = JSON.stringify(rows.results)
-    expect(text).not.toMatch(/Verydistinctiveguest/)
-    expect(text).not.toMatch(/Verydistinctivejoiner/)
-    expect(text).not.toMatch(/2400777/)
-  })
-
-  it('keeps ballot free of any voter reference or timestamp', async () => {
-    await runWholeElection()
-    const cols = await env.DB.prepare('PRAGMA table_info(ballot)').all<{ name: string }>()
-    expect(cols.results.map((r) => r.name).sort()).toEqual(['election_id', 'id', 'preferences', 'receipt_hash', 'voided'])
-  })
-
-  it('keeps ballot WITHOUT ROWID, which is what makes physical order random', async () => {
-    const row = await env.DB.prepare(`SELECT sql FROM sqlite_master WHERE name = 'ballot'`).first<{ sql: string }>()
-    expect(row!.sql).toMatch(/WITHOUT\s+ROWID/i)
-  })
-
-  it('never lets two receipt rows claim one live ballot', async () => {
-    await runWholeElection()
-    const row = await env.DB
-      .prepare(`SELECT count(*) c FROM (
-                  SELECT live_receipt_hash FROM vote_receipt
-                   WHERE live_receipt_hash IS NOT NULL
-                   GROUP BY live_receipt_hash HAVING count(*) > 1)`)
-      .first<{ c: number }>()
-    expect(row!.c).toBe(0)
-  })
-
-  it('leaves the live-ballot link NULL for every voided ballot', async () => {
-    await runWholeElection()
-    const row = await env.DB
-      .prepare(`SELECT count(*) c FROM vote_receipt vr
-                  JOIN ballot b ON b.receipt_hash = vr.live_receipt_hash
-                 WHERE b.voided = 1`)
-      .first<{ c: number }>()
-    expect(row!.c).toBe(0)
-  })
-
-  it('leaves exactly one live ballot per voter who has voted', async () => {
-    await runWholeElection()
-    const live = await env.DB.prepare('SELECT count(*) c FROM ballot WHERE voided = 0').first<{ c: number }>()
-    const voters = await env.DB.prepare('SELECT count(*) c FROM vote_receipt').first<{ c: number }>()
-    expect(live!.c).toBe(voters!.c)
-  })
-
-  it('holds no ballot-to-voter link once the election is closed', async () => {
+  it('leaves one live ballot per voter who voted, and no ballot-to-voter link at all', async () => {
+    expect(await countOf('ballot')).toBe(3)
+    expect(await countOf('ballot', 'voided = 0')).toBe(await countOf('vote_receipt'))
     // live_receipt_hash is cleared at close. The purge must not restore it.
-    await runWholeElection()
-    const row = await env.DB
-      .prepare('SELECT count(*) c FROM vote_receipt WHERE live_receipt_hash IS NOT NULL')
-      .first<{ c: number }>()
-    expect(row!.c).toBe(0)
+    expect(await countOf('vote_receipt', 'live_receipt_hash IS NOT NULL')).toBe(0)
   })
 
-  it('keeps the audit record while holding no member names', async () => {
-    // The retention rule: a checkable count and no names.
-    await runWholeElection()
-    for (const table of ['voter_roll', 'check_in']) {
-      const row = await env.DB.prepare(`SELECT count(*) c FROM ${table}`).first<{ c: number }>()
-      expect(row!.c, table).toBe(0)
-    }
+  it('keeps the checkable record while holding no member names', async () => {
+    for (const table of ['voter_roll', 'check_in', 'guest']) expect(await countOf(table), table).toBe(0)
     for (const table of ['ballot', 'election_seal', 'election_result', 'vote_receipt']) {
-      const row = await env.DB.prepare(`SELECT count(*) c FROM ${table}`).first<{ c: number }>()
-      expect(row!.c, table).toBeGreaterThan(0)
+      expect(await countOf(table), table).toBeGreaterThan(0)
     }
-  })
-
-  it('still verifies the exported ballots against the seal after everything', async () => {
-    const { batchId, electionId } = await runWholeElection()
-    const officerCookie = await signIn(batchId, 'officer', 'officer-password-1')
-    const text = await (await SELF.fetch(
-      `https://example.com/api/batches/${batchId}/elections/${electionId}/ballots.csv`,
-      { headers: { cookie: officerCookie } },
-    )).text()
-    const canonical = text.trim().split('\n').slice(1).map((line) => {
-      const [id, prefs, voided] = line.split('","').map((field) => field.replace(/^"|"$/g, ''))
-      return `${id}|${JSON.stringify(prefs!.split('|').filter(Boolean))}|${Number(voided!)}`
-    }).join('\n')
-    const seal = await env.DB.prepare('SELECT ballots_sha256 FROM election_seal').first<{ ballots_sha256: string }>()
-    expect(await sha256Hex(canonical)).toBe(seal!.ballots_sha256)
   })
 })

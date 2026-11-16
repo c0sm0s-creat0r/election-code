@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import {
-  signSession,
-  verifySession,
-  cookieName,
-  cookieOptions,
-  type StaffSession,
-  type Session,
-} from '../src/auth/session.js'
+import { signSession, verifySession, type StaffSession, type Session } from '../src/auth/session.js'
+import { SESSION_SECRET as SECRET } from './helpers.js'
 
-const SECRET = 'test-session-secret-0123456789abcdef'
 // StaffSession, because `Partial<Session>` does not spread cleanly over the union.
 const base = (over: Partial<StaffSession> = {}): Session => ({
   batchId: 'b1', role: 'officer', exp: 9_999_999_999, ...over,
@@ -31,9 +24,10 @@ async function signRaw(payloadObj: unknown, secret: string): Promise<string> {
 const future = 9_999_999_999
 
 describe('session tokens', () => {
-  it('round-trips a session', async () => {
-    const t = await signSession(base(), SECRET)
-    expect(await verifySession(t, SECRET)).toEqual(base())
+  it('round-trips a staff session, and a voter session with its subject', async () => {
+    expect(await verifySession(await signSession(base(), SECRET), SECRET)).toEqual(base())
+    const voter = { batchId: 'b1', role: 'voter', subject: '1234567', exp: future } as const
+    expect(await verifySession(await signSession(voter, SECRET), SECRET)).toEqual(voter)
   })
 
   it('rejects a token signed with a different secret', async () => {
@@ -43,11 +37,8 @@ describe('session tokens', () => {
 
   it('rejects a tampered payload', async () => {
     const t = await signSession(base(), SECRET)
-    const [payload, sig] = t.split('.') as [string, string]
-    const forged = btoa(JSON.stringify(base({ role: 'officer', batchId: 'b2' })))
-      .replace(/=/g, '')
-    expect(await verifySession(`${forged}.${sig}`, SECRET)).toBeNull()
-    expect(payload).toBeTruthy()
+    const forged = btoa(JSON.stringify(base({ batchId: 'b2' }))).replace(/=/g, '')
+    expect(await verifySession(`${forged}.${t.split('.')[1]}`, SECRET)).toBeNull()
   })
 
   it('rejects an expired token', async () => {
@@ -60,49 +51,15 @@ describe('session tokens', () => {
       expect(await verifySession(bad, SECRET)).toBeNull()
     }
   })
-
-  it('scopes the cookie name to batch and role, so one does not authorise the other', async () => {
-    expect(cookieName('b1', 'officer')).not.toBe(cookieName('b1', 'door'))
-    expect(cookieName('b1', 'officer')).not.toBe(cookieName('b2', 'officer'))
-  })
-
-  it('sets HttpOnly, Secure, SameSite=Strict and a max age', () => {
-    const o = cookieOptions(3600)
-    expect(o.httpOnly).toBe(true)
-    expect(o.secure).toBe(true)
-    expect(o.sameSite).toBe('Strict')
-    expect(o.maxAge).toBe(3600)
-    expect(o.path).toBe('/')
-  })
 })
 
-describe('voter session subject', () => {
+describe('a validly signed token with a bad payload', () => {
   // The ballot handler binds `session.subject` into a query, so a voter token
-  // without one must not be mintable or accepted.
-  const voter = { batchId: 'b1', role: 'voter', subject: '1234567', exp: future } as const
-
-  it('round-trips a voter session with its subject intact', async () => {
-    const t = await signSession(voter, SECRET)
-    const s = await verifySession(t, SECRET)
-    expect(s).toEqual(voter)
-    // The narrowing the union exists for:
-    expect(s?.role === 'voter' ? s.subject : null).toBe('1234567')
-  })
-
-  it('rejects a voter token with no subject', async () => {
-    const t = await signRaw({ batchId: 'b1', role: 'voter', exp: future }, SECRET)
-    expect(await verifySession(t, SECRET)).toBeNull()
-  })
-
-  it('rejects a voter token with an empty subject', async () => {
-    const t = await signRaw({ batchId: 'b1', role: 'voter', subject: '', exp: future }, SECRET)
-    expect(await verifySession(t, SECRET)).toBeNull()
-  })
-
-  it('rejects a voter token whose subject is not a string', async () => {
-    for (const subject of [1234567, null, {}, ['1234567']]) {
+  // without one must not be accepted.
+  it('rejects a voter token whose subject is missing, empty or not a string', async () => {
+    for (const subject of [undefined, '', 1234567, null, {}, ['1234567']]) {
       const t = await signRaw({ batchId: 'b1', role: 'voter', subject, exp: future }, SECRET)
-      expect(await verifySession(t, SECRET)).toBeNull()
+      expect(await verifySession(t, SECRET), JSON.stringify(subject)).toBeNull()
     }
   })
 

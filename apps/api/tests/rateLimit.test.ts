@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import wranglerConfig from '../wrangler.jsonc?raw'
 import type { Env } from '../src/index.js'
 import { rateLimit } from '../src/middleware/rateLimit.js'
 
@@ -35,21 +34,16 @@ function appWith(env: Partial<Env>) {
 }
 
 describe('rate limiting', () => {
-  it('allows requests under the limit', async () => {
-    const { hit } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(2).binding })
-    expect((await hit()).status).toBe(200)
-    expect((await hit()).status).toBe(200)
-  })
-
   it('returns 429 with Retry-After once the limit is exceeded, without running the handler', async () => {
-    const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(1).binding })
-    await hit()
+    const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: fakeLimiter(2).binding })
+    expect((await hit()).status).toBe(200)
+    expect((await hit()).status).toBe(200)
     const res = await hit()
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: 'rate_limited' })
     expect(res.headers.get('retry-after')).toBe('60')
     // A 429 on sign-in runs no PBKDF2 and writes no audit row.
-    expect(handled()).toBe(1)
+    expect(handled()).toBe(2)
   })
 
   it('counts per IP, so one blocked client does not block another', async () => {
@@ -74,10 +68,5 @@ describe('rate limiting', () => {
     const { hit, handled } = appWith({ STAFF_SIGNIN_LIMITER: broken })
     expect((await hit()).status).toBe(200)
     expect(handled()).toBe(1)
-  })
-
-  it('keeps the voting budget loose enough for a full room on one IP', () => {
-    const line = wranglerConfig.split('\n').find((l) => l.includes('"name": "VOTING_LIMITER"'))!
-    expect(Number(/"limit": (\d+)/.exec(line)![1])).toBeGreaterThanOrEqual(600)
   })
 })

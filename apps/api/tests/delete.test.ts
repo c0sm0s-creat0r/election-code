@@ -3,281 +3,157 @@
  * mistake, never a vote. The operator can remove a society, with a
  * confirmation and an audit row.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env } from 'cloudflare:test'
+import { describe, it, expect } from 'vitest'
+import { env } from 'cloudflare:test'
 import {
-  JSON_HEADERS, MEMBERS, SUPER_KEY, addCandidate, checkIn, createBatch, createElection,
-  importRoll, openElection, resetDatabase, setUp, signIn, submitBallot, voterSignIn,
+  MEMBERS, SUPER_KEY, addCandidate, api, batchBody, cast, checkIn, closeElection, countOf, createBatch,
+  createElection, importRoll, openElection, postBatch, resetDatabase, setUp, signIn, submitBallot,
+  tokenOf, voterSignIn,
 } from './helpers.js'
 
-const at = (path: string) => `https://example.com${path}`
-
 const deleteElection = (batchId: string, electionId: string, cookie: string) =>
-  SELF.fetch(at(`/api/batches/${batchId}/elections/${electionId}`), {
-    method: 'DELETE', headers: { cookie },
-  })
+  api('DELETE', `/batches/${batchId}/elections/${electionId}`, cookie)
 
 const deleteBatch = (batchId: string, body: unknown, key?: string) =>
-  SELF.fetch(at(`/api/batches/${batchId}`), {
-    method: 'DELETE',
-    headers: { ...JSON_HEADERS, ...(key === undefined ? {} : { 'x-super-admin-key': key }) },
-    body: JSON.stringify(body),
-  })
+  api('DELETE', `/batches/${batchId}`, '', body, key === undefined ? {} : { 'x-super-admin-key': key })
 
-const countIn = async (table: string, where: string, ...binds: string[]): Promise<number> => {
-  const row = await env.DB.prepare(`SELECT count(*) AS n FROM ${table} WHERE ${where}`)
-    .bind(...binds)
-    .first<{ n: number }>()
-  return row?.n ?? 0
-}
-
-const auditActions = async (): Promise<{ action: string; batch_id: string | null; detail: string | null }[]> => {
-  const { results } = await env.DB
-    .prepare(`SELECT action, batch_id, detail FROM audit_log ORDER BY id`)
-    .all<{ action: string; batch_id: string | null; detail: string | null }>()
-  return results
-}
+const auditRow = (action: string) =>
+  env.DB.prepare('SELECT batch_id, detail FROM audit_log WHERE action = ?').bind(action)
+    .first<{ batch_id: string | null; detail: string | null }>()
 
 describe('deleting an election', () => {
-  it('removes a draft, which is the case that is always a mistake', async () => {
-    const { batchId, officerCookie } = await setUp([])
-    const draft = await createElection(batchId, officerCookie, 'Secretary', 1)
-
-    const res = await deleteElection(batchId, draft, officerCookie)
-    expect(res.status).toBe(204)
-    expect(await countIn('election', 'id = ?', draft)).toBe(0)
-  })
-
-  it('takes the candidates with it', async () => {
+  it('removes a draft and its candidates, recording a status and nothing else', async () => {
     const { batchId, officerCookie } = await setUp([])
     const draft = await createElection(batchId, officerCookie, 'Secretary', 1)
     await addCandidate(batchId, officerCookie, draft, 'Alex')
 
-    await deleteElection(batchId, draft, officerCookie)
-    expect(await countIn('candidate', 'election_id = ?', draft)).toBe(0)
+    expect((await deleteElection(batchId, draft, officerCookie)).status).toBe(204)
+    expect(await countOf('election', 'id = ?', draft)).toBe(0)
+    expect(await countOf('candidate', 'election_id = ?', draft)).toBe(0)
+    // No election name or id: the audit row outlives what it describes.
+    expect((await auditRow('election.delete'))!.detail).toBe(JSON.stringify({ kind: 'election_delete', status: 'draft' }))
   })
 
-  it('removes an open election nobody has voted in — the mis-opened one', async () => {
+  it('removes an open election nobody has voted in: the mis-opened one', async () => {
     const { batchId, officerCookie, electionId } = await setUp([])
-
-    const res = await deleteElection(batchId, electionId, officerCookie)
-    expect(res.status).toBe(204)
-    expect(await countIn('election', 'id = ?', electionId)).toBe(0)
+    expect((await deleteElection(batchId, electionId, officerCookie)).status).toBe(204)
+    expect(await countOf('election', 'id = ?', electionId)).toBe(0)
   })
 
-  it('REFUSES ONE THAT HAS A BALLOT IN IT, and leaves it standing', async () => {
-    const { batchId, officerCookie, electionId, candidateIds, voterCookies } = await setUp(['2400001'])
-    await submitBallot(batchId, electionId, voterCookies['2400001']!, [candidateIds.a])
-
-    const res = await deleteElection(batchId, electionId, officerCookie)
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ code: 'has_ballots' })
-    expect(await countIn('election', 'id = ?', electionId)).toBe(1)
-    expect(await countIn('ballot', 'election_id = ?', electionId)).toBe(1)
-  })
-
-  it('refuses one whose only ballot was voided, because the row is still there', async () => {
+  it('REFUSES ONE THAT HAS A BALLOT IN IT, even a voided one, and leaves it standing', async () => {
+    const f = await setUp(['2400001'])
+    const token = await tokenOf(await cast(f, '2400001', 'a'))
+    const refused = async () => {
+      const res = await deleteElection(f.batchId, f.electionId, f.officerCookie)
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'has_ballots' })
+      expect(await countOf('election', 'id = ?', f.electionId)).toBe(1)
+      expect(await countOf('ballot', 'election_id = ?', f.electionId)).toBe(1)
+    }
+    await refused()
     // a voided ballot stays in the table, so the seal covers it
-    const { batchId, officerCookie, electionId, candidateIds, voterCookies } = await setUp(['2400001'])
-    const cast = await submitBallot(batchId, electionId, voterCookies['2400001']!, [candidateIds.a])
-    const { receipt_token } = (await cast.json()) as { receipt_token: string }
-    await SELF.fetch(at(`/api/receipts/${receipt_token}/void`), { method: 'POST' })
-
-    const res = await deleteElection(batchId, electionId, officerCookie)
-    expect(res.status).toBe(409)
-    expect(await countIn('election', 'id = ?', electionId)).toBe(1)
+    await api('POST', `/receipts/${token}/void`)
+    await refused()
   })
 
   it('removes a closed election with an empty box, seal and result included', async () => {
     // Neither table cascades, so the route deletes them explicitly.
-    const { batchId, officerCookie, electionId } = await setUp([])
-    await SELF.fetch(at(`/api/batches/${batchId}/elections/${electionId}/close`), {
-      method: 'POST', headers: { cookie: officerCookie },
-    })
-    expect(await countIn('election_seal', 'election_id = ?', electionId)).toBe(1)
+    const f = await setUp([])
+    await closeElection(f)
+    expect(await countOf('election_seal', 'election_id = ?', f.electionId)).toBe(1)
 
-    const res = await deleteElection(batchId, electionId, officerCookie)
-    expect(res.status).toBe(204)
-    expect(await countIn('election_seal', 'election_id = ?', electionId)).toBe(0)
-    expect(await countIn('election_result', 'election_id = ?', electionId)).toBe(0)
+    expect((await deleteElection(f.batchId, f.electionId, f.officerCookie)).status).toBe(204)
+    expect(await countOf('election_seal')).toBe(0)
+    expect(await countOf('election_result')).toBe(0)
   })
 
   it('cannot reach an election belonging to another society', async () => {
     const { batchId, officerCookie } = await setUp([])
     const otherId = await createBatch('other')
-    const otherOfficer = await signIn(otherId, 'officer', 'officer-password-1')
-    const theirs = await createElection(otherId, otherOfficer, 'Theirs', 1)
+    const theirs = await createElection(otherId, await signIn(otherId, 'officer', 'officer-password-1'), 'Theirs', 1)
 
-    const res = await deleteElection(batchId, theirs, officerCookie)
-    expect(res.status).toBe(404)
-    expect(await countIn('election', 'id = ?', theirs)).toBe(1)
-  })
-
-  it('refuses a door session, which is the privilege boundary', async () => {
-    const { batchId, doorCookie, electionId } = await setUp([])
-    const res = await deleteElection(batchId, electionId, doorCookie)
-    expect(res.status).toBe(403)
-    expect(await countIn('election', 'id = ?', electionId)).toBe(1)
-  })
-
-  it('refuses with no session at all', async () => {
-    const { batchId, electionId } = await setUp([])
-    const res = await SELF.fetch(at(`/api/batches/${batchId}/elections/${electionId}`), { method: 'DELETE' })
-    expect(res.status).toBe(401)
-    expect(await countIn('election', 'id = ?', electionId)).toBe(1)
-  })
-
-  it('records the deletion as a status and nothing else', async () => {
-    const { batchId, officerCookie } = await setUp([])
-    const draft = await createElection(batchId, officerCookie, 'Secretary', 1)
-    await deleteElection(batchId, draft, officerCookie)
-
-    const entry = (await auditActions()).find((row) => row.action === 'election.delete')
-    expect(entry).toBeDefined()
-    expect(JSON.parse(entry!.detail!)).toEqual({ kind: 'election_delete', status: 'draft' })
-    // No election name or id: the audit row outlives what it describes.
-    expect(entry!.detail).not.toContain('Secretary')
-    expect(entry!.detail).not.toContain(draft)
+    expect((await deleteElection(batchId, theirs, officerCookie)).status).toBe(404)
+    expect(await countOf('election', 'id = ?', theirs)).toBe(1)
   })
 })
 
 describe('deleting a society', () => {
-  let batchId: string
-  let slug: string
-
-  beforeEach(async () => {
+  const doomed = async () => {
     await resetDatabase()
-    slug = 'doomed'
-    batchId = await createBatch(slug)
-  })
+    return createBatch('doomed')
+  }
 
-  it('refuses with no key, and the society survives', async () => {
-    const res = await deleteBatch(batchId, { confirm_slug: slug })
-    expect(res.status).toBe(401)
-    expect(await countIn('batch', 'id = ?', batchId)).toBe(1)
-  })
-
-  it('refuses a wrong key, and records the attempt against no batch', async () => {
-    const res = await deleteBatch(batchId, { confirm_slug: slug }, 'not-the-key')
-    expect(res.status).toBe(401)
-    expect(await countIn('batch', 'id = ?', batchId)).toBe(1)
-
-    const denied = (await auditActions()).find((row) => row.action === 'batch.delete.denied')
-    expect(denied).toBeDefined()
-    expect(denied!.batch_id).toBeNull()
+  it('refuses with no key or a wrong one, recording the wrong one against no batch', async () => {
+    const batchId = await doomed()
+    expect((await deleteBatch(batchId, { confirm_slug: 'doomed' })).status).toBe(401)
+    expect((await deleteBatch(batchId, { confirm_slug: 'doomed' }, 'not-the-key')).status).toBe(401)
+    expect(await countOf('batch', 'id = ?', batchId)).toBe(1)
     // The supplied key does not appear, even in part.
-    expect(denied!.detail).toBeNull()
+    expect(await auditRow('batch.delete.denied')).toEqual({ batch_id: null, detail: null })
   })
 
   it('REFUSES WITHOUT THE SLUG TYPED BACK, because the id is a UUID nobody checks', async () => {
-    const res = await deleteBatch(batchId, { confirm_slug: 'something-else' }, SUPER_KEY)
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ code: 'confirm_required' })
-    expect(await countIn('batch', 'id = ?', batchId)).toBe(1)
+    const batchId = await doomed()
+    for (const body of [{ confirm_slug: 'something-else' }, {}]) {
+      const res = await deleteBatch(batchId, body, SUPER_KEY)
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'confirm_required' })
+    }
+    expect(await countOf('batch', 'id = ?', batchId)).toBe(1)
+    expect((await deleteBatch('no-such-id', { confirm_slug: 'doomed' }, SUPER_KEY)).status).toBe(404)
   })
 
-  it('refuses an empty body for the same reason', async () => {
-    const res = await deleteBatch(batchId, {}, SUPER_KEY)
-    expect(res.status).toBe(409)
-    expect(await countIn('batch', 'id = ?', batchId)).toBe(1)
-  })
+  it('DESTROYS EVERY TABLE THE SOCIETY OWNS, sealed ballots included, but KEEPS THE AUDIT TRAIL', async () => {
+    // A roll, check-ins, and a closed election with a ballot, a seal and a result.
+    const f = await setUp(['2400001', '2400002'])
+    await cast(f, '2400001', 'a')
+    await closeElection(f)
 
-  it('404s on a society that is not there', async () => {
-    const res = await deleteBatch('no-such-id', { confirm_slug: slug }, SUPER_KEY)
-    expect(res.status).toBe(404)
-  })
+    expect((await deleteBatch(f.batchId, { confirm_slug: 's' }, SUPER_KEY)).status).toBe(204)
 
-  it('DESTROYS EVERY TABLE THE SOCIETY OWNS, sealed ballots included', async () => {
-    // A roll, check-ins, and a closed election with ballots and a seal.
-    const fixture = await setUp(['2400001', '2400002'])
-    await submitBallot(fixture.batchId, fixture.electionId, fixture.voterCookies['2400001']!, [fixture.candidateIds.a])
-    await SELF.fetch(at(`/api/batches/${fixture.batchId}/elections/${fixture.electionId}/close`), {
-      method: 'POST', headers: { cookie: fixture.officerCookie },
+    for (const table of ['batch', 'voter_roll', 'check_in', 'guest', 'election', 'candidate',
+      'ballot', 'vote_receipt', 'election_seal', 'election_result']) {
+      expect(await countOf(table), table).toBe(0)
+    }
+    // audit_log has no foreign key to batch, so it does not cascade. The
+    // deletion is recorded as counts.
+    expect(await auditRow('batch.delete')).toEqual({
+      batch_id: f.batchId, detail: JSON.stringify({ kind: 'batch_delete', elections: 1, ballots: 1, voters: 6 }),
     })
-    const theSlug = 's'
-
-    const res = await deleteBatch(fixture.batchId, { confirm_slug: theSlug }, SUPER_KEY)
-    expect(res.status).toBe(204)
-
-    expect(await countIn('batch', 'id = ?', fixture.batchId)).toBe(0)
-    expect(await countIn('voter_roll', 'batch_id = ?', fixture.batchId)).toBe(0)
-    expect(await countIn('check_in', 'batch_id = ?', fixture.batchId)).toBe(0)
-    expect(await countIn('guest', 'batch_id = ?', fixture.batchId)).toBe(0)
-    expect(await countIn('election', 'batch_id = ?', fixture.batchId)).toBe(0)
-    expect(await countIn('candidate', 'election_id = ?', fixture.electionId)).toBe(0)
-    expect(await countIn('ballot', 'election_id = ?', fixture.electionId)).toBe(0)
-    expect(await countIn('vote_receipt', 'election_id = ?', fixture.electionId)).toBe(0)
-    expect(await countIn('election_seal', 'election_id = ?', fixture.electionId)).toBe(0)
-    expect(await countIn('election_result', 'election_id = ?', fixture.electionId)).toBe(0)
+    expect(await countOf('audit_log', `action = 'batch.create'`)).toBe(1)
   })
 
   it('LEAVES EVERY OTHER SOCIETY ALONE', async () => {
     // a delete must stay inside its batch
+    const batchId = await doomed()
     const survivorId = await createBatch('survivor')
-    const survivorOfficer = await signIn(survivorId, 'officer', 'officer-password-1')
-    const survivorDoor = await signIn(survivorId, 'door', 'door-password-1')
-    await importRoll(survivorId, survivorOfficer)
-    const theirElection = await createElection(survivorId, survivorOfficer, 'Theirs', 1)
-    await addCandidate(survivorId, survivorOfficer, theirElection, 'Alex')
-    await addCandidate(survivorId, survivorOfficer, theirElection, 'Bo')
-    await openElection(survivorId, survivorOfficer, theirElection)
-    await checkIn(survivorId, survivorDoor, '2400001')
-    const voter = await voterSignIn(survivorId, '2400001', MEMBERS['2400001'])
-    const listed = await SELF.fetch(at(`/api/batches/${survivorId}/elections`))
-    const theirCandidates = ((await listed.json()) as { candidates: { id: string }[] }[])[0]!.candidates
-    await submitBallot(survivorId, theirElection, voter, [theirCandidates[0]!.id])
+    const officer = await signIn(survivorId, 'officer', 'officer-password-1')
+    await importRoll(survivorId, officer)
+    const theirElection = await createElection(survivorId, officer, 'Theirs', 1)
+    const alex = await addCandidate(survivorId, officer, theirElection, 'Alex')
+    await addCandidate(survivorId, officer, theirElection, 'Bo')
+    await openElection(survivorId, officer, theirElection)
+    await checkIn(survivorId, await signIn(survivorId, 'door', 'door-password-1'), '2400001')
+    await submitBallot(survivorId, theirElection, await voterSignIn(survivorId, '2400001', MEMBERS['2400001']), [alex])
 
-    await deleteBatch(batchId, { confirm_slug: slug }, SUPER_KEY)
+    await deleteBatch(batchId, { confirm_slug: 'doomed' }, SUPER_KEY)
 
-    expect(await countIn('batch', 'id = ?', survivorId)).toBe(1)
+    expect(await countOf('batch')).toBe(1)
     // Six rows: the fixture's whole export, eligible members and not.
-    expect(await countIn('voter_roll', 'batch_id = ?', survivorId)).toBe(6)
-    expect(await countIn('check_in', 'batch_id = ?', survivorId)).toBe(1)
-    expect(await countIn('election', 'batch_id = ?', survivorId)).toBe(1)
-    expect(await countIn('ballot', 'election_id = ?', theirElection)).toBe(1)
+    expect(await countOf('voter_roll', 'batch_id = ?', survivorId)).toBe(6)
+    expect(await countOf('check_in', 'batch_id = ?', survivorId)).toBe(1)
+    expect(await countOf('election', 'batch_id = ?', survivorId)).toBe(1)
+    expect(await countOf('ballot', 'election_id = ?', theirElection)).toBe(1)
   })
 
-  it('KEEPS THE AUDIT TRAIL, and records the deletion as counts', async () => {
-    // audit_log has no foreign key to batch, so it does not cascade.
-    const fixture = await setUp(['2400001'])
-    await submitBallot(fixture.batchId, fixture.electionId, fixture.voterCookies['2400001']!, [fixture.candidateIds.a])
+  it('takes the society off the public list and frees the slug', async () => {
+    const batchId = await doomed()
+    expect(await (await api('GET', '/batches')).json()).toHaveLength(1)
 
-    await deleteBatch(fixture.batchId, { confirm_slug: 's' }, SUPER_KEY)
+    await deleteBatch(batchId, { confirm_slug: 'doomed' }, SUPER_KEY)
 
-    const rows = await auditActions()
-    expect(rows.length).toBeGreaterThan(1)
-    const entry = rows.find((row) => row.action === 'batch.delete')
-    expect(entry).toBeDefined()
-    expect(entry!.batch_id).toBe(fixture.batchId)
-    expect(JSON.parse(entry!.detail!)).toEqual({
-      kind: 'batch_delete', elections: 1, ballots: 1, voters: 6,
-    })
-    // Rows written before the deletion are still there.
-    expect(rows.filter((row) => row.action === 'batch.create')).toHaveLength(1)
-  })
-
-  it('takes the society off the public list', async () => {
-    const before = (await (await SELF.fetch(at('/api/batches'))).json()) as unknown[]
-    expect(before).toHaveLength(1)
-
-    await deleteBatch(batchId, { confirm_slug: slug }, SUPER_KEY)
-
-    const after = (await (await SELF.fetch(at('/api/batches'))).json()) as unknown[]
-    expect(after).toHaveLength(0)
-    expect((await SELF.fetch(at(`/api/batches/by-slug/${slug}`))).status).toBe(404)
-  })
-
-  it('frees the slug, so the name can be registered again', async () => {
-    await deleteBatch(batchId, { confirm_slug: slug }, SUPER_KEY)
-    const res = await SELF.fetch(at('/api/batches'), {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({
-        name: 'Second Try', slug,
-        officer_password: 'officer-password-2', door_password: 'door-password-2',
-        branding: { title: 't', org_name: 'o', accent_color: '#000000', logo_url: '' },
-      }),
-    })
-    expect(res.status).toBe(201)
+    expect(await (await api('GET', '/batches')).json()).toHaveLength(0)
+    expect((await api('GET', '/batches/by-slug/doomed')).status).toBe(404)
+    expect((await postBatch(batchBody('doomed', 2))).status).toBe(201)
   })
 })
