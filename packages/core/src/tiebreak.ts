@@ -15,27 +15,13 @@ export function countback(
   kind: TieBreakKind,
 ): { winner: string; atRound: number } | null {
   for (let i = history.length - 1; i >= 0; i--) {
-    const round = history[i]!
-    const totals = tied.map((id) => ({ id, votes: round.get(id) ?? 0n }))
-    const distinct = new Set(totals.map((t) => t.votes.toString()))
-    if (distinct.size === 1) continue
-
-    const sorted = [...totals].sort((a, b) =>
-      a.votes === b.votes ? a.id.localeCompare(b.id) : a.votes < b.votes ? -1 : 1,
-    )
-
+    const votes = (id: string) => history[i]!.get(id) ?? 0n
+    const extreme = tied
+      .map(votes)
+      .reduce((a, b) => ((kind === 'exclusion' ? b < a : b > a) ? b : a))
     // The extreme must be unique, or this round does not settle it.
-    if (kind === 'exclusion') {
-      const minVotes = sorted[0]!.votes
-      const countAtMin = sorted.filter((t) => t.votes === minVotes).length
-      if (countAtMin > 1) continue
-      return { winner: sorted[0]!.id, atRound: i + 1 }
-    } else {
-      const maxVotes = sorted[sorted.length - 1]!.votes
-      const countAtMax = sorted.filter((t) => t.votes === maxVotes).length
-      if (countAtMax > 1) continue
-      return { winner: sorted[sorted.length - 1]!.id, atRound: i + 1 }
-    }
+    const atExtreme = tied.filter((id) => votes(id) === extreme)
+    if (atExtreme.length === 1) return { winner: atExtreme[0]!, atRound: i + 1 }
   }
   return null
 }
